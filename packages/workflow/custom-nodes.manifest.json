@@ -1,0 +1,193 @@
+{
+  "schemaVersion": 1,
+  "workflow": "portable-anima-instant-reference",
+  "packages": [
+    {
+      "id": "comfyui",
+      "name": "ComfyUI",
+      "builtIn": true,
+      "installUrl": "https://github.com/Comfy-Org/ComfyUI",
+      "nodes": [
+        {
+          "classType": "UNETLoader",
+          "requiredInputs": ["unet_name", "weight_dtype"],
+          "outputs": ["MODEL"]
+        },
+        {
+          "classType": "CLIPLoader",
+          "requiredInputs": ["clip_name", "type", "device"],
+          "outputs": ["CLIP"]
+        },
+        {
+          "classType": "VAELoader",
+          "requiredInputs": ["vae_name"],
+          "outputs": ["VAE"]
+        },
+        {
+          "classType": "LoadImage",
+          "requiredInputs": ["image"],
+          "outputs": ["IMAGE", "MASK"]
+        },
+        {
+          "classType": "ImageBatch",
+          "requiredInputs": ["image1", "image2"],
+          "outputs": ["IMAGE"]
+        },
+        {
+          "classType": "CLIPTextEncode",
+          "requiredInputs": ["text", "clip"],
+          "outputs": ["CONDITIONING"]
+        },
+        {
+          "classType": "RandomNoise",
+          "requiredInputs": ["noise_seed"],
+          "outputs": ["NOISE"]
+        },
+        {
+          "classType": "KSamplerSelect",
+          "requiredInputs": ["sampler_name"],
+          "outputs": ["SAMPLER"]
+        },
+        {
+          "classType": "BasicScheduler",
+          "requiredInputs": ["model", "scheduler", "steps", "denoise"],
+          "outputs": ["SIGMAS"]
+        },
+        {
+          "classType": "EmptyLatentImage",
+          "requiredInputs": ["width", "height", "batch_size"],
+          "outputs": ["LATENT"]
+        },
+        {
+          "classType": "SamplerCustomAdvanced",
+          "requiredInputs": ["noise", "guider", "sampler", "sigmas", "latent_image"],
+          "outputs": ["LATENT", "LATENT"]
+        },
+        {
+          "classType": "VAEDecode",
+          "requiredInputs": ["samples", "vae"],
+          "outputs": ["IMAGE"]
+        },
+        {
+          "classType": "VAEEncode",
+          "requiredInputs": ["pixels", "vae"],
+          "outputs": ["LATENT"]
+        },
+        {
+          "classType": "SaveImage",
+          "requiredInputs": ["filename_prefix", "images"],
+          "outputs": []
+        },
+        {
+          "classType": "SaveText",
+          "requiredInputs": ["text", "filename_prefix", "format"],
+          "outputs": ["STRING"]
+        },
+        {
+          "classType": "LatentUpscaleBy",
+          "requiredInputs": ["samples", "upscale_method", "scale_by"],
+          "outputs": ["LATENT"]
+        }
+      ]
+    },
+    {
+      "id": "instant-reference",
+      "name": "ComfyUI Instant Reference",
+      "builtIn": false,
+      "installUrl": "https://github.com/cstria0106/comfyui-instant-reference",
+      "nodes": [
+        {
+          "classType": "ReferenceTrainOptions",
+          "requiredInputs": [
+            "steps_override",
+            "learning_rate_override",
+            "network_dim_override",
+            "network_alpha_override",
+            "resolution_override",
+            "gradient_checkpointing",
+            "cache_latents",
+            "cache_text_encoder_outputs",
+            "seed_override",
+            "force_retrain",
+            "train_batch_size_override"
+          ],
+          "outputs": ["TRAIN_OPTIONS"]
+        },
+        {
+          "classType": "ReferenceTaggingOptions",
+          "requiredInputs": [
+            "general_threshold",
+            "character_threshold",
+            "prepend_tags",
+            "append_tags",
+            "exclude_tags",
+            "replace_tags",
+            "remove_underscore"
+          ],
+          "outputs": ["TAGGING_OPTIONS"]
+        },
+        {
+          "classType": "InstantReferenceLoRA",
+          "requiredInputs": [
+            "model",
+            "clip",
+            "images",
+            "model_strength",
+            "clip_strength",
+            "profile"
+          ],
+          "optionalInputs": ["vae", "tagging_options", "train_options"],
+          "outputs": ["MODEL", "CLIP", "STRING", "LORA_STACK", "STRING"]
+        }
+      ]
+    },
+    {
+      "id": "lora-manager",
+      "name": "ComfyUI LoRA Manager",
+      "builtIn": false,
+      "installUrl": "https://github.com/willmiao/ComfyUI-Lora-Manager",
+      "nodes": [
+        {
+          "classType": "Lora Stacker (LoraManager)",
+          "requiredInputs": ["text"],
+          "flexibleInputs": ["loras", "lora_stack"],
+          "outputs": ["LORA_STACK", "STRING", "STRING"]
+        }
+      ]
+    },
+    {
+      "id": "lora-optimizer",
+      "name": "ComfyUI LoRA Optimizer",
+      "builtIn": false,
+      "installUrl": "https://github.com/ethanfel/ComfyUI-LoRA-Optimizer",
+      "nodes": [
+        {
+          "classType": "LoRAOptimizerSimple",
+          "requiredInputs": ["model", "lora_stack", "output_strength"],
+          "optionalInputs": ["clip", "clip_strength_multiplier"],
+          "outputs": ["MODEL", "CLIP"]
+        }
+      ]
+    },
+    {
+      "id": "kjnodes",
+      "name": "ComfyUI KJNodes",
+      "builtIn": false,
+      "installUrl": "https://github.com/kijai/ComfyUI-KJNodes",
+      "nodes": [
+        {
+          "classType": "ScheduledCFGGuidance",
+          "requiredInputs": [
+            "model",
+            "positive",
+            "negative",
+            "cfg",
+            "start_percent",
+            "end_percent"
+          ],
+          "outputs": ["GUIDER"]
+        }
+      ]
+    }
+  ]
+}

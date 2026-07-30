@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "Bundler",
+    "module": "ESNext",
+    "jsx": "preserve",
+    "baseUrl": ".",
+    "paths": {
+      "@anima/shared": ["packages/shared/src/index.ts"],
+      "@anima/tag-data": ["packages/tag-data/src/index.ts"],
+      "@anima/runtime": ["packages/runtime/src/index.ts"],
+      "@anima/workflow": ["packages/workflow/src/index.ts"]
+    }
+  }
+}

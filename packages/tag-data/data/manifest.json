@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "normalization": "danbooru-underscores-to-spaces-v1",
+  "source": "comfyui-autocomplete-plus",
+  "tags": {
+    "file": "danbooru_tags.csv",
+    "rows": 183174,
+    "sha256": "723fc007a6415d8618aef74b07f256ec4270507f9a1fb28c6cc77724a1ca274f"
+  },
+  "cooccurrences": {
+    "file": "danbooru_tags_cooccurrence.csv",
+    "rows": 110284,
+    "minimumCount": 5000,
+    "sha256": "1e480b022b0bb45e816828340c966c83552409e68baa57b31205142924e9ae69",
+    "sourceSha256": "29bf95d3dd2f4b1038ac26b3fee371ebbe67d9b622b32d274c9486dbde56077a"
+  }
+}

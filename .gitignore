@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+
+# Framework and build output
+.next/
+.next*/
+dist/
+build/
+out/
+.output/
+coverage/
+*.tsbuildinfo
+.turbo/
+
+# Local environment files
+.env
+.env.*
+!.env.example
+.envrc
+.direnv/
+
+# Local application state, generated images, runtimes, and databases
+/data/
+/apps/api/data/
+/runtime/
+/models/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite-journal
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+
+# Downloaded model weights
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.onnx
+*.gguf
+*.bin
+
+# Logs and temporary files
+*.log
+*.log.*
+/logs/
+bun-error.log
+*.tmp
+*.temp
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

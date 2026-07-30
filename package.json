@@ -1,0 +1,22 @@
+{
+  "name": "portable-anima-studio",
+  "private": true,
+  "packageManager": "bun@1.3.14",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c magenta,cyan \"bun run --cwd apps/api dev\" \"bun run --cwd apps/web dev\"",
+    "build": "bun run --filter '*' build",
+    "typecheck": "bun run --filter '*' typecheck",
+    "test": "bun test apps packages",
+    "db:generate": "bun run --cwd apps/api db:generate",
+    "db:migrate": "bun run --cwd apps/api db:migrate",
+    "start": "concurrently -n api,web -c magenta,cyan \"bun run --cwd apps/api start\" \"bun run --cwd apps/web start\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "^5.9.3"
+  }
+}

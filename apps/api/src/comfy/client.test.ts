@@ -1,0 +1,187 @@
+import { describe, expect, test } from "bun:test";
+import {
+  ComfyClient,
+  decodeComfyPreviewFrame,
+} from "./client";
+
+function uint32(value: number): Uint8Array {
+  const bytes = new Uint8Array(4);
+  new DataView(bytes.buffer).setUint32(0, value, false);
+  return bytes;
+}
+
+function join(...parts: Uint8Array[]): Uint8Array {
+  const result = new Uint8Array(
+    parts.reduce((total, part) => total + part.byteLength, 0),
+  );
+  let offset = 0;
+  for (const part of parts) {
+    result.set(part, offset);
+    offset += part.byteLength;
+  }
+  return result;
+}
+
+describe("ComfyUI preview protocol", () => {
+  test("decodes legacy type 1 previews with the preceding progress context", () => {
+    const image = Uint8Array.of(0xff, 0xd8, 0xff, 0xd9);
+    const frame = decodeComfyPreviewFrame(
+      join(uint32(1), uint32(1), image),
+      {
+        promptId: "prompt-legacy",
+        nodeId: "16",
+        step: 7,
+        total: 30,
+      },
+    );
+
+    expect(frame).toEqual({
+      bytes: image,
+      mimeType: "image/jpeg",
+      promptId: "prompt-legacy",
+      nodeId: "16",
+      step: 7,
+      total: 30,
+    });
+  });
+
+  test("decodes type 4 previews and prefers embedded prompt metadata", () => {
+    const metadata = new TextEncoder().encode(
+      JSON.stringify({
+        image_type: "image/png",
+        prompt_id: "prompt-metadata",
+        node_id: "23",
+      }),
+    );
+    const image = Uint8Array.of(0x89, 0x50, 0x4e, 0x47);
+    const frame = decodeComfyPreviewFrame(
+      join(uint32(4), uint32(metadata.byteLength), metadata, image),
+      {
+        promptId: "stale-prompt",
+        nodeId: "16",
+        step: 12,
+        total: 18,
+      },
+    );
+
+    expect(frame).toEqual({
+      bytes: image,
+      mimeType: "image/png",
+      promptId: "prompt-metadata",
+      nodeId: "23",
+      step: 12,
+      total: 18,
+    });
+  });
+
+  test("negotiates metadata previews as the first client message", () => {
+    class FakeWebSocket extends EventTarget {
+      static latest: FakeWebSocket | null = null;
+      binaryType = "blob";
+      sent: unknown[] = [];
+
+      constructor(readonly url: string | URL) {
+        super();
+        FakeWebSocket.latest = this;
+      }
+
+      send(value: unknown) {
+        this.sent.push(value);
+      }
+
+      close() {}
+    }
+
+    const client = new ComfyClient(
+      {
+        comfyUrl: "http://127.0.0.1:8188",
+        requestTimeoutMs: 1_000,
+      },
+      fetch,
+      FakeWebSocket as unknown as typeof WebSocket,
+    );
+    let opened = false;
+    const handle = client.connect("client-1", {
+      onOpen: () => {
+        opened = true;
+      },
+      onEvent() {},
+    });
+    const socket = FakeWebSocket.latest!;
+    socket.dispatchEvent(new Event("open"));
+
+    expect(socket.binaryType).toBe("arraybuffer");
+    expect(opened).toBeTrue();
+    expect(socket.sent).toHaveLength(1);
+    expect(JSON.parse(String(socket.sent[0]))).toEqual({
+      type: "feature_flags",
+      data: { supports_preview_metadata: true },
+    });
+    handle.close();
+  });
+});
+
+describe("ComfyUI model discovery", () => {
+  test("falls back to loader contracts when model list routes are unavailable", async () => {
+    const fetcher = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/object_info")) {
+        return Response.json({
+          UNETLoader: {
+            input: {
+              required: {
+                unet_name: [["fallback-unet.safetensors"], {}],
+              },
+            },
+          },
+          CLIPLoader: {
+            input: {
+              required: {
+                clip_name: [["fallback-clip.safetensors"], {}],
+              },
+            },
+          },
+          VAELoader: {
+            input: {
+              required: {
+                vae_name: [["fallback-vae.safetensors"], {}],
+              },
+            },
+          },
+          LoraLoader: {
+            input: {
+              required: {
+                lora_name: [["fallback-lora.safetensors"], {}],
+              },
+            },
+          },
+          KSampler: {
+            input: {
+              required: {
+                sampler_name: [["er_sde"], {}],
+                scheduler: [["sgm_uniform"], {}],
+              },
+            },
+          },
+        });
+      }
+      return Response.json({ error: "not found" }, { status: 404 });
+    }) as typeof fetch;
+    const client = new ComfyClient(
+      {
+        comfyUrl: "http://127.0.0.1:8188",
+        requestTimeoutMs: 1_000,
+      },
+      fetcher,
+    );
+
+    const options = await client.getOptions();
+
+    expect(options.diffusionModels).toEqual(["fallback-unet.safetensors"]);
+    expect(options.clips).toEqual(["fallback-clip.safetensors"]);
+    expect(options.vaes).toEqual(["fallback-vae.safetensors"]);
+    expect(options.loras).toEqual(["fallback-lora.safetensors"]);
+    expect(options.samplers).toEqual(["er_sde"]);
+    expect(options.schedulers).toEqual(["sgm_uniform"]);
+  });
+});

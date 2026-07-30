@@ -1,0 +1,275 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 14% 7%;
+    --foreground: 240 10% 96%;
+    --surface-1: 240 12% 10%;
+    --surface-2: 240 10% 13%;
+    --card: var(--surface-1);
+    --card-foreground: 240 10% 96%;
+    --popover: 240 12% 10%;
+    --popover-foreground: 240 10% 96%;
+    --primary: 331 83% 63%;
+    --primary-foreground: 240 14% 7%;
+    --secondary: var(--surface-2);
+    --secondary-foreground: 240 7% 90%;
+    --muted: var(--surface-2);
+    --muted-foreground: 240 6% 65%;
+    --accent: 240 9% 18%;
+    --accent-foreground: 240 10% 96%;
+    --destructive: 0 72% 56%;
+    --destructive-foreground: 0 0% 98%;
+    --success: 152 60% 46%;
+    --success-foreground: 152 70% 10%;
+    --warning: 38 92% 58%;
+    --warning-foreground: 38 80% 10%;
+    --info: 199 86% 58%;
+    --info-foreground: 199 80% 9%;
+    --border: 240 9% 23%;
+    --input: 240 7% 42%;
+    --ring: 331 83% 63%;
+    --radius: 0.75rem;
+    --motion-state: 120ms;
+    --motion-panel: 180ms;
+    --motion-dialog: 220ms;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    color-scheme: dark;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply min-h-screen bg-background text-foreground antialiased;
+    font-size: 14px;
+    font-family:
+      Inter, Pretendard, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+      "Segoe UI", sans-serif;
+  }
+
+  ::selection {
+    background: rgba(236, 72, 153, 0.3);
+    color: white;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background: hsl(var(--muted-foreground) / 0.3);
+    background-clip: content-box;
+  }
+
+  summary::-webkit-details-marker {
+    display: none;
+  }
+}
+
+@layer components {
+  .surface-flat {
+    border: 1px solid hsl(var(--border));
+    background: hsl(var(--card));
+    color: hsl(var(--card-foreground));
+  }
+
+  .surface-inset {
+    border: 1px solid hsl(var(--border));
+    background: hsl(var(--surface-2));
+    color: hsl(var(--card-foreground));
+    box-shadow: inset 0 2px 4px 0 rgb(0 0 0 / 0.18);
+  }
+
+  .surface-glass {
+    border: 1px solid rgb(255 255 255 / 0.1);
+    background: hsl(var(--popover) / 0.85);
+    color: hsl(var(--popover-foreground));
+    box-shadow: 0 18px 50px -24px rgb(0 0 0 / 0.72);
+    backdrop-filter: blur(24px);
+  }
+
+  .glass-surface {
+    border: 1px solid rgb(255 255 255 / 0.1);
+    background: hsl(var(--popover) / 0.85);
+    color: hsl(var(--popover-foreground));
+    box-shadow: 0 18px 50px -24px rgb(0 0 0 / 0.72);
+    backdrop-filter: blur(24px);
+  }
+
+  .panel-grid {
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  .focus-card {
+    transition: background-color var(--motion-state), border-color var(--motion-state);
+  }
+
+  .focus-card:hover {
+    background: hsl(var(--surface-2));
+  }
+
+  .form-grid {
+    @apply grid gap-4 md:grid-cols-2;
+  }
+
+  .number-input {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .skip-link {
+    @apply fixed left-3 top-3 z-[100] -translate-y-20 rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground transition-transform focus:translate-y-0;
+    box-shadow: 0 28px 80px -30px rgb(0 0 0 / 0.82);
+  }
+
+  .ui-overlay[data-state="open"] {
+    animation: ui-overlay-in var(--motion-dialog) ease-out;
+  }
+
+  .ui-overlay[data-state="closed"] {
+    animation: ui-overlay-out var(--motion-dialog) ease-in;
+  }
+
+  .ui-dialog-content[data-state="open"] {
+    animation: ui-dialog-in var(--motion-dialog) cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .ui-dialog-content[data-state="closed"] {
+    animation: ui-dialog-out var(--motion-dialog) ease-in;
+  }
+
+  .ui-panel-content[data-state="open"] {
+    animation: ui-panel-in var(--motion-panel) cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .ui-panel-content[data-state="closed"] {
+    animation: ui-panel-out var(--motion-panel) ease-in;
+  }
+
+  .ui-sheet-content[data-side="right"] {
+    --sheet-x: 100%;
+    --sheet-y: 0;
+  }
+
+  .ui-sheet-content[data-side="left"] {
+    --sheet-x: -100%;
+    --sheet-y: 0;
+  }
+
+  .ui-sheet-content[data-side="top"] {
+    --sheet-x: 0;
+    --sheet-y: -100%;
+  }
+
+  .ui-sheet-content[data-side="bottom"] {
+    --sheet-x: 0;
+    --sheet-y: 100%;
+  }
+
+  .ui-sheet-content[data-state="open"] {
+    animation: ui-sheet-in var(--motion-dialog) cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .ui-sheet-content[data-state="closed"] {
+    animation: ui-sheet-out var(--motion-dialog) ease-in;
+  }
+}
+
+@keyframes ui-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes ui-overlay-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes ui-dialog-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -48%) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes ui-dialog-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -48%) scale(0.98);
+  }
+}
+
+@keyframes ui-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes ui-panel-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(4px) scale(0.99);
+  }
+}
+
+@keyframes ui-sheet-in {
+  from {
+    transform: translate(var(--sheet-x), var(--sheet-y));
+  }
+  to {
+    transform: translate(0, 0);
+  }
+}
+
+@keyframes ui-sheet-out {
+  from {
+    transform: translate(0, 0);
+  }
+  to {
+    transform: translate(var(--sheet-x), var(--sheet-y));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
