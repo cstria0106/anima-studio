@@ -27,6 +27,25 @@ export interface ArtifactDownloader {
   ): Promise<string>;
 }
 
+export interface VerifiedFileDownload {
+  id: string;
+  downloadUrl: string;
+  filename: string;
+  bytes: number;
+  sha256: string;
+}
+
+export interface VerifiedFileDownloader {
+  download(
+    file: VerifiedFileDownload,
+    directory: string,
+    options?: {
+      signal?: AbortSignal;
+      onProgress?(progress: DownloadProgress): void;
+    },
+  ): Promise<string>;
+}
+
 export class ArtifactIntegrityError extends Error {
   constructor(message: string) {
     super(message);
@@ -43,7 +62,7 @@ export async function sha256File(path: string): Promise<string> {
 
 async function matchesArtifact(
   path: string,
-  artifact: EngineArtifact,
+  artifact: Pick<VerifiedFileDownload, "bytes" | "sha256">,
 ): Promise<boolean> {
   try {
     const metadata = await stat(path);
@@ -62,11 +81,13 @@ function contentRangeStart(value: string | null): number | null {
   return match ? Number(match[1]) : null;
 }
 
-export class ResumableArtifactDownloader implements ArtifactDownloader {
+export class VerifiedResumableFileDownloader
+  implements VerifiedFileDownloader
+{
   constructor(private readonly fetcher: typeof fetch = fetch) {}
 
   async download(
-    artifact: EngineArtifact,
+    artifact: VerifiedFileDownload,
     directory: string,
     options: {
       signal?: AbortSignal;
@@ -74,11 +95,7 @@ export class ResumableArtifactDownloader implements ArtifactDownloader {
     } = {},
   ): Promise<string> {
     await mkdir(directory, { recursive: true });
-    const extension = artifact.archive.format;
-    const finalPath = join(
-      directory,
-      `${artifact.id}-${artifact.sha256.slice(0, 16)}.${extension}`,
-    );
+    const finalPath = join(directory, artifact.filename);
     const partialPath = `${finalPath}.part`;
 
     if (await matchesArtifact(finalPath, artifact)) {
@@ -112,7 +129,22 @@ export class ResumableArtifactDownloader implements ArtifactDownloader {
     } catch {
       // A new partial file starts at zero bytes.
     }
-    if (offset > artifact.bytes) {
+    if (offset === artifact.bytes) {
+      if (await matchesArtifact(partialPath, artifact)) {
+        await rename(partialPath, finalPath);
+        options.onProgress?.({
+          artifactId: artifact.id,
+          currentBytes: artifact.bytes,
+          totalBytes: artifact.bytes,
+        });
+        return finalPath;
+      }
+      await rename(
+        partialPath,
+        `${partialPath}.corrupt-${crypto.randomUUID()}`,
+      );
+      offset = 0;
+    } else if (offset > artifact.bytes) {
       await rename(
         partialPath,
         `${partialPath}.corrupt-${crypto.randomUUID()}`,
@@ -204,5 +236,34 @@ export class ResumableArtifactDownloader implements ArtifactDownloader {
       );
     }
     return finalPath;
+  }
+}
+
+export class ResumableArtifactDownloader implements ArtifactDownloader {
+  private readonly files: VerifiedResumableFileDownloader;
+
+  constructor(fetcher: typeof fetch = fetch) {
+    this.files = new VerifiedResumableFileDownloader(fetcher);
+  }
+
+  download(
+    artifact: EngineArtifact,
+    directory: string,
+    options: {
+      signal?: AbortSignal;
+      onProgress?(progress: DownloadProgress): void;
+    } = {},
+  ): Promise<string> {
+    return this.files.download(
+      {
+        id: artifact.id,
+        downloadUrl: artifact.downloadUrl,
+        filename: `${artifact.id}-${artifact.sha256.slice(0, 16)}.${artifact.archive.format}`,
+        bytes: artifact.bytes,
+        sha256: artifact.sha256,
+      },
+      directory,
+      options,
+    );
   }
 }

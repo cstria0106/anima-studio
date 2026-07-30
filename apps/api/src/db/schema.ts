@@ -274,8 +274,11 @@ export const modelDownloads = sqliteTable(
     state: text("state").notNull(),
     provider: text("provider").notNull().default("civitai"),
     providerDownloadId: text("provider_download_id"),
-    modelId: integer("model_id").notNull(),
-    modelVersionId: integer("model_version_id").notNull(),
+    providerModelId: text("provider_model_id").notNull(),
+    providerVersionId: text("provider_version_id").notNull(),
+    providerFileId: text("provider_file_id"),
+    modelId: integer("model_id"),
+    modelVersionId: integer("model_version_id"),
     fileId: integer("file_id"),
     modelName: text("model_name").notNull(),
     versionName: text("version_name").notNull(),
@@ -306,6 +309,12 @@ export const modelDownloads = sqliteTable(
     index("model_downloads_version_idx").on(
       table.modelId,
       table.modelVersionId,
+    ),
+    index("model_downloads_provider_file_idx").on(
+      table.provider,
+      table.providerModelId,
+      table.providerVersionId,
+      table.providerFileId,
     ),
   ],
 );

@@ -903,10 +903,13 @@ export const modelDownloadStates = [
 ] as const;
 
 export type ModelDownloadState = (typeof modelDownloadStates)[number];
+export type ModelDownloadProvider = "civitai" | "huggingface";
 export type ModelDestinationKind =
   | "loras"
   | "diffusion_models"
-  | "checkpoints";
+  | "checkpoints"
+  | "text_encoders"
+  | "vae";
 
 export interface ModelDestinationOptionDto {
   id: ModelDestinationKind;
@@ -965,6 +968,47 @@ export interface CivitaiInspectDto {
   versions: CivitaiVersionDto[];
 }
 
+export type HuggingFaceAnimaFileKind =
+  | "diffusion_model"
+  | "text_encoder"
+  | "vae";
+
+export interface HuggingFaceAnimaFileDto {
+  path: string;
+  filename: string;
+  kind: HuggingFaceAnimaFileKind;
+  destinationRootId: Extract<
+    ModelDestinationKind,
+    "diffusion_models" | "text_encoders" | "vae"
+  >;
+  sizeBytes: number;
+  sha256: string;
+  recommended: boolean;
+  experimental: boolean;
+}
+
+export interface HuggingFaceAnimaCatalogDto {
+  provider: "huggingface";
+  repository: "circlestone-labs/Anima";
+  sourceUrl: string;
+  revision: string;
+  lastModified: string | null;
+  license: string;
+  licenseUrl: string;
+  thumbnailUrl: string | null;
+  files: HuggingFaceAnimaFileDto[];
+}
+
+export interface HuggingFaceAnimaProviderStatusDto {
+  provider: "huggingface";
+  available: boolean;
+  repository: "circlestone-labs/Anima";
+  managedDownloads: boolean;
+  supportedFormats: [".safetensors"];
+  destinations: ModelDestinationOptionDto[];
+  reason?: string;
+}
+
 export const civitaiInspectRequestSchema = z.object({
   url: z.string().url().max(2_000),
 });
@@ -989,13 +1033,38 @@ export type ModelDownloadCreate = z.infer<
   typeof modelDownloadCreateSchema
 >;
 
+export const huggingFaceAnimaDownloadCreateSchema = z.object({
+  revision: z.string().regex(/^[a-f0-9]{40}$/),
+  path: z
+    .string()
+    .min(1)
+    .max(512)
+    .regex(
+      /^split_files\/(?:diffusion_models|text_encoders|vae)\/[^/]+\.safetensors$/,
+    ),
+  includeDependencies: z.boolean().default(true),
+  acceptedLicense: z.literal(true),
+});
+
+export type HuggingFaceAnimaDownloadCreate = z.infer<
+  typeof huggingFaceAnimaDownloadCreateSchema
+>;
+
+export interface HuggingFaceAnimaInstallDto {
+  downloads: ModelDownloadDto[];
+  alreadyInstalled: string[];
+}
+
 export interface ModelDownloadDto {
   id: string;
   operationId: string;
   state: ModelDownloadState;
-  provider: "civitai";
-  modelId: number;
-  modelVersionId: number;
+  provider: ModelDownloadProvider;
+  providerModelId: string;
+  providerVersionId: string;
+  providerFileId: string | null;
+  modelId: number | null;
+  modelVersionId: number | null;
   fileId: number | null;
   modelName: string;
   versionName: string;

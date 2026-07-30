@@ -615,6 +615,8 @@ export class ManagedRuntimeSupervisor {
             this.paths.models,
             "diffusion_models",
           ),
+          text_encoders: join(this.paths.models, "text_encoders"),
+          vae: join(this.paths.models, "vae"),
         }),
         PYTHONUTF8: "1",
         PYTHONIOENCODING: "utf-8",

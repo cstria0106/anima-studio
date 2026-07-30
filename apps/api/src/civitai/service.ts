@@ -11,6 +11,7 @@ import type {
   CivitaiVersionDto,
   ModelDownloadCreate,
   ModelDownloadDto,
+  ModelDownloadProvider,
 } from "@anima/shared";
 import type {
   ModelDownloadPatch,
@@ -47,8 +48,19 @@ export interface ModelDownloadPersistence {
     patch: ModelDownloadPatch,
   ): ModelDownloadDto | null;
   findModelDownload(id: string): ModelDownloadDto | null;
-  listModelDownloads(limit?: number): ModelDownloadDto[];
-  listIncompleteModelDownloads(): ModelDownloadDto[];
+  listModelDownloads(
+    limit?: number,
+    provider?: ModelDownloadProvider,
+  ): ModelDownloadDto[];
+  listModelDownloadsByProviderFile(
+    provider: ModelDownloadProvider,
+    providerModelId: string,
+    providerVersionId: string,
+    providerFileId: string,
+  ): ModelDownloadDto[];
+  listIncompleteModelDownloads(
+    provider?: ModelDownloadProvider,
+  ): ModelDownloadDto[];
 }
 
 export type ModelDownloadOperations = Pick<
@@ -296,7 +308,13 @@ export class CivitaiModelLibraryService {
       supportedHosts: ["civitai.com", "civitai.red"],
       supportedFormats: [".safetensors"],
       managedDownloads: true,
-      destinations: this.destinations.options(),
+      destinations: this.destinations
+        .options()
+        .filter((destination) =>
+          ["loras", "diffusion_models", "checkpoints"].includes(
+            destination.kind,
+          ),
+        ),
     };
   }
 
@@ -327,7 +345,7 @@ export class CivitaiModelLibraryService {
 
   get(id: string): ModelDownloadDto {
     const download = this.persistence.findModelDownload(id);
-    if (!download) {
+    if (!download || download.provider !== "civitai") {
       throw new CivitaiError(
         "DOWNLOAD_NOT_FOUND",
         "The model download was not found.",
@@ -340,6 +358,7 @@ export class CivitaiModelLibraryService {
   list(limit = 50): ModelDownloadDto[] {
     return this.persistence.listModelDownloads(
       Math.min(Math.max(limit, 1), 100),
+      "civitai",
     );
   }
 
@@ -351,7 +370,9 @@ export class CivitaiModelLibraryService {
   reconcileInterruptedDownloads(): ModelDownloadDto[] {
     const interruptedAt = this.clock.now();
     const reconciled: ModelDownloadDto[] = [];
-    for (const download of this.persistence.listIncompleteModelDownloads()) {
+    for (const download of this.persistence.listIncompleteModelDownloads(
+      "civitai",
+    )) {
       // This method normally runs during startup. Avoid disrupting a live
       // transfer if a caller invokes it after this service has accepted work.
       if (this.active.has(download.id)) continue;
@@ -511,9 +532,14 @@ export class CivitaiModelLibraryService {
       409,
     );
     assertCivitai(
-      previous.fileId !== null,
+      previous.modelId !== null &&
+        previous.modelVersionId !== null &&
+        previous.fileId !== null &&
+        ["loras", "diffusion_models", "checkpoints"].includes(
+          previous.destinationRootId,
+        ),
       "INVALID_FILE",
-      "The previous download did not retain a file selection.",
+      "The previous download did not retain its Civitai selection.",
       409,
     );
     const sourceUrl =
@@ -525,7 +551,8 @@ export class CivitaiModelLibraryService {
       modelVersionId: previous.modelVersionId,
       fileId: previous.fileId,
       sourceUrl,
-      destinationRootId: previous.destinationRootId,
+      destinationRootId:
+        previous.destinationRootId as ModelDownloadCreate["destinationRootId"],
       relativeDir: previous.relativeDir,
     };
     return this.createFromSource(input, {

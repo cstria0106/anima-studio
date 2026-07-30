@@ -9,6 +9,7 @@ import {
 import {
   PORTABLE_MAX_JSON_BYTES,
   civitaiInspectRequestSchema,
+  huggingFaceAnimaDownloadCreateSchema,
   modelDownloadCreateSchema,
   runtimeConfigSchema,
   type JobStatus,
@@ -61,6 +62,7 @@ import {
   ManagedRuntimeInstaller,
   ManagedRuntimeSupervisor,
   RuntimeLogService,
+  VerifiedResumableFileDownloader,
 } from "./runtime";
 import {
   RUNTIME_STATE_SETTING,
@@ -70,6 +72,7 @@ import {
 import { CapabilityService } from "./services/capabilities";
 import { JobEventService } from "./services/job-events";
 import { JobService, JobSubmissionError } from "./services/jobs";
+import { ModelDownloadCoordinator } from "./services/model-downloads";
 import { OperationService } from "./services/operations";
 import { OnboardingService } from "./services/onboarding";
 import { PortableWorkspaceService } from "./services/portable";
@@ -81,6 +84,12 @@ import {
 } from "./services/tag-index";
 import { JobTracker } from "./services/tracker";
 import { VariationBatchService } from "./services/variations";
+import {
+  FetchHuggingFaceJsonTransport,
+  HuggingFaceAnimaClient,
+  HuggingFaceAnimaLibraryService,
+  HuggingFaceError,
+} from "./huggingface";
 import {
   PortableWorkflowEngine,
   type WorkflowEngine,
@@ -106,6 +115,8 @@ export interface ApiRuntime {
   tracker: JobTracker;
   runtimeController: ManagedComfyRuntimeController;
   modelLibrary: ModelLibraryService;
+  huggingFaceLibrary: HuggingFaceLibraryService;
+  modelDownloads: ModelDownloadCoordinator;
   close(): Promise<void>;
 }
 
@@ -122,6 +133,7 @@ export interface RuntimeOverrides {
   tagDataMode?: "configured" | "fallback";
   secretStore?: SecretStore;
   modelLibrary?: ModelLibraryService;
+  huggingFaceLibrary?: HuggingFaceLibraryService;
   logger?: Pick<Console, "info" | "warn" | "error">;
 }
 
@@ -135,6 +147,22 @@ export type ModelLibraryService = Pick<
   | "get"
   | "list"
   | "progress"
+  | "pause"
+  | "resume"
+  | "cancel"
+  | "retry"
+  | "settled"
+  | "reconcileInterruptedDownloads"
+  | "shutdown"
+>;
+
+export type HuggingFaceLibraryService = Pick<
+  HuggingFaceAnimaLibraryService,
+  | "providerStatus"
+  | "catalog"
+  | "install"
+  | "get"
+  | "list"
   | "pause"
   | "resume"
   | "cancel"
@@ -737,32 +765,45 @@ export async function createRuntime(
     },
     config.requestTimeoutMs,
   );
+  const modelDestinations = new DestinationRegistry([
+    {
+      id: "loras",
+      label: "LoRA",
+      kind: "loras",
+      absolutePath: join(runtimePaths.models, "loras"),
+    },
+    {
+      id: "checkpoints",
+      label: "Checkpoint",
+      kind: "checkpoints",
+      absolutePath: join(runtimePaths.models, "checkpoints"),
+    },
+    {
+      id: "diffusion_models",
+      label: "Diffusion model",
+      kind: "diffusion_models",
+      absolutePath: join(runtimePaths.models, "diffusion_models"),
+    },
+    {
+      id: "text_encoders",
+      label: "Text Encoder",
+      kind: "text_encoders",
+      absolutePath: join(runtimePaths.models, "text_encoders"),
+    },
+    {
+      id: "vae",
+      label: "VAE",
+      kind: "vae",
+      absolutePath: join(runtimePaths.models, "vae"),
+    },
+  ]);
   const modelLibrary =
     overrides.modelLibrary ??
     new CivitaiModelLibraryService(
       new CivitaiApiClient(new FetchCivitaiHttpTransport(), secrets),
       tokenService,
       new PinnedLoraManagerClient(loraManagerTransport),
-      new DestinationRegistry([
-        {
-          id: "loras",
-          label: "LoRA",
-          kind: "loras",
-          absolutePath: join(runtimePaths.models, "loras"),
-        },
-        {
-          id: "checkpoints",
-          label: "Checkpoint",
-          kind: "checkpoints",
-          absolutePath: join(runtimePaths.models, "checkpoints"),
-        },
-        {
-          id: "diffusion_models",
-          label: "Diffusion model",
-          kind: "diffusion_models",
-          absolutePath: join(runtimePaths.models, "diffusion_models"),
-        },
-      ]),
+      modelDestinations,
       new NodeFileHasher(),
       new QuarantineInvalidDownloadHandler(
         join(config.dataDir, "quarantine", "model-downloads"),
@@ -770,6 +811,25 @@ export async function createRuntime(
       repository,
       operations,
     );
+  const huggingFaceLibrary =
+    overrides.huggingFaceLibrary ??
+    new HuggingFaceAnimaLibraryService(
+      new HuggingFaceAnimaClient(
+        new FetchHuggingFaceJsonTransport(
+          fetch,
+          config.requestTimeoutMs,
+        ),
+      ),
+      new VerifiedResumableFileDownloader(fetch),
+      modelDestinations,
+      repository,
+      operations,
+    );
+  const modelDownloads = new ModelDownloadCoordinator(
+    repository,
+    modelLibrary,
+    huggingFaceLibrary,
+  );
   const library = new StudioLibraryService(repository);
   const portable = new PortableWorkspaceService(
     repository,
@@ -805,6 +865,7 @@ export async function createRuntime(
   });
   const variations = new VariationBatchService(repository, jobs);
   modelLibrary.reconcileInterruptedDownloads();
+  huggingFaceLibrary.reconcileInterruptedDownloads();
   for (const orphan of repository.listActiveSystemOperations()) {
     operations.fail(
       orphan.id,
@@ -884,6 +945,8 @@ export async function createRuntime(
     },
     syncGateway,
     modelLibrary,
+    huggingFaceLibrary,
+    modelDownloads,
     verifiedLoraManagerContract,
   });
 
@@ -910,9 +973,14 @@ export async function createRuntime(
     tracker,
     runtimeController,
     modelLibrary,
+    huggingFaceLibrary,
+    modelDownloads,
     close: async () => {
       tracker.stop();
-      await modelLibrary.shutdown();
+      await Promise.all([
+        modelLibrary.shutdown(),
+        huggingFaceLibrary.shutdown(),
+      ]);
       await runtimeController.close({
         stopRuntime: runtimeConfig.stopWithApi,
       });
@@ -946,6 +1014,8 @@ interface AppServices {
   setRuntimeConfig(value: RuntimeConfig): void;
   syncGateway(state: ManagedRuntimeState): Promise<void>;
   modelLibrary: ModelLibraryService;
+  huggingFaceLibrary: HuggingFaceLibraryService;
+  modelDownloads: ModelDownloadCoordinator;
   verifiedLoraManagerContract(releaseRoot: string): Promise<boolean>;
 }
 
@@ -1600,8 +1670,32 @@ export function createApp(services: AppServices): Hono {
     }
   };
 
+  const huggingFaceProvider = async () => {
+    const state = (await services.runtimeController.status()).state;
+    const managedDownloads = state.mode === "managed";
+    const reason = managedDownloads
+      ? undefined
+      : "Hugging Face 모델 자동 설치는 관리형 ComfyUI 모드에서만 사용할 수 있습니다.";
+    return services.huggingFaceLibrary.providerStatus(
+      managedDownloads,
+      reason,
+    );
+  };
+
+  const assertHuggingFaceDownloadsAvailable = async () => {
+    const provider = await huggingFaceProvider();
+    if (!provider.available || !provider.managedDownloads) {
+      throw new HuggingFaceError(
+        "DOWNLOAD_FAILED",
+        provider.reason ??
+          "Hugging Face 모델 자동 설치를 사용할 수 없습니다.",
+        409,
+      );
+    }
+  };
+
   const refreshOptionsAfterDownload = (download: ModelDownloadDto) => {
-    void services.modelLibrary
+    void services.modelDownloads
       .settled(download.id)
       .then((completed) => {
         if (completed.state === "completed") {
@@ -1675,6 +1769,34 @@ export function createApp(services: AppServices): Hono {
     });
   });
 
+  app.get("/api/download-providers/huggingface/anima", async (c) => {
+    return c.json({
+      provider: await huggingFaceProvider(),
+      catalog: await services.huggingFaceLibrary.catalog(),
+    });
+  });
+
+  app.post("/api/model-downloads/huggingface/anima", async (c) => {
+    await assertHuggingFaceDownloadsAvailable();
+    const parsed = huggingFaceAnimaDownloadCreateSchema.safeParse(
+      await parseJson(c.req.raw),
+    );
+    if (!parsed.success) {
+      throw new HuggingFaceError(
+        "INVALID_FILE",
+        "Anima 모델 설치 요청이 올바르지 않습니다.",
+        400,
+      );
+    }
+    const result = await services.huggingFaceLibrary.install(
+      parsed.data,
+    );
+    for (const download of result.downloads) {
+      refreshOptionsAfterDownload(download);
+    }
+    return c.json(result, 202);
+  });
+
   app.post("/api/model-downloads", async (c) => {
     await assertCivitaiDownloadsAvailable();
     const parsed = modelDownloadCreateSchema.safeParse(
@@ -1695,45 +1817,57 @@ export function createApp(services: AppServices): Hono {
   app.get("/api/model-downloads", (c) => {
     const limit = numberParameter(c.req.query("limit"), 50, 1, 100);
     return c.json({
-      downloads: services.modelLibrary.list(limit),
+      downloads: services.modelDownloads.list(limit),
     });
   });
 
   app.get("/api/model-downloads/:id", (c) =>
     c.json({
-      download: services.modelLibrary.get(c.req.param("id")),
+      download: services.modelDownloads.get(c.req.param("id")),
     }),
   );
 
   app.post("/api/model-downloads/:id/pause", async (c) =>
     c.json({
-      download: await services.modelLibrary.pause(c.req.param("id")),
+      download: await services.modelDownloads.pause(c.req.param("id")),
     }),
   );
 
   app.post("/api/model-downloads/:id/resume", async (c) => {
-    await assertCivitaiDownloadsAvailable();
+    const current = services.modelDownloads.get(c.req.param("id"));
+    if (current.provider === "civitai") {
+      await assertCivitaiDownloadsAvailable();
+    } else {
+      await assertHuggingFaceDownloadsAvailable();
+    }
     return c.json({
-      download: await services.modelLibrary.resume(c.req.param("id")),
+      download: await services.modelDownloads.resume(c.req.param("id")),
     });
   });
 
   app.post("/api/model-downloads/:id/cancel", async (c) =>
     c.json({
-      download: await services.modelLibrary.cancel(c.req.param("id")),
+      download: await services.modelDownloads.cancel(c.req.param("id")),
     }),
   );
 
   app.post("/api/model-downloads/:id/retry", async (c) => {
-    await assertCivitaiDownloadsAvailable();
-    const download = await services.modelLibrary.retry(c.req.param("id"));
+    const current = services.modelDownloads.get(c.req.param("id"));
+    if (current.provider === "civitai") {
+      await assertCivitaiDownloadsAvailable();
+    } else {
+      await assertHuggingFaceDownloadsAvailable();
+    }
+    const download = await services.modelDownloads.retry(
+      c.req.param("id"),
+    );
     refreshOptionsAfterDownload(download);
     return c.json({ download }, 202);
   });
 
   app.get("/api/model-downloads/:id/events", (c) => {
     const downloadId = c.req.param("id");
-    const download = services.modelLibrary.get(downloadId);
+    const download = services.modelDownloads.get(downloadId);
     const operationId = download.operationId;
     const after = numberParameter(
       c.req.query("after") ?? c.req.header("Last-Event-ID"),
@@ -1778,7 +1912,7 @@ export function createApp(services: AppServices): Hono {
             const event = pending.shift()!;
             queuedIds.delete(event.id);
             cursor = event.id;
-            const current = services.modelLibrary.get(downloadId);
+            const current = services.modelDownloads.get(downloadId);
             await stream.writeSSE({
               id: String(event.id),
               event: "download",
@@ -1792,7 +1926,7 @@ export function createApp(services: AppServices): Hono {
               return;
             }
           }
-          const current = services.modelLibrary.get(downloadId);
+          const current = services.modelDownloads.get(downloadId);
           if (
             current.state === "completed" ||
             current.state === "failed" ||

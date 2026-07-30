@@ -9,9 +9,12 @@ export {
 export {
   ArtifactIntegrityError,
   ResumableArtifactDownloader,
+  VerifiedResumableFileDownloader,
   sha256File,
   type ArtifactDownloader,
   type DownloadProgress,
+  type VerifiedFileDownload,
+  type VerifiedFileDownloader,
 } from "./download";
 export {
   BunCommandRunner,

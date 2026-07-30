@@ -9,6 +9,9 @@ import {
   EMPTY_OPTIONS,
   type GenerationDraft,
   type HealthResponse,
+  type HuggingFaceAnimaInstallRequest,
+  type HuggingFaceAnimaInstallResult,
+  type HuggingFaceAnimaProviderResponse,
   type JobListResponse,
   type LongOperation,
   type LoraOption,
@@ -1530,6 +1533,27 @@ export async function inspectCivitaiModel(
     body: JSON.stringify({ url }),
   });
   return unwrapRecord<CivitaiModelInspection>(raw, "model");
+}
+
+export async function getHuggingFaceAnimaCatalog(
+  signal?: AbortSignal,
+): Promise<HuggingFaceAnimaProviderResponse> {
+  return apiFetch<HuggingFaceAnimaProviderResponse>(
+    "/api/download-providers/huggingface/anima",
+    { signal },
+  );
+}
+
+export async function installHuggingFaceAnima(
+  input: HuggingFaceAnimaInstallRequest,
+): Promise<HuggingFaceAnimaInstallResult> {
+  return apiFetch<HuggingFaceAnimaInstallResult>(
+    "/api/model-downloads/huggingface/anima",
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
 }
 
 export async function createModelDownload(

@@ -5,10 +5,7 @@ export const CIVITAI_PAGE_HOSTS = [
 
 export type CivitaiPageHost = (typeof CIVITAI_PAGE_HOSTS)[number];
 export type CivitaiModelKind = "lora" | "checkpoint";
-export type ModelDestinationKind =
-  | "loras"
-  | "checkpoints"
-  | "diffusion_models";
+export type { ModelDestinationKind };
 
 export interface CivitaiModelReference {
   provider: "civitai";
@@ -144,3 +141,4 @@ export interface ModelDownloadResult {
   triggerWords: string[];
   license: CivitaiLicenseSnapshot;
 }
+import type { ModelDestinationKind } from "@anima/shared";

@@ -12,11 +12,16 @@ import {
   defaultGenerationConfig,
   type CapabilityReport,
   type GenerationConfig,
+  type HuggingFaceAnimaCatalogDto,
+  type HuggingFaceAnimaDownloadCreate,
+  type ModelDownloadDto,
+  type ModelDownloadState,
 } from "@anima/shared";
 import {
   CIVITAI_RESTART_REQUIRED_SETTING,
   createRuntime,
   type ApiRuntime,
+  type HuggingFaceLibraryService,
 } from "./app";
 import type {
   ComfyClientLike,
@@ -242,7 +247,112 @@ class FakeWorkflow implements WorkflowEngine {
   }
 }
 
+class FakeHuggingFaceLibrary implements HuggingFaceLibraryService {
+  readonly revision = "f".repeat(40);
+  installCalls = 0;
+  resumeCalls = 0;
+  retryCalls = 0;
+
+  providerStatus(managedDownloads: boolean, reason?: string) {
+    return {
+      provider: "huggingface" as const,
+      available: managedDownloads,
+      repository: "circlestone-labs/Anima" as const,
+      managedDownloads,
+      supportedFormats: [".safetensors"] as [".safetensors"],
+      destinations: [
+        {
+          id: "diffusion_models" as const,
+          label: "Diffusion model",
+          kind: "diffusion_models" as const,
+        },
+        {
+          id: "text_encoders" as const,
+          label: "Text Encoder",
+          kind: "text_encoders" as const,
+        },
+        {
+          id: "vae" as const,
+          label: "VAE",
+          kind: "vae" as const,
+        },
+      ],
+      ...(reason ? { reason } : {}),
+    };
+  }
+
+  catalog(): Promise<HuggingFaceAnimaCatalogDto> {
+    return Promise.resolve({
+      provider: "huggingface",
+      repository: "circlestone-labs/Anima",
+      sourceUrl: "https://huggingface.co/circlestone-labs/Anima",
+      revision: this.revision,
+      lastModified: null,
+      license: "circlestone-labs-non-commercial-license",
+      licenseUrl:
+        "https://huggingface.co/circlestone-labs/Anima/blob/main/LICENSE.md",
+      thumbnailUrl: null,
+      files: [],
+    });
+  }
+
+  install(_input: HuggingFaceAnimaDownloadCreate) {
+    this.installCalls += 1;
+    return Promise.resolve({ downloads: [], alreadyInstalled: [] });
+  }
+
+  get(_id: string): ModelDownloadDto {
+    throw new Error("Not used in this test.");
+  }
+
+  list(_limit?: number): ModelDownloadDto[] {
+    return [];
+  }
+
+  pause(_id: string): Promise<ModelDownloadDto> {
+    throw new Error("Not used in this test.");
+  }
+
+  resume(_id: string): ModelDownloadDto {
+    this.resumeCalls += 1;
+    throw new Error("HF resume crossed the API availability boundary.");
+  }
+
+  cancel(_id: string): Promise<ModelDownloadDto> {
+    throw new Error("Not used in this test.");
+  }
+
+  retry(_id: string): Promise<ModelDownloadDto> {
+    this.retryCalls += 1;
+    throw new Error("HF retry crossed the API availability boundary.");
+  }
+
+  settled(_id: string): Promise<ModelDownloadDto> {
+    throw new Error("Not used in this test.");
+  }
+
+  reconcileInterruptedDownloads(): ModelDownloadDto[] {
+    return [];
+  }
+
+  shutdown(): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
 async function runtime(): Promise<{
+  runtime: ApiRuntime;
+  comfy: FakeComfy;
+}>;
+async function runtime(
+  huggingFaceLibrary: HuggingFaceLibraryService,
+): Promise<{
+  runtime: ApiRuntime;
+  comfy: FakeComfy;
+}>;
+async function runtime(
+  huggingFaceLibrary?: HuggingFaceLibraryService,
+): Promise<{
   runtime: ApiRuntime;
   comfy: FakeComfy;
 }> {
@@ -260,6 +370,7 @@ async function runtime(): Promise<{
     workflow: new FakeWorkflow(),
     startTracker: false,
     tagDataMode: "fallback",
+    ...(huggingFaceLibrary ? { huggingFaceLibrary } : {}),
     logger: {
       info() {},
       warn() {},
@@ -271,6 +382,18 @@ async function runtime(): Promise<{
 }
 
 async function freshManagedRuntime(): Promise<{
+  runtime: ApiRuntime;
+  comfy: FakeComfy;
+}>;
+async function freshManagedRuntime(
+  huggingFaceLibrary: HuggingFaceLibraryService,
+): Promise<{
+  runtime: ApiRuntime;
+  comfy: FakeComfy;
+}>;
+async function freshManagedRuntime(
+  huggingFaceLibrary?: HuggingFaceLibraryService,
+): Promise<{
   runtime: ApiRuntime;
   comfy: FakeComfy;
 }> {
@@ -286,6 +409,7 @@ async function freshManagedRuntime(): Promise<{
     comfy,
     workflow: new FakeWorkflow(),
     tagDataMode: "fallback",
+    ...(huggingFaceLibrary ? { huggingFaceLibrary } : {}),
     logger: {
       info() {},
       warn() {},
@@ -325,6 +449,51 @@ function recordRunningManagedProcess(
       sessionId: "running-managed-runtime",
     },
     error: null,
+  });
+}
+
+function recordStoppedManagedRuntime(api: ApiRuntime): void {
+  const runtimeStateRepository = (
+    api.runtimeController as unknown as {
+      repository: {
+        patchState(patch: Record<string, unknown>): unknown;
+      };
+    }
+  ).repository;
+  runtimeStateRepository.patchState({
+    mode: "managed",
+    status: "stopped",
+    activeBundleId: api.runtimeController.manifest.bundleId,
+    operationId: null,
+    process: null,
+    error: null,
+  });
+}
+
+function createHuggingFaceDownload(
+  api: ApiRuntime,
+  id: string,
+  state: ModelDownloadState,
+): ModelDownloadDto {
+  const operation = api.operations.create(
+    "model_download",
+    state,
+    `Persisted ${state} download.`,
+    { provider: "huggingface" },
+  );
+  return api.repository.createModelDownload({
+    id,
+    operationId: operation.id,
+    state,
+    provider: "huggingface",
+    providerModelId: "circlestone-labs/Anima",
+    providerVersionId: "f".repeat(40),
+    providerFileId:
+      "split_files/diffusion_models/anima-base-v1.0.safetensors",
+    modelName: "CircleStone Labs Anima",
+    versionName: "f".repeat(12),
+    filename: "anima-base-v1.0.safetensors",
+    destinationRootId: "diffusion_models",
   });
 }
 
@@ -611,11 +780,117 @@ describe("Anima Studio API", () => {
         available: boolean;
         managedDownloads: boolean;
         reason?: string;
+        destinations: Array<{ id: string }>;
       };
     };
     expect(body.provider.available).toBe(false);
     expect(body.provider.managedDownloads).toBe(false);
     expect(body.provider.reason).toContain("app-managed");
+    expect(body.provider.destinations.map((item) => item.id)).toEqual([
+      "loras",
+      "checkpoints",
+      "diffusion_models",
+    ]);
+  });
+
+  test("reports Hugging Face installs unavailable and blocks new installs in external mode", async () => {
+    const huggingFace = new FakeHuggingFaceLibrary();
+    const { runtime: api } = await runtime(huggingFace);
+
+    const providerResponse = await api.app.request(
+      "/api/download-providers/huggingface/anima",
+    );
+    expect(providerResponse.status).toBe(200);
+    expect(await providerResponse.json()).toMatchObject({
+      provider: {
+        available: false,
+        managedDownloads: false,
+        reason: expect.stringContaining("관리형 ComfyUI"),
+      },
+      catalog: { revision: huggingFace.revision },
+    });
+
+    const installResponse = await api.app.request(
+      "/api/model-downloads/huggingface/anima",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          revision: huggingFace.revision,
+          path:
+            "split_files/diffusion_models/anima-base-v1.0.safetensors",
+          includeDependencies: true,
+          acceptedLicense: true,
+        }),
+      },
+    );
+    expect(installResponse.status).toBe(409);
+    expect(huggingFace.installCalls).toBe(0);
+  });
+
+  test("blocks persisted Hugging Face resume and retry actions in external mode", async () => {
+    const huggingFace = new FakeHuggingFaceLibrary();
+    const { runtime: api } = await runtime(huggingFace);
+    const paused = createHuggingFaceDownload(
+      api,
+      "paused-hf-download",
+      "paused",
+    );
+    const failed = createHuggingFaceDownload(
+      api,
+      "failed-hf-download",
+      "failed",
+    );
+
+    const resumeResponse = await api.app.request(
+      `/api/model-downloads/${paused.id}/resume`,
+      { method: "POST" },
+    );
+    const retryResponse = await api.app.request(
+      `/api/model-downloads/${failed.id}/retry`,
+      { method: "POST" },
+    );
+
+    expect(resumeResponse.status).toBe(409);
+    expect(retryResponse.status).toBe(409);
+    expect(huggingFace.resumeCalls).toBe(0);
+    expect(huggingFace.retryCalls).toBe(0);
+  });
+
+  test("allows Hugging Face installs while managed ComfyUI is stopped without consulting Civitai readiness", async () => {
+    const huggingFace = new FakeHuggingFaceLibrary();
+    const { runtime: api } = await freshManagedRuntime(huggingFace);
+    recordStoppedManagedRuntime(api);
+
+    const civitaiResponse = await api.app.request(
+      "/api/download-providers/civitai",
+    );
+    expect(await civitaiResponse.json()).toMatchObject({
+      provider: { available: false, managedDownloads: false },
+    });
+    const huggingFaceResponse = await api.app.request(
+      "/api/download-providers/huggingface/anima",
+    );
+    expect(await huggingFaceResponse.json()).toMatchObject({
+      provider: { available: true, managedDownloads: true },
+    });
+
+    const installResponse = await api.app.request(
+      "/api/model-downloads/huggingface/anima",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          revision: huggingFace.revision,
+          path:
+            "split_files/diffusion_models/anima-base-v1.0.safetensors",
+          includeDependencies: true,
+          acceptedLicense: true,
+        }),
+      },
+    );
+    expect(installResponse.status).toBe(202);
+    expect(huggingFace.installCalls).toBe(1);
   });
 
   test("blocks managed downloads until an updated Civitai credential is applied", async () => {

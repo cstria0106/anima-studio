@@ -762,15 +762,23 @@ export type ModelDownloadState =
   | "failed"
   | "cancelled";
 
-export type ModelDestination = "loras" | "diffusion_models" | "checkpoints";
+export type ModelDestination =
+  | "loras"
+  | "diffusion_models"
+  | "checkpoints"
+  | "text_encoders"
+  | "vae";
 
 export interface ModelDownload {
   id: string;
   operationId: string;
   state: ModelDownloadState;
-  provider: "civitai";
-  modelId: number;
-  modelVersionId: number;
+  provider: "civitai" | "huggingface";
+  providerModelId: string;
+  providerVersionId: string;
+  providerFileId: string | null;
+  modelId: number | null;
+  modelVersionId: number | null;
   fileId: number | null;
   modelName: string;
   versionName: string;
@@ -795,10 +803,75 @@ export interface ModelDownloadCreate {
   modelVersionId: number;
   fileId?: number;
   sourceUrl?: string;
-  destinationRootId: ModelDestination;
+  destinationRootId: Extract<
+    ModelDestination,
+    "loras" | "diffusion_models" | "checkpoints"
+  >;
   relativeDir?: string;
 }
 
 export interface ModelDownloadListResponse {
   downloads: ModelDownload[];
+}
+
+export type HuggingFaceAnimaFileKind =
+  | "diffusion_model"
+  | "text_encoder"
+  | "vae";
+
+export interface HuggingFaceAnimaFile {
+  path: string;
+  filename: string;
+  kind: HuggingFaceAnimaFileKind;
+  destinationRootId: Extract<
+    ModelDestination,
+    "diffusion_models" | "text_encoders" | "vae"
+  >;
+  sizeBytes: number;
+  sha256: string;
+  recommended: boolean;
+  experimental: boolean;
+}
+
+export interface HuggingFaceAnimaCatalog {
+  provider: "huggingface";
+  repository: "circlestone-labs/Anima";
+  sourceUrl: string;
+  revision: string;
+  lastModified: string | null;
+  license: string;
+  licenseUrl: string;
+  thumbnailUrl: string | null;
+  files: HuggingFaceAnimaFile[];
+}
+
+export interface HuggingFaceAnimaProviderStatus {
+  provider: "huggingface";
+  available: boolean;
+  repository: "circlestone-labs/Anima";
+  managedDownloads: boolean;
+  supportedFormats: [".safetensors"];
+  destinations: Array<{
+    id: ModelDestination;
+    label: string;
+    kind: ModelDestination;
+  }>;
+  reason?: string;
+}
+
+export interface HuggingFaceAnimaProviderResponse {
+  provider: HuggingFaceAnimaProviderStatus;
+  catalog: HuggingFaceAnimaCatalog;
+}
+
+export interface HuggingFaceAnimaInstallRequest {
+  revision: string;
+  path: string;
+  includeDependencies: boolean;
+  acceptedLicense: true;
+}
+
+export interface HuggingFaceAnimaInstallResult {
+  downloads: ModelDownload[];
+  alreadyInstalled: string[];
 }

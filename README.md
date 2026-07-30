@@ -13,6 +13,7 @@ does not depend on a saved ComfyUI workflow or history entry.
 - Live queue phase, exact sampling progress, denoise previews, and cancellation
 - One-click same-seed upscale for a completed base-only generation
 - Offline Danbooru tag completion and optional LoRA Manager metadata
+- Official Hugging Face Anima catalog and verified managed-library downloads
 - Civitai model inspection and verified managed-library downloads
 - Reusable character profiles and model/LoRA configuration packs
 - Final-prompt inspection with source labels, duplicate detection, and conflicts
@@ -59,7 +60,7 @@ The first managed-runtime release supports only:
 - Windows x64
 - An NVIDIA GPU and a working NVIDIA driver
 - At least 25 GiB of free space for runtime installation
-- Internet access during installation and Civitai downloads
+- Internet access during installation and model downloads
 
 Diffusion models, text encoders, VAEs, and LoRAs are **not bundled**. Install or
 copy them separately after the runtime is ready.
@@ -118,7 +119,7 @@ authentication, so they are not intended for network exposure.
 For an existing ComfyUI, uncomment `COMFY_URL` in `.env` before the first API
 start. Leave it unset for a new managed installation.
 
-## Models and Civitai
+## Models and downloads
 
 Managed model directories are under:
 
@@ -132,6 +133,72 @@ RUNTIME_DIR/shared/models/
   vae/
   loras/
 ```
+
+### Official Anima models from Hugging Face
+
+The Library reads the public
+[`circlestone-labs/Anima`](https://huggingface.co/circlestone-labs/Anima)
+repository and offers its supported diffusion models as one-click managed
+installs. This provider is deliberately limited to that repository and to
+regular Git LFS `.safetensors` files under its `diffusion_models`,
+`text_encoders`, and `vae` directories. Arbitrary Hugging Face repositories or
+download URLs are not accepted.
+
+Downloads are available only in managed runtime mode. They never write to an
+external ComfyUI installation. Files are placed according to their ComfyUI
+model type:
+
+```text
+RUNTIME_DIR/shared/models/diffusion_models/<Anima model>.safetensors
+RUNTIME_DIR/shared/models/text_encoders/qwen_3_06b_base.safetensors
+RUNTIME_DIR/shared/models/vae/qwen_image_vae.safetensors
+```
+
+Selecting an Anima diffusion model also installs the shared Qwen text encoder
+and Qwen Image VAE when they are not already present. At the repository revision
+documented during development, one diffusion model is about 3.90 GiB and a
+first complete model set is about 5.24 GiB. The Library confirmation dialog
+shows the current exact transfer size. Ensure adequate free space and expect a
+long download on slower connections.
+
+The catalog request uses these local API endpoints:
+
+```text
+GET  /api/download-providers/huggingface/anima
+POST /api/model-downloads/huggingface/anima
+```
+
+The `GET` response supplies the revision and allowed file paths used by the
+`POST` request:
+
+```json
+{
+  "revision": "<40-character catalog SHA>",
+  "path": "split_files/diffusion_models/anima-turbo-v1.0.safetensors",
+  "includeDependencies": true,
+  "acceptedLicense": true
+}
+```
+
+The server resolves the current repository SHA with the official Hugging Face
+model API at
+`https://huggingface.co/api/models/circlestone-labs/Anima`, then reads
+`/api/models/circlestone-labs/Anima/tree/<sha>?recursive=true&expand=true` at
+that immutable 40-character revision.
+Every transfer uses a revision-pinned `resolve/<sha>/<path>` URL and is accepted
+only when its byte size and Git LFS SHA-256 match the pinned catalog. A matching
+installed file is reused; a same-name file with different content is not
+overwritten. Download state and pause, resume, cancel, and retry actions use the
+shared model-download API and history.
+
+The weights are distributed under the
+[CircleStone Labs Non-Commercial License](https://huggingface.co/circlestone-labs/Anima/blob/main/LICENSE.md).
+The Library requires explicit acknowledgment before queueing an install. Model
+and derivative-model use is restricted to the license's non-commercial terms;
+the license describes generated-output rights separately. Review the
+revision-pinned license link shown in the confirmation dialog before use.
+
+### Civitai
 
 The Library can inspect HTTPS model-page URLs from `civitai.com` and
 `civitai.red`. API URLs, direct download URLs, arbitrary hosts, credentials,

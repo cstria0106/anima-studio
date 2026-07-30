@@ -25,6 +25,7 @@ import {
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { AnimaCatalogPanel } from "@/components/anima-catalog-panel";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -41,15 +42,23 @@ import {
   controlModelDownload,
   createModelDownload,
   getCivitaiProvider,
+  getHuggingFaceAnimaCatalog,
   getModelDownloads,
+  installHuggingFaceAnima,
   inspectCivitaiModel,
   modelDownloadEventsUrl,
   setCivitaiToken,
 } from "@/lib/api";
+import {
+  hasNewlySettledAnimaDownload,
+  shouldShowSeparateCivitaiRemedy,
+} from "@/lib/anima-library";
 import type {
   CivitaiModelInspection,
   CivitaiProviderStatus,
   CivitaiVersion,
+  HuggingFaceAnimaFile,
+  HuggingFaceAnimaProviderResponse,
   ModelDestination,
   ModelDownload,
   ModelDownloadState,
@@ -61,6 +70,11 @@ interface LibraryViewProps {
   onAddLora: (download: ModelDownload) => void;
   onOpenManagedRuntime: () => void;
 }
+
+type CivitaiDestination = Extract<
+  ModelDestination,
+  "loras" | "diffusion_models" | "checkpoints"
+>;
 
 const BLUR_KEY = "anima-studio:blur-sensitive-previews:v1";
 
@@ -158,6 +172,8 @@ export function LibraryView({
 }: LibraryViewProps) {
   const [provider, setProvider] =
     React.useState<CivitaiProviderStatus | null>(null);
+  const [animaProvider, setAnimaProvider] =
+    React.useState<HuggingFaceAnimaProviderResponse | null>(null);
   const [downloads, setDownloads] = React.useState<ModelDownload[]>([]);
   const [modelUrl, setModelUrl] = React.useState("");
   const [token, setToken] = React.useState("");
@@ -166,7 +182,7 @@ export function LibraryView({
   const [versionId, setVersionId] = React.useState<number | null>(null);
   const [fileId, setFileId] = React.useState<number | null>(null);
   const [destination, setDestination] =
-    React.useState<ModelDestination>("loras");
+    React.useState<CivitaiDestination>("loras");
   const [relativeDir, setRelativeDir] = React.useState("");
   const [blurSensitive, setBlurSensitive] = React.useState(true);
   const [previewRevealed, setPreviewRevealed] = React.useState(false);
@@ -174,14 +190,34 @@ export function LibraryView({
   const [inspecting, setInspecting] = React.useState(false);
   const [savingToken, setSavingToken] = React.useState(false);
   const [creatingDownload, setCreatingDownload] = React.useState(false);
+  const [installingAnimaPath, setInstallingAnimaPath] =
+    React.useState("");
   const [pendingDownloadId, setPendingDownloadId] = React.useState("");
   const [error, setError] = React.useState("");
   const [notice, setNotice] = React.useState("");
+  const downloadsRef = React.useRef<ModelDownload[]>([]);
+
+  React.useEffect(() => {
+    downloadsRef.current = downloads;
+  }, [downloads]);
 
   const loadDownloads = React.useCallback(async (silent = false) => {
     try {
       const result = await getModelDownloads();
+      const refreshAnima = hasNewlySettledAnimaDownload(
+        downloadsRef.current,
+        result.downloads,
+      );
+      downloadsRef.current = result.downloads;
       setDownloads(result.downloads);
+      if (refreshAnima) {
+        try {
+          setAnimaProvider(await getHuggingFaceAnimaCatalog());
+        } catch {
+          // The completed download row remains authoritative. A later manual
+          // refresh can retry provider metadata without hiding installed state.
+        }
+      }
       if (!silent) setError("");
     } catch (cause) {
       if (!silent) {
@@ -196,22 +232,29 @@ export function LibraryView({
 
   const loadLibrary = React.useCallback(async () => {
     setLoading(true);
-    const [providerResult, downloadsResult] = await Promise.allSettled([
-      getCivitaiProvider(),
-      getModelDownloads(),
-    ]);
+    const [providerResult, animaResult, downloadsResult] =
+      await Promise.allSettled([
+        getCivitaiProvider(),
+        getHuggingFaceAnimaCatalog(),
+        getModelDownloads(),
+      ]);
     if (providerResult.status === "fulfilled") {
       setProvider(providerResult.value);
     }
     if (downloadsResult.status === "fulfilled") {
       setDownloads(downloadsResult.value.downloads);
     }
+    if (animaResult.status === "fulfilled") {
+      setAnimaProvider(animaResult.value);
+    }
     const failure =
       providerResult.status === "rejected"
         ? providerResult.reason
-        : downloadsResult.status === "rejected"
-          ? downloadsResult.reason
-          : null;
+        : animaResult.status === "rejected"
+          ? animaResult.reason
+          : downloadsResult.status === "rejected"
+            ? downloadsResult.reason
+            : null;
     setError(
       failure
         ? failure instanceof Error
@@ -270,7 +313,12 @@ export function LibraryView({
     () => compatibleFiles(selectedVersion),
     [selectedVersion],
   );
-  const destinationOptions = provider?.destinations ?? [];
+  const destinationOptions = (provider?.destinations ?? []).filter(
+    (option) =>
+      option.kind === "loras" ||
+      option.kind === "diffusion_models" ||
+      option.kind === "checkpoints",
+  );
   const managedDownloadReady =
     provider?.available === true &&
     provider.managedDownloads === true &&
@@ -329,13 +377,14 @@ export function LibraryView({
       const initialFile =
         initialFiles.find((file) => file.primary) ?? initialFiles[0];
       setFileId(initialFile?.id ?? null);
+      const compatibleDestination = destinationOptions.find((option) =>
+        model.type.toLocaleLowerCase().includes("lora")
+          ? option.kind === "loras"
+          : option.kind === "diffusion_models" ||
+            option.kind === "checkpoints",
+      );
       setDestination(
-        destinationOptions.find((option) =>
-          model.type.toLocaleLowerCase().includes("lora")
-            ? option.kind === "loras"
-            : option.kind === "diffusion_models" ||
-              option.kind === "checkpoints",
-        )?.id ??
+        (compatibleDestination?.id as CivitaiDestination | undefined) ??
           (model.type.toLocaleLowerCase().includes("lora")
             ? "loras"
             : "diffusion_models"),
@@ -392,6 +441,44 @@ export function LibraryView({
     }
   }
 
+  async function installAnima(file: HuggingFaceAnimaFile) {
+    if (!animaProvider) return;
+    setInstallingAnimaPath(file.path);
+    setError("");
+    setNotice("");
+    try {
+      const result = await installHuggingFaceAnima({
+        revision: animaProvider.catalog.revision,
+        path: file.path,
+        includeDependencies: true,
+        acceptedLicense: true,
+      });
+      setDownloads((current) => {
+        const changed = new Map(
+          result.downloads.map((download) => [download.id, download]),
+        );
+        return [
+          ...result.downloads,
+          ...current.filter((download) => !changed.has(download.id)),
+        ];
+      });
+      const reused = result.alreadyInstalled.length;
+      setNotice(
+        reused
+          ? `${file.filename} 설치를 준비했습니다. 공용 파일 ${reused}개는 이미 설치되어 있습니다.`
+          : `${file.filename}과 공용 파일을 다운로드 대기열에 추가했습니다.`,
+      );
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Anima 공식 모델 설치를 시작하지 못했습니다.",
+      );
+    } finally {
+      setInstallingAnimaPath("");
+    }
+  }
+
   async function control(
     download: ModelDownload,
     action: "pause" | "resume" | "cancel" | "retry",
@@ -431,8 +518,8 @@ export function LibraryView({
             모델 라이브러리
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Civitai 모델 URL을 확인하고 관리형 ComfyUI 모델 폴더에 안전하게
-            다운로드합니다.
+            Anima 공식 모델과 Civitai 리소스를 검증해 관리형 ComfyUI 모델
+            폴더에 설치합니다.
           </p>
         </div>
         <Button
@@ -466,7 +553,22 @@ export function LibraryView({
         </div>
       ) : null}
 
-      {provider && !provider.managedDownloads ? (
+      <AnimaCatalogPanel
+        value={animaProvider}
+        downloads={downloads}
+        loading={loading}
+        installingPath={installingAnimaPath}
+        onInstall={installAnima}
+        onOpenManagedRuntime={() => {
+          rememberSettingsSection("runtime");
+          onOpenManagedRuntime();
+        }}
+      />
+
+      {shouldShowSeparateCivitaiRemedy(
+        provider?.managedDownloads,
+        animaProvider?.provider.managedDownloads,
+      ) ? (
         <div
           role="note"
           className="flex flex-col justify-between gap-4 rounded-xl border border-amber-400/20 bg-amber-400/[0.05] p-4 sm:flex-row sm:items-center"
@@ -477,12 +579,11 @@ export function LibraryView({
             </span>
             <div>
               <p className="text-sm font-medium text-amber-100">
-                모델 다운로드에는 관리형 ComfyUI가 필요합니다.
+                Civitai 다운로드를 사용할 수 없습니다.
               </p>
               <p className="mt-1 text-xs leading-5 text-amber-100/70">
-                외부 ComfyUI 연결은 그대로 사용할 수 있지만 Studio가 파일 위치와
-                검증 과정을 관리할 수 없습니다. 관리형 런타임을 설치·실행하면
-                다운로드가 활성화됩니다.
+                {provider?.reason ??
+                  "관리형 런타임과 LoRA Manager 상태를 확인한 뒤 다시 시도하세요."}
               </p>
             </div>
           </div>
@@ -736,7 +837,9 @@ export function LibraryView({
                       id="library-destination"
                       value={destination}
                       onChange={(event) =>
-                        setDestination(event.target.value as ModelDestination)
+                        setDestination(
+                          event.target.value as CivitaiDestination,
+                        )
                       }
                       className="h-10 w-full rounded-md border border-input bg-background/55 px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
                     >
@@ -865,6 +968,10 @@ export function LibraryView({
                 const preview = previewFromDownload(download);
                 const pending = pendingDownloadId === download.id;
                 const active = activeStates.has(download.state);
+                const providerReady =
+                  download.provider === "huggingface"
+                    ? animaProvider?.provider.managedDownloads === true
+                    : managedDownloadReady;
                 return (
                   <div
                     key={download.id}
@@ -899,11 +1006,20 @@ export function LibraryView({
                           ) : null}
                           {downloadLabels[download.state]}
                         </Badge>
+                        <Badge variant="outline">
+                          {download.provider === "huggingface"
+                            ? "Hugging Face"
+                            : "Civitai"}
+                        </Badge>
                       </div>
                       <p className="mt-1 truncate text-xs text-muted-foreground">
                         {download.versionName} · {download.filename}
                       </p>
-                      <Progress value={progress} className="mt-3" />
+                      <Progress
+                        value={progress}
+                        className="mt-3"
+                        aria-label={`${download.filename} 다운로드 진행률`}
+                      />
                       <div className="mt-2 flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
                         <span>
                           {formatBytes(download.bytesCompleted)}
@@ -918,7 +1034,11 @@ export function LibraryView({
                         </span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1 md:justify-end">
+                    <div
+                      className="flex items-center gap-1 md:justify-end"
+                      role="group"
+                      aria-label={`${download.filename} 다운로드 작업`}
+                    >
                       {download.state === "downloading" ? (
                         <Button
                           type="button"
@@ -937,7 +1057,7 @@ export function LibraryView({
                           size="icon"
                           variant="ghost"
                           onClick={() => void control(download, "resume")}
-                          disabled={pending || !managedDownloadReady}
+                          disabled={pending || !providerReady}
                           aria-label={`${download.modelName} 다시 시작`}
                         >
                           <Play />
@@ -962,7 +1082,7 @@ export function LibraryView({
                           size="icon"
                           variant="ghost"
                           onClick={() => void control(download, "retry")}
-                          disabled={pending || !managedDownloadReady}
+                          disabled={pending || !providerReady}
                           aria-label={`${download.modelName} 다시 시도`}
                         >
                           <RotateCcw />

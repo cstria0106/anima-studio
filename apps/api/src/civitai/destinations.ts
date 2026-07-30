@@ -127,6 +127,27 @@ export class DestinationRegistry {
       "INVALID_DESTINATION",
       `The selected destination cannot store ${modelKind} models.`,
     );
+    return this.resolveKind(rootId, root.kind, relativeDirectory);
+  }
+
+  resolveKind(
+    rootId: string,
+    kind: ModelDestinationKind,
+    relativeDirectory = "",
+  ): ResolvedDestination {
+    const root = this.roots.get(rootId);
+    if (!root) {
+      throw new CivitaiError(
+        "INVALID_DESTINATION",
+        "The selected model destination is not available.",
+        400,
+      );
+    }
+    assertCivitai(
+      root.kind === kind,
+      "INVALID_DESTINATION",
+      "The selected destination does not match the model file type.",
+    );
     const normalized = normalizeRelativeDirectory(relativeDirectory);
     const absoluteDirectory = normalized
       ? resolve(root.absolutePath, ...normalized.split("/"))
@@ -152,14 +173,14 @@ export class DestinationRegistry {
     assertCivitai(
       isAbsolute(filePath),
       "DOWNLOAD_FAILED",
-      "LoRA Manager returned an invalid download path.",
+      "The model provider returned an invalid download path.",
       502,
     );
     const candidate = resolve(filePath);
     assertCivitai(
       isContained(destination.absoluteDirectory, candidate),
       "DOWNLOAD_FAILED",
-      "LoRA Manager returned a file outside the selected destination.",
+      "The model provider returned a file outside the selected destination.",
       502,
     );
     assertCivitai(
@@ -183,7 +204,7 @@ export class DestinationRegistry {
       assertCivitai(
         stats.isFile() && !stats.isSymbolicLink(),
         "DOWNLOAD_FAILED",
-        "LoRA Manager did not return a regular model file.",
+        "The model provider did not return a regular model file.",
         502,
       );
       [rootRealPath, candidateRealPath] = await Promise.all([

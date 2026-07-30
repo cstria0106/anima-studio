@@ -1,5 +1,6 @@
 import type { Context } from "hono";
 import { CivitaiError } from "../civitai/errors";
+import { HuggingFaceError } from "../huggingface/errors";
 import { ComfyHttpError } from "../comfy/client";
 import { FileValidationError } from "../files/storage";
 import { JobSubmissionError } from "../services/jobs";
@@ -33,6 +34,18 @@ export class RuntimeRequestError extends Error {
 }
 
 export function errorResponse(c: Context, error: unknown): Response {
+  if (error instanceof HuggingFaceError) {
+    return c.json(
+      {
+        message: error.message,
+        error: {
+          code: error.code,
+          message: error.message,
+        },
+      } satisfies ErrorBody,
+      error.status as 400,
+    );
+  }
   if (error instanceof CivitaiError) {
     return c.json(
       {

@@ -11,6 +11,7 @@ import type {
   JobPreviewDto,
   JobStatus,
   ModelDownloadDto,
+  ModelDownloadProvider,
   ModelDownloadState,
   ModelPackCreate,
   ModelPackDto,
@@ -196,13 +197,17 @@ export function operationEventToDto(
 export function modelDownloadToDto(
   row: ModelDownloadRow,
 ): ModelDownloadDto {
+  const provider = row.provider as ModelDownloadProvider;
   return {
     id: row.id,
     operationId: row.operationId,
     state: row.state as ModelDownloadState,
-    provider: "civitai",
-    modelId: row.modelId,
-    modelVersionId: row.modelVersionId,
+    provider,
+    providerModelId: row.providerModelId,
+    providerVersionId: row.providerVersionId,
+    providerFileId: row.providerFileId,
+    modelId: provider === "civitai" ? row.modelId : null,
+    modelVersionId: provider === "civitai" ? row.modelVersionId : null,
     fileId: row.fileId,
     modelName: row.modelName,
     versionName: row.versionName,
@@ -357,14 +362,18 @@ export interface NewModelDownload {
   id: string;
   operationId: string;
   state: ModelDownloadState;
+  provider?: ModelDownloadProvider;
   providerDownloadId?: string | null;
-  modelId: number;
-  modelVersionId: number;
+  providerModelId?: string;
+  providerVersionId?: string;
+  providerFileId?: string | null;
+  modelId?: number;
+  modelVersionId?: number;
   fileId?: number | null;
   modelName: string;
   versionName: string;
   filename: string;
-  destinationRootId: "loras" | "diffusion_models" | "checkpoints";
+  destinationRootId: ModelDownloadDto["destinationRootId"];
   relativeDir?: string;
   expectedSha256?: string | null;
   bytesTotal?: number | null;
@@ -637,9 +646,19 @@ export class StudioRepository {
         id: input.id,
         operationId: input.operationId,
         state: input.state,
+        provider: input.provider ?? "civitai",
         providerDownloadId: input.providerDownloadId ?? null,
-        modelId: input.modelId,
-        modelVersionId: input.modelVersionId,
+        providerModelId:
+          input.providerModelId ?? String(input.modelId ?? ""),
+        providerVersionId:
+          input.providerVersionId ?? String(input.modelVersionId ?? ""),
+        providerFileId:
+          input.providerFileId ??
+          (input.fileId === undefined || input.fileId === null
+            ? null
+            : String(input.fileId)),
+        modelId: input.modelId ?? null,
+        modelVersionId: input.modelVersionId ?? null,
         fileId: input.fileId ?? null,
         modelName: input.modelName,
         versionName: input.versionName,
@@ -713,29 +732,62 @@ export class StudioRepository {
     );
   }
 
-  listModelDownloads(limit = 50): ModelDownloadDto[] {
-    return this.db
+  listModelDownloads(
+    limit = 50,
+    provider?: ModelDownloadProvider,
+  ): ModelDownloadDto[] {
+    const query = this.db
       .select()
       .from(modelDownloads)
+      .$dynamic();
+    return query
+      .where(provider ? eq(modelDownloads.provider, provider) : undefined)
       .orderBy(desc(modelDownloads.createdAt))
       .limit(Math.min(Math.max(limit, 1), 100))
       .all()
       .map(modelDownloadToDto);
   }
 
-  listIncompleteModelDownloads(): ModelDownloadDto[] {
+  listModelDownloadsByProviderFile(
+    provider: ModelDownloadProvider,
+    providerModelId: string,
+    providerVersionId: string,
+    providerFileId: string,
+  ): ModelDownloadDto[] {
     return this.db
       .select()
       .from(modelDownloads)
       .where(
-        inArray(modelDownloads.state, [
-          "resolving",
-          "queued",
-          "downloading",
-          "paused",
-          "verifying",
-          "indexing",
-        ] satisfies ModelDownloadState[]),
+        and(
+          eq(modelDownloads.provider, provider),
+          eq(modelDownloads.providerModelId, providerModelId),
+          eq(modelDownloads.providerVersionId, providerVersionId),
+          eq(modelDownloads.providerFileId, providerFileId),
+        ),
+      )
+      .orderBy(desc(modelDownloads.createdAt))
+      .all()
+      .map(modelDownloadToDto);
+  }
+
+  listIncompleteModelDownloads(
+    provider?: ModelDownloadProvider,
+  ): ModelDownloadDto[] {
+    const stateClause = inArray(modelDownloads.state, [
+      "resolving",
+      "queued",
+      "downloading",
+      "paused",
+      "verifying",
+      "indexing",
+    ] satisfies ModelDownloadState[]);
+    return this.db
+      .select()
+      .from(modelDownloads)
+      .where(
+        provider
+          ? and(eq(modelDownloads.provider, provider), stateClause)
+          : stateClause,
       )
       .orderBy(asc(modelDownloads.createdAt))
       .all()

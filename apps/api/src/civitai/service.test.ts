@@ -93,8 +93,17 @@ class MemoryDownloads implements ModelDownloadPersistence {
       operationId: input.operationId,
       state: input.state,
       provider: "civitai",
-      modelId: input.modelId,
-      modelVersionId: input.modelVersionId,
+      providerModelId:
+        input.providerModelId ?? String(input.modelId ?? ""),
+      providerVersionId:
+        input.providerVersionId ?? String(input.modelVersionId ?? ""),
+      providerFileId:
+        input.providerFileId ??
+        (input.fileId === undefined || input.fileId === null
+          ? null
+          : String(input.fileId)),
+      modelId: input.modelId ?? null,
+      modelVersionId: input.modelVersionId ?? null,
       fileId: input.fileId ?? null,
       modelName: input.modelName,
       versionName: input.versionName,
@@ -163,6 +172,21 @@ class MemoryDownloads implements ModelDownloadPersistence {
 
   listModelDownloads(limit = 50): ModelDownloadDto[] {
     return [...this.rows.values()].slice(0, limit);
+  }
+
+  listModelDownloadsByProviderFile(
+    provider: ModelDownloadDto["provider"],
+    providerModelId: string,
+    providerVersionId: string,
+    providerFileId: string,
+  ): ModelDownloadDto[] {
+    return [...this.rows.values()].filter(
+      (download) =>
+        download.provider === provider &&
+        download.providerModelId === providerModelId &&
+        download.providerVersionId === providerVersionId &&
+        download.providerFileId === providerFileId,
+    );
   }
 
   listIncompleteModelDownloads(): ModelDownloadDto[] {

@@ -292,6 +292,8 @@ describe("managed runtime supervisor", () => {
       loras: join(paths.models, "loras"),
       checkpoints: join(paths.models, "checkpoints"),
       diffusion_models: join(paths.models, "diffusion_models"),
+      text_encoders: join(paths.models, "text_encoders"),
+      vae: join(paths.models, "vae"),
     });
     expect(runner.environment?.UV_CACHE_DIR).toBe(
       join(
