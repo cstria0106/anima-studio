@@ -120,6 +120,7 @@ import {
 } from "@/components/completion-notifications";
 import {
   buildPreflightIssues,
+  clearModelAndLoraSelections,
   estimateWorkload,
   isCharacterProfileDirty,
   isModelPackDirty,
@@ -131,6 +132,8 @@ import {
 type Tab = "create" | "history" | "library" | "settings";
 
 const DRAFT_KEY = "anima-studio:creation-draft:v1";
+const MODEL_SELECTION_RESET_KEY =
+  "anima-studio:model-selection-defaults-cleared:v1";
 const SIDEBAR_COLLAPSED_KEY = "anima-studio:sidebar-collapsed:v1";
 const CREATE_STEP_IDS: CreateStepId[] = [
   "reference",
@@ -173,11 +176,20 @@ const navItems: Array<{
 
 function restoreDraft(): GenerationDraft {
   if (typeof window === "undefined") return DEFAULT_DRAFT;
+  const resetModelSelections =
+    window.localStorage.getItem(MODEL_SELECTION_RESET_KEY) !== "true";
+  const finish = (draft: GenerationDraft) => {
+    if (!resetModelSelections) return draft;
+    const cleared = clearModelAndLoraSelections(draft);
+    window.localStorage.setItem(DRAFT_KEY, JSON.stringify(cleared));
+    window.localStorage.setItem(MODEL_SELECTION_RESET_KEY, "true");
+    return cleared;
+  };
   try {
     const raw = window.localStorage.getItem(DRAFT_KEY);
-    if (!raw) return DEFAULT_DRAFT;
+    if (!raw) return finish(structuredClone(DEFAULT_DRAFT));
     const saved = JSON.parse(raw) as Partial<GenerationDraft>;
-    return {
+    return finish({
       ...DEFAULT_DRAFT,
       ...saved,
       referenceAssets: (saved.referenceAssets ?? []).filter(
@@ -196,23 +208,10 @@ function restoreDraft(): GenerationDraft {
       tagging: { ...DEFAULT_DRAFT.tagging, ...saved.tagging },
       upscale: { ...DEFAULT_DRAFT.upscale, ...saved.upscale },
       loras: saved.loras ?? [],
-    };
+    });
   } catch {
-    return DEFAULT_DRAFT;
+    return finish(structuredClone(DEFAULT_DRAFT));
   }
-}
-
-function modelDefault(
-  options: Array<{ value: string }>,
-  preferred: string,
-) {
-  return (
-    options.find((option) =>
-      option.value.toLowerCase().includes(preferred.toLowerCase()),
-    )?.value ??
-    options[0]?.value ??
-    ""
-  );
 }
 
 function StudioNavigation({
@@ -1099,17 +1098,6 @@ export function StudioShell() {
       setOptions(optionsResult.value);
       setDraft((current) => ({
         ...current,
-        models: {
-          diffusion:
-            current.models.diffusion ||
-            modelDefault(optionsResult.value.diffusionModels, "anima_baseV10"),
-          clip:
-            current.models.clip ||
-            modelDefault(optionsResult.value.clips, "qwen_3_06b_base"),
-          vae:
-            current.models.vae ||
-            modelDefault(optionsResult.value.vaes, "qwen_image_vae"),
-        },
         sampling: {
           ...current.sampling,
           sampler:
@@ -1599,14 +1587,7 @@ export function StudioShell() {
 
   function clearDraft() {
     window.localStorage.removeItem(DRAFT_KEY);
-    setDraft({
-      ...DEFAULT_DRAFT,
-      models: {
-        diffusion: modelDefault(options.diffusionModels, "anima_baseV10"),
-        clip: modelDefault(options.clips, "qwen_3_06b_base"),
-        vae: modelDefault(options.vaes, "qwen_image_vae"),
-      },
-    });
+    setDraft(structuredClone(DEFAULT_DRAFT));
     setToast({ type: "success", message: "작성 중인 초안을 초기화했습니다." });
   }
 

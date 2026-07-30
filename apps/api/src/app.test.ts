@@ -9,7 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  defaultGenerationConfig,
+  generationConfigSchema,
   type CapabilityReport,
   type GenerationConfig,
   type HuggingFaceAnimaCatalogDto,
@@ -53,6 +53,14 @@ import type {
 
 const runtimes: ApiRuntime[] = [];
 const temporaryDirectories: string[] = [];
+const testGenerationConfig: GenerationConfig = generationConfigSchema.parse({
+  referenceAssetIds: ["placeholder"],
+  model: {
+    diffusionModel: "test-diffusion.safetensors",
+    clip: "test-clip.safetensors",
+    vae: "test-vae.safetensors",
+  },
+});
 
 afterEach(async () => {
   for (const runtime of runtimes.splice(0)) await runtime.close();
@@ -90,17 +98,17 @@ class FakeComfy implements ComfyClientLike {
 
   async getOptions() {
     return {
-      diffusionModels: [defaultGenerationConfig.model.diffusionModel],
-      clips: [defaultGenerationConfig.model.clip],
-      vaes: [defaultGenerationConfig.model.vae],
+      diffusionModels: [testGenerationConfig.model.diffusionModel],
+      clips: [testGenerationConfig.model.clip],
+      vaes: [testGenerationConfig.model.vae],
       loras: ["style.safetensors"],
-      samplers: [defaultGenerationConfig.sampling.sampler],
-      schedulers: [defaultGenerationConfig.sampling.scheduler],
+      samplers: [testGenerationConfig.sampling.sampler],
+      schedulers: [testGenerationConfig.sampling.scheduler],
       imagePresets: [
         {
-          label: defaultGenerationConfig.image.preset,
-          width: defaultGenerationConfig.image.width,
-          height: defaultGenerationConfig.image.height,
+          label: testGenerationConfig.image.preset,
+          width: testGenerationConfig.image.width,
+          height: testGenerationConfig.image.height,
         },
       ],
     };
@@ -701,6 +709,29 @@ describe("Anima Studio API", () => {
     expect(api.tracker.running).toBe(false);
   });
 
+  test("does not report unselected model types as missing defaults", async () => {
+    const { runtime: api, comfy } = await runtime();
+    comfy.getOptions = async () => ({
+      diffusionModels: [],
+      clips: [],
+      vaes: [],
+      loras: [],
+      samplers: ["er_sde"],
+      schedulers: ["sgm_uniform"],
+      imagePresets: [],
+    });
+    api.capabilities.invalidate();
+
+    const response = await api.app.request("/api/capabilities");
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      compatible: true,
+      missing: [],
+      optional: [],
+    });
+  });
+
   test("reports external runtime state without taking process-control ownership", async () => {
     const { runtime: api } = await runtime();
 
@@ -1041,7 +1072,7 @@ describe("Anima Studio API", () => {
     const { runtime: api, comfy } = await runtime();
     const assetId = await uploadReference(api);
     const config: GenerationConfig = {
-      ...structuredClone(defaultGenerationConfig),
+      ...structuredClone(testGenerationConfig),
       referenceAssetIds: [assetId],
       seed: { mode: "fixed", value: 1234 },
     };
@@ -1073,7 +1104,7 @@ describe("Anima Studio API", () => {
     const { runtime: api } = await runtime();
     const assetId = await uploadReference(api);
     const config: GenerationConfig = {
-      ...structuredClone(defaultGenerationConfig),
+      ...structuredClone(testGenerationConfig),
       referenceAssetIds: [assetId],
     };
     const created = await api.app.request("/api/jobs", {
@@ -1166,7 +1197,7 @@ describe("Anima Studio API", () => {
     const { runtime: api, comfy } = await runtime();
     const assetId = await uploadReference(api);
     const config: GenerationConfig = {
-      ...structuredClone(defaultGenerationConfig),
+      ...structuredClone(testGenerationConfig),
       referenceAssetIds: [assetId],
       seed: { mode: "fixed", value: 55 },
     };
@@ -1208,7 +1239,7 @@ describe("Anima Studio API", () => {
     const { runtime: api, comfy } = await runtime();
     const assetId = await uploadReference(api);
     const config: GenerationConfig = {
-      ...structuredClone(defaultGenerationConfig),
+      ...structuredClone(testGenerationConfig),
       referenceAssetIds: [assetId],
       seed: { mode: "fixed", value: 99 },
     };
@@ -1275,11 +1306,11 @@ describe("Anima Studio API", () => {
     const { runtime: api, comfy } = await runtime();
     const assetId = await uploadReference(api);
     const config: GenerationConfig = {
-      ...structuredClone(defaultGenerationConfig),
+      ...structuredClone(testGenerationConfig),
       referenceAssetIds: [assetId],
       seed: { mode: "fixed", value: 55 },
       upscale: {
-        ...defaultGenerationConfig.upscale,
+        ...testGenerationConfig.upscale,
         enabled: false,
       },
     };
@@ -1389,7 +1420,7 @@ describe("Anima Studio API", () => {
       id: jobId,
       clientId: "profile-test",
       config: {
-        ...structuredClone(defaultGenerationConfig),
+        ...structuredClone(testGenerationConfig),
         referenceAssetIds: [assetId],
       },
       actualSeed: 42,
@@ -1433,7 +1464,7 @@ describe("Anima Studio API", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         name: "Anima defaults",
-        model: defaultGenerationConfig.model,
+        model: testGenerationConfig.model,
         loras: [
           {
             name: "style.safetensors",
@@ -1541,7 +1572,7 @@ describe("Anima Studio API", () => {
       body: JSON.stringify({
         name: "Missing model fixture",
         model: {
-          ...defaultGenerationConfig.model,
+          ...testGenerationConfig.model,
           diffusionModel: "not-installed.safetensors",
         },
         loras: [],
@@ -1806,7 +1837,7 @@ describe("Anima Studio API", () => {
 
   test("storage inventory protects models used by active jobs and stops counting deleted files", async () => {
     const { runtime: api } = await runtime();
-    const filename = defaultGenerationConfig.model.diffusionModel;
+    const filename = testGenerationConfig.model.diffusionModel;
     const modelDirectory = join(
       api.config.runtimeDir,
       "shared",
@@ -1845,7 +1876,7 @@ describe("Anima Studio API", () => {
     const activeJob = api.repository.createJob({
       id: crypto.randomUUID(),
       clientId: "storage-model-test",
-      config: structuredClone(defaultGenerationConfig),
+      config: structuredClone(testGenerationConfig),
       actualSeed: 42,
       assetIds: [],
       createdAt: new Date().toISOString(),
@@ -1888,7 +1919,7 @@ describe("Anima Studio API", () => {
     const { runtime: api, comfy } = await runtime();
     const assetId = await uploadReference(api);
     const baseConfig: GenerationConfig = {
-      ...structuredClone(defaultGenerationConfig),
+      ...structuredClone(testGenerationConfig),
       referenceAssetIds: [assetId],
       seed: { mode: "fixed", value: 101 },
     };

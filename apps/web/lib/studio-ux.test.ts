@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildPreflightIssues,
+  clearModelAndLoraSelections,
   estimateWorkload,
   isCharacterProfileDirty,
   isModelPackDirty,
@@ -78,6 +79,33 @@ describe("studio UX readiness", () => {
     });
 
     expect(issues).toEqual([]);
+  });
+});
+
+describe("draft model defaults", () => {
+  test("clears model and LoRA selections without discarding the rest of the draft", () => {
+    const draft = structuredClone(readyDraft);
+    draft.loras = [
+      {
+        id: "lora-1",
+        name: "LoRA",
+        path: "lora.safetensors",
+        enabled: true,
+        modelStrength: 1,
+        clipStrength: 1,
+        triggerWords: [],
+      },
+    ];
+    draft.prompts.positive = "1girl";
+    draft.sampling.steps = 42;
+
+    const cleared = clearModelAndLoraSelections(draft);
+
+    expect(cleared.models).toEqual({ diffusion: "", clip: "", vae: "" });
+    expect(cleared.loras).toEqual([]);
+    expect(cleared.prompts.positive).toBe("1girl");
+    expect(cleared.referenceAssets).toEqual(draft.referenceAssets);
+    expect(cleared.sampling.steps).toBe(42);
   });
 });
 

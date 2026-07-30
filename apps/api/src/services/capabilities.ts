@@ -1,5 +1,4 @@
 import {
-  defaultGenerationConfig,
   type CapabilityReport,
   type ComfyOptions,
 } from "@anima/shared";
@@ -29,34 +28,8 @@ export class CapabilityService {
     try {
       const objectInfo = await this.comfy.getObjectInfo();
       const report = this.workflow.capabilities(objectInfo, this.comfy.baseUrl);
-      const options = await this.options();
-      const optional = [...report.optional];
-
-      const defaults = defaultGenerationConfig.model;
-      if (!options.diffusionModels.includes(defaults.diffusionModel)) {
-        optional.push({
-          kind: "model",
-          id: defaults.diffusionModel,
-          label: `Default diffusion model is not installed: ${defaults.diffusionModel}`,
-        });
-      }
-      if (!options.clips.includes(defaults.clip)) {
-        optional.push({
-          kind: "model",
-          id: defaults.clip,
-          label: `Default CLIP model is not installed: ${defaults.clip}`,
-        });
-      }
-      if (!options.vaes.includes(defaults.vae)) {
-        optional.push({
-          kind: "model",
-          id: defaults.vae,
-          label: `Default VAE is not installed: ${defaults.vae}`,
-        });
-      }
-      const value = { ...report, optional };
-      this.cachedReport = { value, expiresAt: Date.now() + 10_000 };
-      return value;
+      this.cachedReport = { value: report, expiresAt: Date.now() + 10_000 };
+      return report;
     } catch (error) {
       return {
         compatible: false,

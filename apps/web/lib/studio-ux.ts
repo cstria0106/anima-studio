@@ -88,6 +88,20 @@ function installed(
   return options.some((option) => normalizedModel(option.value) === normalized);
 }
 
+export function clearModelAndLoraSelections(
+  draft: GenerationDraft,
+): GenerationDraft {
+  return {
+    ...draft,
+    models: {
+      diffusion: "",
+      clip: "",
+      vae: "",
+    },
+    loras: [],
+  };
+}
+
 export function buildPreflightIssues({
   draft,
   options,

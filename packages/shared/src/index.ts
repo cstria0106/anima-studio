@@ -151,15 +151,6 @@ export type JobPhase = (typeof jobPhases)[number];
 export type JobKind = (typeof jobKinds)[number];
 export type UpscaleJobRequest = z.infer<typeof upscaleJobRequestSchema>;
 
-export const defaultGenerationConfig: GenerationConfig = generationConfigSchema.parse({
-  referenceAssetIds: ["placeholder"],
-  model: {
-    diffusionModel: "anima_baseV10.safetensors",
-    clip: "qwen_3_06b_base.safetensors",
-    vae: "qwen_image_vae.safetensors",
-  },
-});
-
 export interface AssetDto {
   id: string;
   name: string;
