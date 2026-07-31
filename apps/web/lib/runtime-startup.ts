@@ -1,4 +1,14 @@
-import type { ComfyRuntime, RuntimeAction } from "@/lib/types";
+import type {
+  ComfyRuntime,
+  LongOperation,
+  RuntimeAction,
+} from "@/lib/types";
+
+export interface RuntimeStartupActivity {
+  id: string;
+  timestamp: string;
+  message: string;
+}
 
 export type RuntimeRecoveryAction = Extract<
   RuntimeAction,
@@ -18,6 +28,38 @@ const transitionalStates = new Set([
   "updating",
   "repairing",
 ]);
+
+const phaseLabels: Record<string, string> = {
+  preflight: "설치 환경 확인 중",
+  download: "필요한 파일 다운로드 중",
+  extract: "다운로드한 파일 설치 중",
+  provision: "Python 실행 환경 구성 중",
+  quarantine: "기존 엔진 백업 중",
+  complete: "엔진 설치 완료",
+  completed: "엔진 설치 완료",
+};
+
+export function runtimeStartupPhaseLabel(
+  operation: LongOperation | null,
+): string | null {
+  if (!operation) return null;
+  return phaseLabels[operation.phase] ?? operation.message ?? null;
+}
+
+export function mergeRuntimeStartupActivity(
+  current: readonly RuntimeStartupActivity[],
+  incoming: readonly RuntimeStartupActivity[],
+  limit = 12,
+): RuntimeStartupActivity[] {
+  const merged = [...current];
+  const known = new Set(current.map((entry) => entry.id));
+  for (const entry of incoming) {
+    if (!entry.message.trim() || known.has(entry.id)) continue;
+    known.add(entry.id);
+    merged.push(entry);
+  }
+  return merged.slice(-limit);
+}
 
 export function runtimeStartupDecision(
   runtime: ComfyRuntime,

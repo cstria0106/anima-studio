@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { ComfyRuntime } from "@/lib/types";
 import {
+  mergeRuntimeStartupActivity,
   runtimeRecoveryAction,
+  runtimeStartupPhaseLabel,
   runtimeStartupDecision,
 } from "@/lib/runtime-startup";
 
@@ -83,5 +85,36 @@ describe("runtime startup gate", () => {
       "repair",
     );
     expect(runtimeRecoveryAction(runtime)).toBe("start");
+  });
+
+  test("shows a readable phase while retaining only recent unique activity", () => {
+    const operation = {
+      id: "operation-1",
+      kind: "runtime_update" as const,
+      status: "running" as const,
+      phase: "provision",
+      message: "uv sync --frozen",
+      progress: null,
+      error: null,
+      metadata: {},
+      createdAt: "2026-08-01T00:00:00Z",
+      updatedAt: "2026-08-01T00:00:01Z",
+      startedAt: "2026-08-01T00:00:00Z",
+      completedAt: null,
+    };
+    expect(runtimeStartupPhaseLabel(operation)).toBe(
+      "Python 실행 환경 구성 중",
+    );
+    expect(
+      mergeRuntimeStartupActivity(
+        [{ id: "1", timestamp: "1", message: "첫 번째" }],
+        [
+          { id: "1", timestamp: "1", message: "중복" },
+          { id: "2", timestamp: "2", message: "두 번째" },
+          { id: "3", timestamp: "3", message: "세 번째" },
+        ],
+        2,
+      ).map((entry) => entry.message),
+    ).toEqual(["두 번째", "세 번째"]);
   });
 });

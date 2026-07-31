@@ -7,11 +7,15 @@ import { Progress } from "@/components/ui/progress";
 import {
   getComfyRuntime,
   getOperation,
+  getRuntimeLogs,
   runComfyRuntimeAction,
 } from "@/lib/api";
 import {
+  mergeRuntimeStartupActivity,
   runtimeRecoveryAction,
+  runtimeStartupPhaseLabel,
   runtimeStartupDecision,
+  type RuntimeStartupActivity,
   type RuntimeRecoveryAction,
 } from "@/lib/runtime-startup";
 import type { LongOperation } from "@/lib/types";
@@ -63,6 +67,23 @@ export function RuntimeStartupGate({
     title: "ComfyUI 연결 중",
     operation: null,
   });
+  const [activity, setActivity] = React.useState<RuntimeStartupActivity[]>([]);
+  const activityLogRef = React.useRef<HTMLDivElement>(null);
+  const latestActivityId = activity.at(-1)?.id;
+
+  React.useEffect(() => {
+    const log = activityLogRef.current;
+    if (log) log.scrollTop = log.scrollHeight;
+  }, [latestActivityId]);
+
+  const rememberActivity = React.useCallback(
+    (entries: RuntimeStartupActivity[]) => {
+      setActivity((current) =>
+        mergeRuntimeStartupActivity(current, entries),
+      );
+    },
+    [],
+  );
 
   React.useEffect(() => {
     let cancelled = false;
@@ -103,11 +124,37 @@ export function RuntimeStartupGate({
             return;
           }
           if (operation?.kind === "runtime_update") updateRequested = true;
+          if (operation) {
+            const event = operation.latestEvent;
+            rememberActivity([
+              {
+                id: event
+                  ? `operation:${event.id}`
+                  : `operation:${operation.id}:${operation.updatedAt}`,
+                timestamp: event?.createdAt ?? operation.updatedAt,
+                message: event?.message ?? operation.message,
+              },
+            ]);
+          }
           setState({
             kind: "loading",
             title: "ComfyUI 엔진 업데이트 중",
             operation,
           });
+        }
+
+        if (runtime.state === "starting") {
+          const logs = await getRuntimeLogs({ limit: 24 }).catch(() => null);
+          if (cancelled) return;
+          if (logs) {
+            rememberActivity(
+              logs.entries.slice(-12).map((entry) => ({
+                id: `runtime:${entry.id}`,
+                timestamp: entry.timestamp,
+                message: entry.message,
+              })),
+            );
+          }
         }
 
         const decision = runtimeStartupDecision(runtime);
@@ -182,9 +229,10 @@ export function RuntimeStartupGate({
       cancelled = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [attempt]);
+  }, [attempt, rememberActivity]);
 
   const retry = () => {
+    setActivity([]);
     setState({
       kind: "loading",
       title: "다시 확인 중",
@@ -196,6 +244,7 @@ export function RuntimeStartupGate({
   const runRecovery = async () => {
     if (state.kind !== "failed" || !state.action) return;
     const action = state.action;
+    setActivity([]);
     setState({
       kind: "loading",
       title: actionTitles[action],
@@ -216,6 +265,10 @@ export function RuntimeStartupGate({
   };
 
   const progress = state.kind === "loading" ? state.operation?.progress : null;
+  const phase =
+    state.kind === "loading"
+      ? runtimeStartupPhaseLabel(state.operation)
+      : null;
 
   return (
     <main className="grid min-h-screen place-items-center bg-background px-4 py-10">
@@ -239,6 +292,42 @@ export function RuntimeStartupGate({
                   {Math.round(progress)}%
                 </p>
               )}
+              {phase ? (
+                <p className="text-xs font-medium text-muted-foreground">
+                  {phase}
+                </p>
+              ) : null}
+              <div className="pt-3 text-left">
+                <div className="mb-2 flex items-center justify-between text-[11px] text-muted-foreground">
+                  <span>진행 로그</span>
+                  <span>자동 업데이트</span>
+                </div>
+                <div
+                  ref={activityLogRef}
+                  role="log"
+                  aria-live="polite"
+                  aria-label="ComfyUI 준비 진행 로그"
+                  className="h-40 overflow-y-auto rounded-lg border border-border bg-black/25 p-3 font-mono text-[11px] leading-5 text-muted-foreground"
+                >
+                  {activity.length ? (
+                    activity.map((entry) => (
+                      <div key={entry.id} className="flex gap-2 break-all">
+                        <span className="shrink-0 text-muted-foreground/60">
+                          {entry.timestamp
+                            ? new Date(entry.timestamp).toLocaleTimeString(
+                                "ko-KR",
+                                { hour12: false },
+                              )
+                            : "--:--:--"}
+                        </span>
+                        <span>{entry.message}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <p>진행 상황을 확인하고 있습니다...</p>
+                  )}
+                </div>
+              </div>
             </div>
           ) : (
             <div className="space-y-4">
