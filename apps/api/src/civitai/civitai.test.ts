@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
+  mkdir,
   mkdtemp,
   readFile,
   readdir,
   rm,
+  symlink,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -396,5 +398,32 @@ describe("managed destinations", () => {
         resolve(root, "../outside/model.safetensors"),
       ),
     ).toThrow(CivitaiError);
+  });
+
+  test("keeps the managed path namespace after real-path verification", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "anima-destination-"));
+    const physicalRoot = join(directory, "physical");
+    const managedRoot = join(directory, "managed");
+    try {
+      await mkdir(physicalRoot);
+      await symlink(physicalRoot, managedRoot, "junction");
+      const destinations = new DestinationRegistry([
+        {
+          id: "loras",
+          label: "LoRA",
+          kind: "loras",
+          absolutePath: managedRoot,
+        },
+      ]);
+      const destination = destinations.resolve("loras", "lora");
+      const modelPath = join(managedRoot, "model.safetensors");
+      await Bun.write(modelPath, "model bytes");
+
+      expect(
+        await destinations.verifyFinalFile(destination, modelPath),
+      ).toBe(resolve(modelPath));
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });

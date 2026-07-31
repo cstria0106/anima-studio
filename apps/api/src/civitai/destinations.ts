@@ -225,7 +225,7 @@ export class DestinationRegistry {
       "The downloaded model file resolves outside its managed destination.",
       502,
     );
-    return candidateRealPath;
+    return candidate;
   }
 }
 
