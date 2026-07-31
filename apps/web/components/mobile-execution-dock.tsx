@@ -192,7 +192,7 @@ export function MobileExecutionDock({
                   className="flex min-h-11 min-w-0 flex-1 items-center gap-3 rounded-lg px-2.5 text-left outline-none transition-colors duration-[120ms] hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-ring"
                   aria-label={`${stageLabel}. 진행 미리보기 열기`}
                 >
-                  <span className="relative grid size-9 shrink-0 place-items-center rounded-lg border border-border bg-surface-2">
+                  <span className="relative grid size-9 shrink-0 place-items-center">
                     <span
                       className={cn(
                         "absolute right-1 top-1 size-2 rounded-full",

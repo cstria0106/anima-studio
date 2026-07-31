@@ -164,10 +164,10 @@ function JobThumbnail({
           <div className="flex -translate-y-2 flex-col items-center gap-2.5">
             <span
               className={cn(
-                "grid size-10 place-items-center rounded-full border bg-background/55 shadow-inner backdrop-blur-sm",
+                "grid size-10 place-items-center",
                 job.status === "failed"
-                  ? "border-red-300/20 text-red-300"
-                  : "border-white/10",
+                  ? "text-red-300"
+                  : "text-muted-foreground",
               )}
             >
               {["running", "queued", "uploading"].includes(job.status) ? (

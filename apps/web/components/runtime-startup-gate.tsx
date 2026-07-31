@@ -277,9 +277,7 @@ export function RuntimeStartupGate({
           {state.kind === "loading" ? (
             <LoaderCircle className="size-6 animate-spin text-primary" />
           ) : (
-            <div className="grid size-14 place-items-center rounded-2xl border border-border bg-surface-2">
-              <AlertTriangle className="size-6 text-danger" />
-            </div>
+            <AlertTriangle className="size-7 text-danger" />
           )}
           <h1 className="mt-2 text-lg font-semibold">{state.title}</h1>
         </header>

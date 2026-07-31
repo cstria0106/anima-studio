@@ -134,9 +134,7 @@ export function AnimaCatalogPanel({
                       className="rounded-xl border border-border bg-card p-4"
                     >
                       <div className="flex items-start gap-3">
-                        <div className="grid size-9 shrink-0 place-items-center rounded-lg border border-border bg-muted/35">
-                          <Icon className="size-4" />
-                        </div>
+                        <Icon className="mt-0.5 size-5 shrink-0 text-pink-300" />
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="text-sm font-semibold">

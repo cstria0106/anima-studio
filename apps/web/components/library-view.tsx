@@ -780,9 +780,7 @@ export function LibraryView({
           <Card surface="inset">
             <CardHeader className="flex-row items-start justify-between gap-3">
               <div className="flex gap-3">
-                <div className="grid size-9 shrink-0 place-items-center rounded-lg border border-border bg-background/60">
-                  <KeyRound className="size-4 text-pink-300" />
-                </div>
+                <KeyRound className="mt-0.5 size-5 shrink-0 text-pink-300" />
                 <div className="space-y-1.5">
                   <CardTitle>Civitai 연결 설정</CardTitle>
                   <p className="text-xs leading-5 text-muted-foreground">

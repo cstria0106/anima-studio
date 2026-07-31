@@ -77,8 +77,8 @@ export function ImageSizeDialog({
           type="button"
           className="group flex w-full items-center gap-3 rounded-lg border border-border/70 bg-background/35 p-3 text-left transition hover:border-primary/35 hover:bg-primary/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <span className="grid size-11 shrink-0 place-items-center rounded-lg border border-violet-300/20 bg-violet-300/10 text-violet-200">
-            <Expand className="size-4" />
+          <span className="grid size-8 shrink-0 place-items-center text-violet-200">
+            <Expand className="size-5" />
           </span>
           <span className="min-w-0 flex-1">
             <span className="block text-xs text-muted-foreground">이미지 크기</span>

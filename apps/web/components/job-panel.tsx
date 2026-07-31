@@ -225,7 +225,7 @@ export function JobPanel({
                 <>
                   <div className="relative mb-5">
                     <div className="absolute inset-0 animate-ping rounded-full bg-primary/20" />
-                    <span className="relative grid size-14 place-items-center rounded-xl border border-primary/25 bg-primary/10 text-primary">
+                    <span className="relative grid size-14 place-items-center text-primary">
                       <Sparkles className="size-6 animate-pulse" />
                     </span>
                   </div>
@@ -235,7 +235,7 @@ export function JobPanel({
                 </>
               ) : (
                 <>
-                  <span className="mb-4 grid size-14 place-items-center rounded-xl border border-border bg-surface-2 text-muted-foreground">
+                  <span className="mb-4 grid size-14 place-items-center text-muted-foreground">
                     <ImageIcon className="size-6" />
                   </span>
                   <p className="text-sm font-medium text-foreground/85">

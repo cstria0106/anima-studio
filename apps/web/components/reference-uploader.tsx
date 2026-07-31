@@ -164,11 +164,11 @@ export function ReferenceUploader({
             "border-primary/60 bg-primary/[0.06]",
         )}
       >
-        <span className="mb-3 grid size-11 place-items-center rounded-xl border border-primary/15 bg-primary/10 text-pink-300 transition group-hover:scale-105 group-hover:bg-primary/15">
+        <span className="mb-3 text-pink-300 transition-transform group-hover:scale-105">
           {draggingOver ? (
-            <UploadCloud className="size-5" />
+            <UploadCloud className="size-6" />
           ) : (
-            <ImagePlus className="size-5" />
+            <ImagePlus className="size-6" />
           )}
         </span>
         <span className="text-sm font-medium">
