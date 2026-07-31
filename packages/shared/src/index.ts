@@ -1,5 +1,17 @@
 import { z } from "zod";
 
+export const CURATED_IMAGE_PRESETS = [
+  { label: "세로 · 1:2", width: 704, height: 1408 },
+  { label: "세로 · 4:7", width: 768, height: 1344 },
+  { label: "세로 · 2:3", width: 832, height: 1248 },
+  { label: "세로 · 7:9", width: 896, height: 1152 },
+  { label: "정사각형 · 1:1", width: 1024, height: 1024 },
+  { label: "가로 · 9:7", width: 1152, height: 896 },
+  { label: "가로 · 3:2", width: 1248, height: 832 },
+  { label: "가로 · 7:4", width: 1344, height: 768 },
+  { label: "가로 · 2:1", width: 1408, height: 704 },
+] as const;
+
 export const jobStatuses = [
   "draft",
   "uploading",
@@ -153,6 +165,7 @@ export type UpscaleJobRequest = z.infer<typeof upscaleJobRequestSchema>;
 
 export interface AssetDto {
   id: string;
+  sha256: string;
   name: string;
   mimeType: string;
   width: number | null;
@@ -214,288 +227,10 @@ export interface JobDto {
   preview?: JobPreviewDto;
 }
 
-export const instantLoraCacheMetadataSchema = z
-  .object({
-    state: z.enum(["empty", "ready", "stale"]).default("empty"),
-    cacheKey: z.string().trim().min(1).max(256).nullable().default(null),
-    referenceFingerprint: z
-      .string()
-      .trim()
-      .min(1)
-      .max(256)
-      .nullable()
-      .default(null),
-    loraName: z.string().trim().min(1).max(240).nullable().default(null),
-    trainedAt: z.string().datetime({ offset: true }).nullable().default(null),
-    autoTags: z.array(z.string().trim().min(1).max(120)).max(512).default([]),
-  })
-  .strict();
-
-const characterProfileFields = {
-  name: z.string().trim().min(1).max(120),
-  description: z.string().trim().max(2_000).default(""),
-  referenceAssetIds: z.array(z.string().min(1)).max(32).default([]),
-  prompts: generationConfigSchema.shape.prompts.default({}),
-  instantLora: generationConfigSchema.shape.instantLora.default({}),
-  excludedTags: z
-    .array(z.string().trim().min(1).max(120))
-    .max(512)
-    .default([]),
-  cache: instantLoraCacheMetadataSchema.default({}),
-} satisfies z.ZodRawShape;
-
-function addUniqueProfileValuesValidation(
-  value: {
-    referenceAssetIds?: string[] | undefined;
-    excludedTags?: string[] | undefined;
-  },
-  context: z.RefinementCtx,
-): void {
-  if (
-    value.referenceAssetIds &&
-    new Set(value.referenceAssetIds).size !== value.referenceAssetIds.length
-  ) {
-    context.addIssue({
-      code: "custom",
-      path: ["referenceAssetIds"],
-      message: "Reference images may only be selected once.",
-    });
-  }
-  if (
-    value.excludedTags &&
-    new Set(value.excludedTags.map((tag) => tag.toLowerCase())).size !==
-      value.excludedTags.length
-  ) {
-    context.addIssue({
-      code: "custom",
-      path: ["excludedTags"],
-      message: "Excluded tags may only be listed once.",
-    });
-  }
-}
-
-export const characterProfileCreateSchema = z
-  .object(characterProfileFields)
-  .strict()
-  .superRefine(addUniqueProfileValuesValidation);
-
-export const characterProfileUpdateSchema = z
-  .object(characterProfileFields)
-  .partial()
-  .strict()
-  .superRefine((value, context) => {
-    if (Object.keys(value).length === 0) {
-      context.addIssue({
-        code: "custom",
-        message: "At least one character profile field is required.",
-      });
-    }
-    addUniqueProfileValuesValidation(value, context);
-  });
-
-export const characterRepresentativeSchema = z
-  .object({
-    outputId: z.string().min(1).nullable(),
-  })
-  .strict();
-
-export type InstantLoraCacheMetadata = z.infer<
-  typeof instantLoraCacheMetadataSchema
->;
-export type CharacterProfileCreate = z.infer<
-  typeof characterProfileCreateSchema
->;
-export type CharacterProfileUpdate = z.infer<
-  typeof characterProfileUpdateSchema
->;
-
-export interface CharacterProfileDto
-  extends Omit<CharacterProfileCreate, "referenceAssetIds"> {
-  id: string;
-  referenceAssetIds: string[];
-  referenceAssets: AssetDto[];
-  representativeOutputId: string | null;
-  representativeOutput: OutputDto | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-const modelPackFields = {
-  name: z.string().trim().min(1).max(120),
-  description: z.string().trim().max(2_000).default(""),
-  model: generationConfigSchema.shape.model,
-  loras: z.array(loraSelectionSchema).max(128).default([]),
-} satisfies z.ZodRawShape;
-
-export const modelPackCreateSchema = z
-  .object(modelPackFields)
-  .strict();
-
-export const modelPackUpdateSchema = z
-  .object(modelPackFields)
-  .partial()
-  .strict()
-  .refine((value) => Object.keys(value).length > 0, {
-    message: "At least one model pack field is required.",
-  });
-
-export type ModelPackCreate = z.infer<typeof modelPackCreateSchema>;
-export type ModelPackUpdate = z.infer<typeof modelPackUpdateSchema>;
-
-export interface ModelPackDto extends ModelPackCreate {
-  id: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export const PORTABLE_BUNDLE_FORMAT = "anima-studio-portable" as const;
-export const PORTABLE_BUNDLE_VERSION = 1 as const;
-export const PORTABLE_MAX_ASSETS = 128;
-export const PORTABLE_MAX_PROFILES = 100;
-export const PORTABLE_MAX_MODEL_PACKS = 100;
-export const PORTABLE_MAX_ASSET_BYTES = 25 * 1024 * 1024;
-export const PORTABLE_MAX_TOTAL_ASSET_BYTES = 64 * 1024 * 1024;
-export const PORTABLE_MAX_JSON_BYTES = 96 * 1024 * 1024;
-
-const sha256Schema = z
-  .string()
-  .regex(/^[a-f0-9]{64}$/i, "Expected a hexadecimal SHA-256 digest.")
-  .transform((value) => value.toLowerCase());
-
-export const portableAssetSchema = z
-  .object({
-    sha256: sha256Schema,
-    name: z.string().trim().min(1).max(180),
-    mimeType: z.enum(["image/png", "image/jpeg", "image/webp"]),
-    byteSize: z.number().int().positive().max(PORTABLE_MAX_ASSET_BYTES),
-    width: z.number().int().positive().nullable(),
-    height: z.number().int().positive().nullable(),
-    dataBase64: z
-      .string()
-      .min(1)
-      .max(Math.ceil((PORTABLE_MAX_ASSET_BYTES * 4) / 3) + 8),
-  })
-  .strict();
-
-export const portableCharacterProfileSchema = z
-  .object({
-    sourceId: z.string().min(1).max(120).optional(),
-    name: characterProfileFields.name,
-    description: characterProfileFields.description,
-    referenceAssetSha256: z.array(sha256Schema).max(32),
-    prompts: characterProfileFields.prompts,
-    instantLora: characterProfileFields.instantLora,
-    excludedTags: characterProfileFields.excludedTags,
-    cache: instantLoraCacheMetadataSchema,
-  })
-  .strict()
-  .refine(
-    (value) =>
-      new Set(value.referenceAssetSha256).size ===
-      value.referenceAssetSha256.length,
-    {
-      path: ["referenceAssetSha256"],
-      message: "Each portable reference image may only be selected once.",
-    },
-  );
-
-export const portableModelPackSchema = z
-  .object({
-    sourceId: z.string().min(1).max(120).optional(),
-    ...modelPackFields,
-  })
-  .strict();
-
-export const portableBundleSchema = z
-  .object({
-    format: z.literal(PORTABLE_BUNDLE_FORMAT),
-    version: z.literal(PORTABLE_BUNDLE_VERSION),
-    exportedAt: z.string().datetime({ offset: true }),
-    assets: z.array(portableAssetSchema).max(PORTABLE_MAX_ASSETS),
-    characterProfiles: z
-      .array(portableCharacterProfileSchema)
-      .max(PORTABLE_MAX_PROFILES),
-    modelPacks: z
-      .array(portableModelPackSchema)
-      .max(PORTABLE_MAX_MODEL_PACKS),
-  })
-  .strict();
-
-export const portableExportRequestSchema = z
-  .object({
-    characterProfileIds: z.array(z.string().min(1)).max(PORTABLE_MAX_PROFILES),
-    modelPackIds: z.array(z.string().min(1)).max(PORTABLE_MAX_MODEL_PACKS),
-  })
-  .strict()
-  .superRefine((value, context) => {
-    if (
-      value.characterProfileIds.length === 0 &&
-      value.modelPackIds.length === 0
-    ) {
-      context.addIssue({
-        code: "custom",
-        message: "Select at least one character profile or model pack.",
-      });
-    }
-    for (const [key, values] of [
-      ["characterProfileIds", value.characterProfileIds],
-      ["modelPackIds", value.modelPackIds],
-    ] as const) {
-      if (new Set(values).size !== values.length) {
-        context.addIssue({
-          code: "custom",
-          path: [key],
-          message: "Each export item may only be selected once.",
-        });
-      }
-    }
-  });
-
-export const portableImportRequestSchema = z
-  .object({
-    bundle: portableBundleSchema,
-  })
-  .strict();
-
-export type PortableAsset = z.infer<typeof portableAssetSchema>;
-export type PortableBundle = z.infer<typeof portableBundleSchema>;
-export type PortableExportRequest = z.infer<
-  typeof portableExportRequestSchema
->;
-export type PortableImportRequest = z.infer<
-  typeof portableImportRequestSchema
->;
-
-export interface PortableImportIssue {
-  kind: "node" | "model" | "asset" | "bundle" | "endpoint";
-  id: string;
-  label: string;
-  package?: string;
-  installUrl?: string;
-}
-
-export interface PortableImportPreviewDto {
-  valid: boolean;
-  assetCount: number;
-  newAssetCount: number;
-  deduplicatedAssetCount: number;
-  totalAssetBytes: number;
-  characterProfileCount: number;
-  modelPackCount: number;
-  missing: PortableImportIssue[];
-}
-
-export interface PortableImportResultDto {
-  preview: PortableImportPreviewDto;
-  characterProfiles: CharacterProfileDto[];
-  modelPacks: ModelPackDto[];
-}
-
 export const onboardingStepIds = [
   "welcome",
   "runtime",
   "models",
-  "character",
   "test_generation",
 ] as const;
 
@@ -548,7 +283,7 @@ export const storageItemKinds = [
 export type StorageItemKind = (typeof storageItemKinds)[number];
 
 export interface StorageDependencyDto {
-  kind: "job" | "character_profile" | "model_pack";
+  kind: "job";
   id: string;
   label: string;
 }
@@ -617,108 +352,6 @@ export interface StorageCleanupResultDto {
     reason: string | null;
     dependencies: StorageDependencyDto[];
   }>;
-}
-
-export const MAX_VARIATION_JOBS = 16;
-
-const promptVariationValueSchema = z.union([
-  z.string().max(20_000),
-  z
-    .object({
-      label: z.string().trim().min(1).max(120).optional(),
-      positive: z.string().max(20_000).optional(),
-      natural: z.string().max(20_000).optional(),
-      negative: z.string().max(20_000).optional(),
-    })
-    .strict()
-    .refine(
-      (value) =>
-        value.positive !== undefined ||
-        value.natural !== undefined ||
-        value.negative !== undefined,
-      { message: "A prompt variation must change at least one prompt." },
-    ),
-]);
-
-const seedVariationValueSchema = z.union([
-  z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
-  z
-    .object({
-      label: z.string().trim().min(1).max(120).optional(),
-      value: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
-    })
-    .strict(),
-]);
-
-export const variationAxisSchema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("prompt"),
-      values: z.array(promptVariationValueSchema).min(1).max(MAX_VARIATION_JOBS),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("seed"),
-      values: z.array(seedVariationValueSchema).min(1).max(MAX_VARIATION_JOBS),
-    })
-    .strict(),
-]);
-
-export const variationBatchRequestSchema = z
-  .object({
-    baseConfig: generationConfigSchema,
-    axes: z.array(variationAxisSchema).max(4).default([]),
-    combinations: z
-      .array(
-        z
-          .object({
-            label: z.string().trim().min(1).max(120),
-            config: generationConfigSchema,
-          })
-          .strict(),
-      )
-      .max(MAX_VARIATION_JOBS)
-      .default([]),
-  })
-  .strict()
-  .superRefine((value, context) => {
-    if (value.axes.length === 0 && value.combinations.length === 0) {
-      context.addIssue({
-        code: "custom",
-        message: "At least one variation axis or combination is required.",
-      });
-    }
-    const product = value.axes.reduce(
-      (total, axis) => total * axis.values.length,
-      1,
-    );
-    if (value.combinations.length === 0 && product > MAX_VARIATION_JOBS) {
-      context.addIssue({
-        code: "custom",
-        path: ["axes"],
-        message: `Variation axes may produce at most ${MAX_VARIATION_JOBS} jobs.`,
-      });
-    }
-    if (new Set(value.axes.map((axis) => axis.kind)).size !== value.axes.length) {
-      context.addIssue({
-        code: "custom",
-        path: ["axes"],
-        message: "Prompt and seed axes may each be included once.",
-      });
-    }
-  });
-
-export type VariationAxis = z.infer<typeof variationAxisSchema>;
-export type VariationBatchRequest = z.infer<
-  typeof variationBatchRequestSchema
->;
-
-export interface VariationBatchDto {
-  id: string;
-  axes: VariationAxis[];
-  createdAt: string;
-  jobs: Array<{ label: string; job: JobDto }>;
 }
 
 export interface CapabilityIssue {
@@ -895,6 +528,20 @@ export const modelDownloadStates = [
 
 export type ModelDownloadState = (typeof modelDownloadStates)[number];
 export type ModelDownloadProvider = "civitai" | "huggingface";
+export const modelInstallationStatuses = [
+  "not_installed",
+  "installing",
+  "installed",
+] as const;
+export type ModelInstallationStatus =
+  (typeof modelInstallationStatuses)[number];
+export const modelInstallTaskStatuses = [
+  "installing",
+  "installed",
+  "failed",
+] as const;
+export type ModelInstallTaskStatus =
+  (typeof modelInstallTaskStatuses)[number];
 export type ModelDestinationKind =
   | "loras"
   | "diffusion_models"
@@ -931,6 +578,9 @@ export interface CivitaiFileDto {
   sha256: string | null;
   primary: boolean;
   downloadUrl?: string;
+  installationId: string | null;
+  installationStatus: ModelInstallationStatus;
+  installationProgress: number | null;
 }
 
 export interface CivitaiVersionDto {
@@ -939,6 +589,7 @@ export interface CivitaiVersionDto {
   baseModel: string | null;
   createdAt: string | null;
   earlyAccessEndsAt: string | null;
+  thumbnailUrl: string | null;
   trainedWords: string[];
   files: CivitaiFileDto[];
 }
@@ -976,6 +627,9 @@ export interface HuggingFaceAnimaFileDto {
   sha256: string;
   recommended: boolean;
   experimental: boolean;
+  installationId: string | null;
+  installationStatus: ModelInstallationStatus;
+  installationProgress: number | null;
 }
 
 export interface HuggingFaceAnimaCatalogDto {
@@ -1042,8 +696,27 @@ export type HuggingFaceAnimaDownloadCreate = z.infer<
 >;
 
 export interface HuggingFaceAnimaInstallDto {
-  downloads: ModelDownloadDto[];
-  alreadyInstalled: string[];
+  installationId: string;
+  status: ModelInstallTaskStatus;
+  progress: number;
+  error?: string;
+}
+
+export interface ManagedModelInstallationDto {
+  id: string;
+  provider: ModelDownloadProvider;
+  providerModelId: string;
+  providerVersionId: string;
+  providerFileId: string | null;
+  modelName: string;
+  versionName: string;
+  filename: string;
+  destinationRootId: ModelDestinationKind;
+  relativeDir: string;
+  sha256: string;
+  storagePath: string;
+  installedAt: string;
+  updatedAt: string;
 }
 
 export interface ModelDownloadDto {

@@ -3,8 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Anima Studio",
-  description:
-    "Portable character generation workspace for ComfyUI Anima workflows",
+  description: "Local image generation workspace for ComfyUI Anima workflows",
 };
 
 export default function RootLayout({

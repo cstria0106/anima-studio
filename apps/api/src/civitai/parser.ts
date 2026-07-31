@@ -8,6 +8,7 @@ import type {
   CivitaiModelReference,
   CivitaiVersionInspection,
 } from "./types";
+import { CIVITAI_IMAGE_HOSTS } from "./types";
 
 type JsonObject = Record<string, unknown>;
 
@@ -26,6 +27,7 @@ const unsafeScanValues = new Set([
   "malicious",
 ]);
 const sha256Pattern = /^[a-f0-9]{64}$/i;
+const videoExtensions = /\.(?:m3u8|m4v|mov|mp4|webm)(?:$|[?#])/i;
 
 function object(value: unknown): JsonObject | null {
   return value !== null &&
@@ -126,6 +128,50 @@ function scanIsUnsafe(file: JsonObject): boolean {
   );
 }
 
+function safeImageUrl(value: unknown): string | null {
+  const image = object(value);
+  if (!image) return null;
+  const mediaType = cleanString(
+    image.type ?? image.mediaType ?? image.mimeType,
+    80,
+  )?.toLocaleLowerCase();
+  if (
+    mediaType &&
+    mediaType !== "image" &&
+    !mediaType.startsWith("image/")
+  ) {
+    return null;
+  }
+  const rawUrl = cleanString(image.url, 2_000);
+  if (!rawUrl || videoExtensions.test(rawUrl)) return null;
+  try {
+    const url = new URL(rawUrl);
+    if (
+      url.protocol !== "https:" ||
+      url.username ||
+      url.password ||
+      url.port ||
+      !(CIVITAI_IMAGE_HOSTS as readonly string[]).includes(
+        url.hostname.toLocaleLowerCase(),
+      )
+    ) {
+      return null;
+    }
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function firstSafeImageUrl(value: unknown): string | null {
+  if (!Array.isArray(value)) return null;
+  for (const image of value) {
+    const url = safeImageUrl(image);
+    if (url) return url;
+  }
+  return null;
+}
+
 function fileBlockReason(
   kind: CivitaiModelKind,
   file: JsonObject,
@@ -205,6 +251,7 @@ function parseVersion(
     earlyAccessEndsAt:
       cleanString(version.earlyAccessEndsAt, 80) ??
       cleanString(version.earlyAccessTimeFrame, 80),
+    thumbnailUrl: firstSafeImageUrl(version.images),
     triggerWords: stringList(
       version.trainedWords ?? version.triggerWords,
       100,

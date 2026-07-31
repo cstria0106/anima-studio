@@ -99,6 +99,9 @@ describe("Danbooru tag index", () => {
     expect(firstRepository.searchTags("scarlet")).toMatchObject([
       { tag: "red eyes", aliases: ["scarlet eyes"] },
     ]);
+    expect(firstRepository.searchTags("r")).toEqual([
+      expect.objectContaining({ tag: "red eyes" }),
+    ]);
     expect(firstRepository.relatedTags(["1girl"], "red")).toEqual([
       expect.objectContaining({
         tag: "red eyes",

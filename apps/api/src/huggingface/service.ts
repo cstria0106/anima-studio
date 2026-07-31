@@ -5,7 +5,6 @@ import type {
   HuggingFaceAnimaCatalogDto,
   HuggingFaceAnimaDownloadCreate,
   HuggingFaceAnimaFileDto,
-  HuggingFaceAnimaInstallDto,
   HuggingFaceAnimaProviderStatusDto,
   ModelDownloadDto,
   ModelDownloadState,
@@ -74,6 +73,11 @@ interface ActiveRun {
 interface Deferred {
   promise: Promise<void>;
   resolve(): void;
+}
+
+export interface HuggingFaceAnimaDownloadBatch {
+  downloads: ModelDownloadDto[];
+  alreadyInstalled: string[];
 }
 
 export interface HuggingFaceDownloadClock {
@@ -218,7 +222,7 @@ export class HuggingFaceAnimaLibraryService {
 
   async install(
     input: HuggingFaceAnimaDownloadCreate,
-  ): Promise<HuggingFaceAnimaInstallDto> {
+  ): Promise<HuggingFaceAnimaDownloadBatch> {
     assertHuggingFace(
       input.acceptedLicense === true,
       "LICENSE_REQUIRED",

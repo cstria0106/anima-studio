@@ -27,7 +27,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { cancelJob } from "@/lib/api";
-import type { PreflightIssue, WorkloadEstimate } from "@/lib/studio-ux";
+import type { PreflightIssue } from "@/lib/studio-ux";
 import type { HealthResponse, JobStatus, StudioJob } from "@/lib/types";
 import { cn, formatElapsed, outputUrl } from "@/lib/utils";
 
@@ -68,7 +68,6 @@ export interface MobileExecutionDockProps {
   onGenerate: () => void;
   onJobUpdate: (job: StudioJob) => void;
   preflightIssues?: PreflightIssue[];
-  workload?: WorkloadEstimate;
   onResolveIssue?: (issue: PreflightIssue) => void;
 }
 
@@ -81,7 +80,6 @@ export function MobileExecutionDock({
   onGenerate,
   onJobUpdate,
   preflightIssues = [],
-  workload,
   onResolveIssue,
 }: MobileExecutionDockProps) {
   const [sheetOpen, setSheetOpen] = React.useState(false);
@@ -182,11 +180,11 @@ export function MobileExecutionDock({
     <>
       <div
         aria-hidden
-        className="h-[calc(5.5rem+env(safe-area-inset-bottom))] xl:hidden"
+        className="h-[calc(5.5rem+env(safe-area-inset-bottom))] 2xl:hidden"
       />
 
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <div className="fixed inset-x-0 bottom-0 z-40 xl:hidden">
+        <div className="fixed inset-x-0 bottom-0 z-40 2xl:hidden">
           <div className="glass-surface border-t border-border/80 px-3 pt-2 shadow-dialog">
             <div className="mx-auto flex max-w-3xl items-center gap-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
               <SheetTrigger asChild>
@@ -217,7 +215,7 @@ export function MobileExecutionDock({
                     <span className="mt-0.5 block truncate text-xs text-muted-foreground">
                       {active && typeof job?.progress === "number"
                         ? `${Math.round(job.progress)}% · 탭하여 미리보기`
-                        : `예상 결과 ${workload?.totalOutputCount ?? 1}장 · 상세 보기`}
+                        : "상세 보기"}
                     </span>
                   </span>
                 </button>
@@ -261,7 +259,7 @@ export function MobileExecutionDock({
 
         <SheetContent
           side="bottom"
-          className="flex max-h-[88dvh] flex-col overflow-hidden rounded-t-xl p-0 xl:hidden"
+          className="flex max-h-[88dvh] flex-col overflow-hidden rounded-t-xl p-0 2xl:hidden"
         >
           <SheetHeader className="shrink-0 border-b border-border px-4 pb-3 pt-4 pr-14">
             <div className="flex items-center gap-2">
@@ -378,29 +376,6 @@ export function MobileExecutionDock({
             ) : null}
 
             <div className="space-y-4 p-4">
-              {workload ? (
-                <dl className="grid grid-cols-3 gap-2 rounded-lg border border-border bg-surface-2 p-3 text-xs">
-                  <div>
-                    <dt className="text-muted-foreground">결과</dt>
-                    <dd className="mt-1 font-medium">
-                      {workload.totalOutputCount}장
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground">VRAM</dt>
-                    <dd className="mt-1 font-medium">
-                      {workload.estimatedVramGiB.toFixed(1)} GB
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground">상한</dt>
-                    <dd className="mt-1 font-medium">
-                      {Math.max(1, Math.ceil(workload.upperSeconds / 60))}분
-                    </dd>
-                  </div>
-                </dl>
-              ) : null}
-
               {active && job ? (
                 <section className="space-y-2" aria-label="작업 진행률">
                   <Progress value={job.progress} />

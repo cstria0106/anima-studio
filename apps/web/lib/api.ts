@@ -1,31 +1,22 @@
 import {
   type CapabilitiesResponse,
-  type CharacterProfile,
-  type CharacterProfileInput,
   type CivitaiModelInspection,
   type CivitaiProviderStatus,
+  type CivitaiModelInstallRequest,
   type ComfyRuntime,
   DEFAULT_DRAFT,
   EMPTY_OPTIONS,
   type GenerationDraft,
   type HealthResponse,
   type HuggingFaceAnimaInstallRequest,
-  type HuggingFaceAnimaInstallResult,
   type HuggingFaceAnimaProviderResponse,
   type JobListResponse,
   type LongOperation,
   type LoraOption,
-  type ModelDownload,
-  type ModelDownloadCreate,
-  type ModelDownloadListResponse,
-  type ModelPack,
-  type ModelPackInput,
+  type ModelInstallTask,
   type ModelOption,
   type OnboardingStatus,
   type OnboardingUpdate,
-  type PortableBundle,
-  type PortableImportPreview,
-  type PortableImportResult,
   type JobPreview,
   type ReferenceAsset,
   type RuntimeAction,
@@ -39,8 +30,6 @@ import {
   type StorageCleanupTarget,
   type StorageInventory,
   type TagSuggestion,
-  type VariationMatrixRequest,
-  type VariationMatrixResponse,
 } from "@/lib/types";
 
 interface ApiGenerationConfig {
@@ -129,6 +118,7 @@ interface ApiJobDto {
   completedAt: string | null;
   assets: Array<{
     id: string;
+    sha256: string;
     name: string;
     url: string;
     width: number | null;
@@ -160,40 +150,6 @@ interface ApiJobDto {
     progress: number | null;
     message: string;
   };
-}
-
-interface ApiCharacterProfileDto {
-  id: string;
-  name: string;
-  description?: string;
-  referenceAssetIds: string[];
-  referenceAssets?: Array<{
-    id: string;
-    name?: string;
-    url?: string;
-    width?: number | null;
-    height?: number | null;
-  }>;
-  prompts: GenerationDraft["prompts"];
-  instantLora: ApiGenerationConfig["instantLora"];
-  excludedTags?: string[];
-  representativeOutputId?: string | null;
-  representativeOutput?: {
-    id: string;
-    url?: string;
-  } | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface ApiModelPackDto {
-  id: string;
-  name: string;
-  description?: string;
-  model: ApiGenerationConfig["model"];
-  loras: ApiGenerationConfig["loras"];
-  createdAt: string;
-  updatedAt: string;
 }
 
 function normalizePreview(
@@ -511,7 +467,14 @@ export async function uploadAsset(
     | ReferenceAsset
     | { asset: ReferenceAsset }
     | { assets: ReferenceAsset[] }
-    | { id: string; name?: string; url?: string; width?: number; height?: number }
+    | {
+        id: string;
+        sha256?: string;
+        name?: string;
+        url?: string;
+        width?: number;
+        height?: number;
+      }
   >("/api/assets", {
     method: "POST",
     body,
@@ -527,6 +490,7 @@ export async function uploadAsset(
   const id = String(asset.id);
   return {
     id,
+    ...(asset.sha256 ? { sha256: asset.sha256 } : {}),
     name: asset.name ?? file.name,
     url: asset.url ?? `/api/assets/${encodeURIComponent(id)}`,
     width: asset.width,
@@ -545,316 +509,6 @@ export async function createJob(draft: GenerationDraft): Promise<StudioJob> {
     body: JSON.stringify(payload),
   });
   return normalizeJob(raw);
-}
-
-/**
- * Creative preset REST adapters.
- *
- * These endpoints deliberately exchange complete, versionable snapshots. The
- * web app also keeps a local fallback cache (see creative-presets.tsx), so an
- * older API can still be used while it is being upgraded.
- */
-function characterProfilePayload(input: CharacterProfileInput) {
-  const config = draftToConfig(input.draft);
-  return {
-    name: input.name,
-    description: input.description ?? "",
-    referenceAssetIds: config.referenceAssetIds,
-    prompts: config.prompts,
-    instantLora: config.instantLora,
-    excludedTags: input.draft.tagging.excludeTags
-      .split(",")
-      .map((tag) => tag.trim())
-      .filter(Boolean),
-  };
-}
-
-function normalizeCharacterProfile(
-  value: ApiCharacterProfileDto,
-): CharacterProfile {
-  const config = draftToConfig(DEFAULT_DRAFT);
-  config.referenceAssetIds = value.referenceAssetIds;
-  config.prompts = {
-    ...config.prompts,
-    ...value.prompts,
-  };
-  config.instantLora = {
-    ...config.instantLora,
-    ...value.instantLora,
-    tagging: {
-      ...config.instantLora.tagging,
-      ...value.instantLora?.tagging,
-    },
-    training: {
-      ...config.instantLora.training,
-      ...value.instantLora?.training,
-    },
-  };
-  const draft = configToDraft(config);
-  draft.referenceAssets = (value.referenceAssets ?? []).map((asset) => ({
-    id: asset.id,
-    name: asset.name ?? asset.id,
-    url: asset.url ?? `/api/assets/${encodeURIComponent(asset.id)}`,
-    width: asset.width ?? undefined,
-    height: asset.height ?? undefined,
-    status: "ready",
-  }));
-  if (value.excludedTags?.length) {
-    draft.tagging.excludeTags = `${value.excludedTags.join(", ")}, `;
-  }
-  return {
-    id: value.id,
-    name: value.name,
-    ...(value.description ? { description: value.description } : {}),
-    draft,
-    ...(value.representativeOutputId
-      ? { representativeOutputId: value.representativeOutputId }
-      : {}),
-    ...(value.representativeOutput
-      ? {
-          representativeUrl:
-            value.representativeOutput.url ??
-            `/api/outputs/${encodeURIComponent(value.representativeOutput.id)}`,
-        }
-      : {}),
-    createdAt: value.createdAt,
-    updatedAt: value.updatedAt,
-  };
-}
-
-function modelPackPayload(input: ModelPackInput) {
-  return {
-    name: input.name,
-    description: input.description ?? "",
-    model: {
-      diffusionModel: input.models.diffusion,
-      clip: input.models.clip,
-      clipType: "stable_diffusion",
-      vae: input.models.vae,
-      weightDtype: "default",
-    },
-    loras: input.loras.map((lora) => ({
-      name: lora.path,
-      modelStrength: lora.modelStrength,
-      clipStrength: lora.clipStrength,
-      enabled: lora.enabled,
-    })),
-  };
-}
-
-function normalizeModelPack(value: ApiModelPackDto): ModelPack {
-  return {
-    id: value.id,
-    name: value.name,
-    ...(value.description ? { description: value.description } : {}),
-    models: {
-      diffusion: value.model.diffusionModel,
-      clip: value.model.clip,
-      vae: value.model.vae,
-    },
-    loras: value.loras.map((lora, index) => ({
-      id: `pack_lora_${index}_${lora.name}`,
-      name: lora.name,
-      path: lora.name,
-      enabled: lora.enabled !== false,
-      modelStrength: lora.modelStrength,
-      clipStrength: lora.clipStrength,
-      triggerWords: [],
-    })),
-    createdAt: value.createdAt,
-    updatedAt: value.updatedAt,
-  };
-}
-
-export async function getCharacterProfiles(
-  signal?: AbortSignal,
-): Promise<CharacterProfile[]> {
-  const raw = await apiFetch<
-    ApiCharacterProfileDto[] | { profiles: ApiCharacterProfileDto[] }
-  >("/api/character-profiles", { signal });
-  return (Array.isArray(raw) ? raw : raw.profiles).map(
-    normalizeCharacterProfile,
-  );
-}
-
-export async function createCharacterProfile(
-  input: CharacterProfileInput,
-): Promise<CharacterProfile> {
-  const raw = await apiFetch<
-    ApiCharacterProfileDto | { profile: ApiCharacterProfileDto }
-  >("/api/character-profiles", {
-    method: "POST",
-    body: JSON.stringify(characterProfilePayload(input)),
-  });
-  return normalizeCharacterProfile("profile" in raw ? raw.profile : raw);
-}
-
-export async function updateCharacterProfile(
-  id: string,
-  input: Partial<CharacterProfileInput>,
-): Promise<CharacterProfile> {
-  const raw = await apiFetch<
-    ApiCharacterProfileDto | { profile: ApiCharacterProfileDto }
-  >(`/api/character-profiles/${encodeURIComponent(id)}`, {
-    method: "PUT",
-    body: JSON.stringify(
-      input.draft
-        ? characterProfilePayload({
-            name: input.name ?? "",
-            ...(input.description !== undefined
-              ? { description: input.description }
-              : {}),
-            draft: input.draft,
-          })
-        : input,
-    ),
-  });
-  return normalizeCharacterProfile("profile" in raw ? raw.profile : raw);
-}
-
-export async function deleteCharacterProfile(id: string): Promise<void> {
-  await apiFetch<unknown>(
-    `/api/character-profiles/${encodeURIComponent(id)}`,
-    { method: "DELETE" },
-  );
-}
-
-export async function setCharacterProfileRepresentative(
-  id: string,
-  outputId: string,
-): Promise<CharacterProfile> {
-  const raw = await apiFetch<
-    ApiCharacterProfileDto | { profile: ApiCharacterProfileDto }
-  >(
-    `/api/character-profiles/${encodeURIComponent(id)}/representative`,
-    {
-      method: "POST",
-      body: JSON.stringify({ outputId }),
-    },
-  );
-  return normalizeCharacterProfile("profile" in raw ? raw.profile : raw);
-}
-
-export async function getModelPacks(
-  signal?: AbortSignal,
-): Promise<ModelPack[]> {
-  const raw = await apiFetch<
-    | ApiModelPackDto[]
-    | { packs: ApiModelPackDto[] }
-    | { modelPacks: ApiModelPackDto[] }
-  >("/api/model-packs", { signal });
-  return (
-    Array.isArray(raw)
-      ? raw
-      : "modelPacks" in raw
-        ? raw.modelPacks
-        : raw.packs
-  ).map(normalizeModelPack);
-}
-
-export async function createModelPack(
-  input: ModelPackInput,
-): Promise<ModelPack> {
-  const raw = await apiFetch<
-    | ApiModelPackDto
-    | { pack: ApiModelPackDto }
-    | { modelPack: ApiModelPackDto }
-  >(
-    "/api/model-packs",
-    {
-      method: "POST",
-      body: JSON.stringify(modelPackPayload(input)),
-    },
-  );
-  return normalizeModelPack(
-    "modelPack" in raw ? raw.modelPack : "pack" in raw ? raw.pack : raw,
-  );
-}
-
-export async function updateModelPack(
-  id: string,
-  input: Partial<ModelPackInput>,
-): Promise<ModelPack> {
-  const raw = await apiFetch<
-    | ApiModelPackDto
-    | { pack: ApiModelPackDto }
-    | { modelPack: ApiModelPackDto }
-  >(
-    `/api/model-packs/${encodeURIComponent(id)}`,
-    {
-      method: "PUT",
-      body: JSON.stringify(
-        input.models && input.loras
-          ? modelPackPayload({
-              name: input.name ?? "",
-              ...(input.description !== undefined
-                ? { description: input.description }
-                : {}),
-              models: input.models,
-              loras: input.loras,
-            })
-          : input,
-      ),
-    },
-  );
-  return normalizeModelPack(
-    "modelPack" in raw ? raw.modelPack : "pack" in raw ? raw.pack : raw,
-  );
-}
-
-export async function deleteModelPack(id: string): Promise<void> {
-  await apiFetch<unknown>(`/api/model-packs/${encodeURIComponent(id)}`, {
-    method: "DELETE",
-  });
-}
-
-export async function exportPortableSettings(
-  characterProfileIds: string[],
-  modelPackIds: string[],
-): Promise<PortableBundle> {
-  const raw = await apiFetch<{ bundle: PortableBundle }>(
-    "/api/portable/export",
-    {
-      method: "POST",
-      body: JSON.stringify({ characterProfileIds, modelPackIds }),
-    },
-  );
-  return raw.bundle;
-}
-
-export async function previewPortableSettings(
-  bundle: unknown,
-): Promise<PortableImportPreview> {
-  const raw = await apiFetch<{ preview: PortableImportPreview }>(
-    "/api/portable/preview",
-    {
-      method: "POST",
-      body: JSON.stringify({ bundle }),
-    },
-  );
-  return raw.preview;
-}
-
-export async function importPortableSettings(
-  bundle: unknown,
-): Promise<PortableImportResult> {
-  const raw = await apiFetch<{
-    result: {
-      preview: PortableImportPreview;
-      characterProfiles: ApiCharacterProfileDto[];
-      modelPacks: ApiModelPackDto[];
-    };
-  }>("/api/portable/import", {
-    method: "POST",
-    body: JSON.stringify({ bundle }),
-  });
-  return {
-    preview: raw.result.preview,
-    characterProfiles: raw.result.characterProfiles.map(
-      normalizeCharacterProfile,
-    ),
-    modelPacks: raw.result.modelPacks.map(normalizeModelPack),
-  };
 }
 
 export async function getStorage(
@@ -901,86 +555,6 @@ export async function updateOnboarding(
     },
   );
   return raw.onboarding;
-}
-
-/**
- * Submit a prompt × seed matrix as one logical request when supported.
- * APIs from before the matrix endpoint are supported by falling back to the
- * public single-job contract. Every fallback job still records its real seed.
- */
-export async function createVariationMatrix(
-  request: VariationMatrixRequest,
-): Promise<VariationMatrixResponse> {
-  const combinations = request.combinations.map((combination) => {
-    const draft: GenerationDraft = {
-      ...request.baseDraft,
-      prompts: {
-        ...request.baseDraft.prompts,
-        positive: combination.positive,
-      },
-      sampling: {
-        ...request.baseDraft.sampling,
-        seedMode: combination.seedMode,
-        seed: combination.seed,
-      },
-    };
-    return {
-      label: combination.label,
-      config: draftToConfig(draft),
-    };
-  });
-
-  try {
-    const raw = await apiFetch<
-      | Array<ApiJobDto | StudioJob>
-      | { jobs: Array<ApiJobDto | StudioJob> }
-      | {
-          batch:
-            | Array<ApiJobDto | StudioJob>
-            | { jobs: Array<{ label?: string; job: ApiJobDto | StudioJob }> };
-        }
-    >("/api/jobs/variations", {
-      method: "POST",
-      body: JSON.stringify({
-        baseConfig: draftToConfig(request.baseDraft),
-        combinations,
-      }),
-    });
-    const jobs = Array.isArray(raw)
-      ? raw
-      : "jobs" in raw
-        ? raw.jobs
-        : Array.isArray(raw.batch)
-          ? raw.batch
-          : raw.batch.jobs.map((entry) => entry.job);
-    return { jobs: jobs.map(normalizeJob) };
-  } catch (error) {
-    if (
-      !(error instanceof ApiError) ||
-      (error.status !== 404 && error.status !== 405)
-    ) {
-      throw error;
-    }
-  }
-
-  const jobs: StudioJob[] = [];
-  for (const combination of request.combinations) {
-    jobs.push(
-      await createJob({
-        ...request.baseDraft,
-        prompts: {
-          ...request.baseDraft.prompts,
-          positive: combination.positive,
-        },
-        sampling: {
-          ...request.baseDraft.sampling,
-          seedMode: combination.seedMode,
-          seed: combination.seed,
-        },
-      }),
-    );
-  }
-  return { jobs };
 }
 
 function draftToConfig(draft: GenerationDraft): ApiGenerationConfig {
@@ -1178,10 +752,12 @@ function normalizeJob(
     typeof value.actualSeed === "number" &&
     Number.isFinite(value.actualSeed)
   ) {
+    settings.sampling.seedMode = "fixed";
     settings.sampling.seed = value.actualSeed;
   }
   settings.referenceAssets = value.assets.map((asset) => ({
     id: asset.id,
+    sha256: asset.sha256,
     name: asset.name,
     url: asset.url,
     width: asset.width ?? undefined,
@@ -1528,7 +1104,7 @@ export async function inspectCivitaiModel(
 ): Promise<CivitaiModelInspection> {
   const raw = await apiFetch<
     CivitaiModelInspection | { model: CivitaiModelInspection }
-  >("/api/model-downloads/inspect", {
+  >("/api/model-installations/civitai/inspect", {
     method: "POST",
     body: JSON.stringify({ url }),
   });
@@ -1546,9 +1122,9 @@ export async function getHuggingFaceAnimaCatalog(
 
 export async function installHuggingFaceAnima(
   input: HuggingFaceAnimaInstallRequest,
-): Promise<HuggingFaceAnimaInstallResult> {
-  return apiFetch<HuggingFaceAnimaInstallResult>(
-    "/api/model-downloads/huggingface/anima",
+): Promise<ModelInstallTask> {
+  return apiFetch<ModelInstallTask>(
+    "/api/model-installations/anima",
     {
       method: "POST",
       body: JSON.stringify(input),
@@ -1556,47 +1132,25 @@ export async function installHuggingFaceAnima(
   );
 }
 
-export async function createModelDownload(
-  input: ModelDownloadCreate,
-): Promise<ModelDownload> {
-  const raw = await apiFetch<ModelDownload | { download: ModelDownload }>(
-    "/api/model-downloads",
+export async function createCivitaiModelInstallation(
+  input: CivitaiModelInstallRequest,
+): Promise<ModelInstallTask> {
+  return apiFetch<ModelInstallTask>(
+    "/api/model-installations/civitai",
     {
       method: "POST",
       body: JSON.stringify(input),
     },
   );
-  return unwrapRecord<ModelDownload>(raw, "download");
 }
 
-export async function getModelDownloads(
-  signal?: AbortSignal,
-): Promise<ModelDownloadListResponse> {
-  const raw = await apiFetch<
-    | ModelDownload[]
-    | {
-        downloads?: ModelDownload[];
-        items?: ModelDownload[];
-      }
-  >("/api/model-downloads", { signal });
-  return {
-    downloads: Array.isArray(raw)
-      ? raw
-      : (raw.downloads ?? raw.items ?? []),
-  };
-}
-
-export async function controlModelDownload(
-  id: string,
-  action: "pause" | "resume" | "cancel" | "retry",
-): Promise<ModelDownload> {
-  const raw = await apiFetch<ModelDownload | { download: ModelDownload }>(
-    `/api/model-downloads/${encodeURIComponent(id)}/${action}`,
-    { method: "POST" },
+export async function removeModelInstallation(id: string): Promise<void> {
+  await apiFetch<{ installationId: string }>(
+    `/api/model-installations/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
   );
-  return unwrapRecord<ModelDownload>(raw, "download");
 }
 
-export function modelDownloadEventsUrl(id: string) {
-  return `/api/model-downloads/${encodeURIComponent(id)}/events`;
+export function modelInstallationEventsUrl(id: string) {
+  return `/api/model-installations/${encodeURIComponent(id)}/events`;
 }

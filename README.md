@@ -15,35 +15,31 @@ does not depend on a saved ComfyUI workflow or history entry.
 - Offline Danbooru tag completion and optional LoRA Manager metadata
 - Official Hugging Face Anima catalog and verified managed-library downloads
 - Civitai model inspection and verified managed-library downloads
-- Reusable character profiles and model/LoRA configuration packs
 - Final-prompt inspection with source labels, duplicate detection, and conflicts
-- Up to 16 prompt/seed variations submitted as one tracked batch
-- Result actions, representative images, and side-by-side result comparison
-- First-run guidance, dependency remedies, VRAM/time estimates, and completion
-  notifications
-- Dependency-aware storage cleanup and portable JSON import/export
+- History-based settings restoration, zoomable results, and side-by-side comparison
+- First-run guidance, dependency remedies, measured hardware status, and
+  completion notifications
+- Dependency-aware storage cleanup
 
 ## Studio workflow
 
-The Create screen follows **reference images → prompt → model/LoRA → generation
-settings → result**. A character profile stores its ordered reference images,
-prompt fields, Instant Reference settings, excluded tags, cache metadata, and an
-optional representative result. Applying a profile does not replace the current
-base model or sampling settings.
+Create remains the main screen, with a two-column History rail on wide
+displays. References, the main prompts, size, batch, seed, steps, and CFG stay
+visible; less frequently changed model, sampler, Instant Reference, tagging,
+upscale, and advanced prompt fields are collapsible.
 
-A model pack stores the diffusion model, CLIP, VAE, and ordered LoRA stack.
-Applying a model pack does not replace references or prompts. Saved selections
-are checked against the connected ComfyUI installation before generation.
+Reference images are ordered by SHA-256 before settings are saved, inputs are
+uploaded, and a workflow is built. A completed History entry preserves the
+complete generation settings, actual seed, references, and outputs, and can
+restore those settings directly into Create.
 
 The prompt inspector shows each positive and negative source separately and
 previews the final ordering used by the server. It flags duplicates and common
 positive/negative conflicts without silently rewriting the user's text.
 
-The variation matrix creates at most 16 jobs from explicit prompt and seed
-combinations. All combinations are validated before any job is queued. Completed
-results can be repeated with the same settings, rerun with a new seed, reopened
-for prompt editing, marked as a character representative, compared side by
-side, or sent through the existing same-seed upscale path.
+Completed results can be repeated with the same settings, rerun with a new
+seed, reopened for prompt editing, compared side by side, zoomed, downloaded,
+or sent through the existing same-seed upscale path.
 
 ## Runtime modes
 
@@ -165,7 +161,9 @@ The catalog request uses these local API endpoints:
 
 ```text
 GET  /api/download-providers/huggingface/anima
-POST /api/model-downloads/huggingface/anima
+POST /api/model-installations/anima
+DELETE /api/model-installations/<installation-id>
+GET  /api/model-installations/<installation-id>/events
 ```
 
 The `GET` response supplies the revision and allowed file paths used by the
@@ -188,8 +186,10 @@ that immutable 40-character revision.
 Every transfer uses a revision-pinned `resolve/<sha>/<path>` URL and is accepted
 only when its byte size and Git LFS SHA-256 match the pinned catalog. A matching
 installed file is reused; a same-name file with different content is not
-overwritten. Download state and pause, resume, cancel, and retry actions use the
-shared model-download API and history.
+overwritten. The Library exposes only install, installing progress, and remove
+states. Completed installations are stored in the managed installation
+registry; transient transfer and operation records are removed after success or
+failure.
 
 The weights are distributed under the
 [CircleStone Labs Non-Commercial License](https://huggingface.co/circlestone-labs/Anima/blob/main/LICENSE.md).
@@ -207,11 +207,10 @@ to LoRA or checkpoint model types and regular `.safetensors` files. The server
 restricts destinations to its configured managed model roots, rejects symlinks
 and path escapes, and verifies the final SHA-256 before indexing the file.
 
-Managed downloads require managed mode with ComfyUI installed and ready.
-External-mode downloads are intentionally disabled; external files and LoRA
-Manager routes are not modified or exposed by the app. Downloads support
-progress history and pause, resume, cancel, and retry where the underlying
-transfer permits it.
+Managed installs require managed mode with ComfyUI installed and ready.
+External-mode installs are intentionally disabled; external files and LoRA
+Manager routes are not modified or exposed by the app. The Library shows only
+install, installing progress, and remove states.
 
 The Civitai token field is write-only. On Windows it is encrypted with DPAPI for
 the current user and is never returned by the API or stored in plaintext in
@@ -261,30 +260,18 @@ does not run again.
 
 ## Setup guidance and storage
 
-The first-run guide tracks five durable steps: studio tour, ComfyUI runtime,
-models and required nodes, a character profile, and a successful test
-generation. The dismissed/completed state is stored in SQLite, so it follows
-the local studio rather than one browser tab. The dependency panel maps missing
-ComfyUI class types to the pinned custom-node package and installation source.
+The first-run guide tracks four durable steps: studio tour, ComfyUI runtime,
+models and required nodes, and a successful test generation. The
+dismissed/completed state is stored in SQLite, so it follows the local studio
+rather than one browser tab. The dependency panel maps missing ComfyUI class
+types to the pinned custom-node package and installation source.
 
 Storage settings list individual uploaded assets, copied outputs, current
-preview files, and managed model downloads with their sizes and dependencies.
-Cleanup first performs a dry run. Only explicitly selected, dependency-free
-regular files under the managed data/model roots can be deleted; referenced
-profile images, representative results, upscale sources, active previews, and
-models used by saved packs remain protected.
-
-## Portable settings
-
-Portable JSON exports selected character profiles and model packs. Referenced
-images are embedded as Base64 and deduplicated by SHA-256. Tokens, runtime
-credentials, ComfyUI history identifiers, and personal absolute paths are never
-included.
-
-Import validates the complete bundle and previews missing nodes, endpoints,
-models, VAEs, CLIPs, and LoRAs before applying it. Import never starts ComfyUI
-or queues a generation. Limits are 25 MiB per image, 64 MiB total decoded image
-data, 128 assets, 100 profiles, 100 model packs, and 96 MiB for the JSON request.
+preview files, and managed model installations with their sizes and
+dependencies. Cleanup first performs a dry run. Only explicitly selected,
+dependency-free regular files under the managed data roots can be deleted;
+job references, upscale sources, and active previews remain protected. Managed
+models are installed and removed from Library.
 
 ## Third-party inventory
 

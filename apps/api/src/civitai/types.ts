@@ -2,6 +2,10 @@ export const CIVITAI_PAGE_HOSTS = [
   "civitai.com",
   "civitai.red",
 ] as const;
+export const CIVITAI_IMAGE_HOSTS = [
+  "image.civitai.com",
+  "image.civitai.red",
+] as const;
 
 export type CivitaiPageHost = (typeof CIVITAI_PAGE_HOSTS)[number];
 export type CivitaiModelKind = "lora" | "checkpoint";
@@ -45,6 +49,7 @@ export interface CivitaiVersionInspection {
   createdAt: string | null;
   publishedAt: string | null;
   earlyAccessEndsAt: string | null;
+  thumbnailUrl: string | null;
   triggerWords: string[];
   files: CivitaiFileInspection[];
 }

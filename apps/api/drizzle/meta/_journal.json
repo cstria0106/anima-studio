@@ -50,6 +50,20 @@
       "when": 1785418200000,
       "tag": "0006_repair_model_download_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1785506400000,
+      "tag": "0007_managed_model_installations",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1785510000000,
+      "tag": "0008_remove_legacy_studio_features",
+      "breakpoints": true
     }
   ]
 }

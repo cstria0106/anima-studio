@@ -1,8 +1,5 @@
 import type {
   AssetDto,
-  CharacterProfileCreate,
-  CharacterProfileDto,
-  CharacterProfileUpdate,
   GenerationConfig,
   JobDto,
   JobEventDto,
@@ -10,25 +7,18 @@ import type {
   JobPhase,
   JobPreviewDto,
   JobStatus,
+  ManagedModelInstallationDto,
   ModelDownloadDto,
   ModelDownloadProvider,
   ModelDownloadState,
-  ModelPackCreate,
-  ModelPackDto,
-  ModelPackUpdate,
   OperationDto,
   OperationEventDto,
   OperationKind,
   OperationStatus,
   OutputDto,
   TagSuggestion,
-  VariationAxis,
 } from "@anima/shared";
-import {
-  characterProfileCreateSchema,
-  generationConfigSchema,
-  modelPackCreateSchema,
-} from "@anima/shared";
+import { generationConfigSchema } from "@anima/shared";
 import {
   normalizeDanbooruTag,
   type OfflineTag,
@@ -48,15 +38,11 @@ import {
 import type { DatabaseContext } from "./database";
 import {
   assets,
-  characterProfileAssets,
-  characterProfiles,
-  generationBatchJobs,
-  generationBatches,
   jobAssets,
   jobEvents,
   jobs,
+  managedModelInstallations,
   modelDownloads,
-  modelPacks,
   outputs,
   runtimeSessions,
   settings,
@@ -64,11 +50,10 @@ import {
   systemOperations,
   tags,
   type AssetRow,
-  type CharacterProfileRow,
   type JobEventRow,
   type JobRow,
+  type ManagedModelInstallationRow,
   type ModelDownloadRow,
-  type ModelPackRow,
   type OutputRow,
   type RuntimeSessionRow,
   type SystemOperationEventRow,
@@ -114,6 +99,7 @@ function parseJson<T>(value: string | null, fallback: T): T {
 export function assetToDto(row: AssetRow): AssetDto {
   return {
     id: row.id,
+    sha256: row.sha256,
     name: row.originalName,
     mimeType: row.mimeType,
     width: row.width,
@@ -226,6 +212,28 @@ export function modelDownloadToDto(
     createdAt: toIso(row.createdAt) ?? row.createdAt,
     updatedAt: toIso(row.updatedAt) ?? row.updatedAt,
     completedAt: toIso(row.completedAt),
+  };
+}
+
+export function managedModelInstallationToDto(
+  row: ManagedModelInstallationRow,
+): ManagedModelInstallationDto {
+  return {
+    id: row.id,
+    provider: row.provider as ManagedModelInstallationDto["provider"],
+    providerModelId: row.providerModelId,
+    providerVersionId: row.providerVersionId,
+    providerFileId: row.providerFileId,
+    modelName: row.modelName,
+    versionName: row.versionName,
+    filename: row.filename,
+    destinationRootId:
+      row.destinationRootId as ManagedModelInstallationDto["destinationRootId"],
+    relativeDir: row.relativeDir,
+    sha256: row.sha256,
+    storagePath: row.storagePath,
+    installedAt: toIso(row.installedAt) ?? row.installedAt,
+    updatedAt: toIso(row.updatedAt) ?? row.updatedAt,
   };
 }
 
@@ -396,8 +404,24 @@ export interface ModelDownloadPatch {
   completedAt?: string | null;
 }
 
+export interface NewManagedModelInstallation {
+  id: string;
+  provider: ManagedModelInstallationDto["provider"];
+  providerModelId: string;
+  providerVersionId: string;
+  providerFileId: string | null;
+  modelName: string;
+  versionName: string;
+  filename: string;
+  destinationRootId: ManagedModelInstallationDto["destinationRootId"];
+  relativeDir?: string;
+  sha256: string;
+  storagePath: string;
+  installedAt?: string;
+}
+
 export interface RepositoryDependency {
-  kind: "job" | "character_profile" | "model_pack";
+  kind: "job";
   id: string;
   label: string;
 }
@@ -794,6 +818,248 @@ export class StudioRepository {
       .map(modelDownloadToDto);
   }
 
+  upsertManagedModelInstallation(
+    input: NewManagedModelInstallation,
+  ): ManagedModelInstallationDto {
+    return this.upsertManagedModelInstallations([input])[0]!;
+  }
+
+  upsertManagedModelInstallations(
+    inputs: readonly NewManagedModelInstallation[],
+  ): ManagedModelInstallationDto[] {
+    if (inputs.length === 0) return [];
+    const normalized = inputs.map((input) => {
+      const sha256 = input.sha256.trim().toLowerCase();
+      if (!/^[a-f0-9]{64}$/.test(sha256)) {
+        throw new Error("Managed model installation SHA-256 is invalid.");
+      }
+      const installedAt = input.installedAt ?? new Date().toISOString();
+      return {
+        ...input,
+        relativeDir: input.relativeDir ?? "",
+        sha256,
+        installedAt,
+      };
+    });
+    const ids = new Set<string>();
+    const identities = new Set<string>();
+    const storagePaths = new Set<string>();
+    for (const input of normalized) {
+      const identity = JSON.stringify([
+        input.provider,
+        input.providerModelId,
+        input.providerVersionId,
+        input.providerFileId,
+      ]);
+      if (ids.has(input.id)) {
+        throw new Error("Managed model installation IDs must be unique.");
+      }
+      if (identities.has(identity)) {
+        throw new Error(
+          "Managed model installation identities must be unique.",
+        );
+      }
+      if (storagePaths.has(input.storagePath)) {
+        throw new Error(
+          "Managed model installation storage paths must be unique.",
+        );
+      }
+      ids.add(input.id);
+      identities.add(identity);
+      storagePaths.add(input.storagePath);
+    }
+    return this.database.sqlite.transaction(() => {
+      for (const input of normalized) {
+        const pathOwner =
+          this.db
+            .select({
+              id: managedModelInstallations.id,
+              provider: managedModelInstallations.provider,
+              providerModelId: managedModelInstallations.providerModelId,
+              providerVersionId:
+                managedModelInstallations.providerVersionId,
+              providerFileId: managedModelInstallations.providerFileId,
+            })
+            .from(managedModelInstallations)
+            .where(
+              eq(
+                managedModelInstallations.storagePath,
+                input.storagePath,
+              ),
+            )
+            .get() ?? null;
+        if (
+          pathOwner &&
+          (pathOwner.provider !== input.provider ||
+            pathOwner.providerModelId !== input.providerModelId ||
+            pathOwner.providerVersionId !== input.providerVersionId ||
+            pathOwner.providerFileId !== input.providerFileId)
+        ) {
+          this.db
+            .delete(managedModelInstallations)
+            .where(eq(managedModelInstallations.id, pathOwner.id))
+            .run();
+        }
+        this.db
+          .insert(managedModelInstallations)
+          .values({
+            id: input.id,
+            provider: input.provider,
+            providerModelId: input.providerModelId,
+            providerVersionId: input.providerVersionId,
+            providerFileId: input.providerFileId,
+            modelName: input.modelName,
+            versionName: input.versionName,
+            filename: input.filename,
+            destinationRootId: input.destinationRootId,
+            relativeDir: input.relativeDir,
+            sha256: input.sha256,
+            storagePath: input.storagePath,
+            installedAt: input.installedAt,
+            updatedAt: input.installedAt,
+          })
+          .onConflictDoUpdate({
+            target: [
+              managedModelInstallations.provider,
+              managedModelInstallations.providerModelId,
+              managedModelInstallations.providerVersionId,
+              managedModelInstallations.providerFileId,
+            ],
+            set: {
+              id: input.id,
+              modelName: input.modelName,
+              versionName: input.versionName,
+              filename: input.filename,
+              destinationRootId: input.destinationRootId,
+              relativeDir: input.relativeDir,
+              sha256: input.sha256,
+              storagePath: input.storagePath,
+              installedAt: input.installedAt,
+              updatedAt: input.installedAt,
+            },
+          })
+          .run();
+      }
+      return normalized.map((input) => {
+        const installation =
+          this.findManagedModelInstallationByProviderFile(
+            input.provider,
+            input.providerModelId,
+            input.providerVersionId,
+            input.providerFileId,
+          );
+        if (!installation) {
+          throw new Error("Managed model installation was not persisted.");
+        }
+        return installation;
+      });
+    })();
+  }
+
+  findManagedModelInstallation(
+    id: string,
+  ): ManagedModelInstallationDto | null {
+    const row =
+      this.db
+        .select()
+        .from(managedModelInstallations)
+        .where(eq(managedModelInstallations.id, id))
+        .get() ?? null;
+    return row ? managedModelInstallationToDto(row) : null;
+  }
+
+  findManagedModelInstallationByProviderFile(
+    provider: ManagedModelInstallationDto["provider"],
+    providerModelId: string,
+    providerVersionId: string,
+    providerFileId: string | null,
+  ): ManagedModelInstallationDto | null {
+    const providerFileClause =
+      providerFileId === null
+        ? sql`${managedModelInstallations.providerFileId} IS NULL`
+        : eq(managedModelInstallations.providerFileId, providerFileId);
+    const row =
+      this.db
+        .select()
+        .from(managedModelInstallations)
+        .where(
+          and(
+            eq(managedModelInstallations.provider, provider),
+            eq(
+              managedModelInstallations.providerModelId,
+              providerModelId,
+            ),
+            eq(
+              managedModelInstallations.providerVersionId,
+              providerVersionId,
+            ),
+            providerFileClause,
+          ),
+        )
+        .get() ?? null;
+    return row ? managedModelInstallationToDto(row) : null;
+  }
+
+  findManagedModelInstallationByProviderArtifact(
+    provider: ManagedModelInstallationDto["provider"],
+    providerModelId: string,
+    providerFileId: string,
+  ): ManagedModelInstallationDto | null {
+    const row =
+      this.db
+        .select()
+        .from(managedModelInstallations)
+        .where(
+          and(
+            eq(managedModelInstallations.provider, provider),
+            eq(
+              managedModelInstallations.providerModelId,
+              providerModelId,
+            ),
+            eq(
+              managedModelInstallations.providerFileId,
+              providerFileId,
+            ),
+          ),
+        )
+        .orderBy(desc(managedModelInstallations.installedAt))
+        .limit(1)
+        .get() ?? null;
+    return row ? managedModelInstallationToDto(row) : null;
+  }
+
+  listManagedModelInstallations(): ManagedModelInstallationDto[] {
+    return this.db
+      .select()
+      .from(managedModelInstallations)
+      .orderBy(desc(managedModelInstallations.installedAt))
+      .all()
+      .map(managedModelInstallationToDto);
+  }
+
+  deleteManagedModelInstallation(id: string): boolean {
+    return Boolean(
+      this.db
+        .delete(managedModelInstallations)
+        .where(eq(managedModelInstallations.id, id))
+        .returning({ id: managedModelInstallations.id })
+        .get(),
+    );
+  }
+
+  deleteModelDownloadTask(id: string): boolean {
+    const row = this.findModelDownloadRow(id);
+    if (!row) return false;
+    this.database.sqlite.transaction(() => {
+      this.db
+        .delete(systemOperations)
+        .where(eq(systemOperations.id, row.operationId))
+        .run();
+      this.db.delete(modelDownloads).where(eq(modelDownloads.id, id)).run();
+    })();
+    return true;
+  }
+
   createAsset(input: NewAsset): AssetRow {
     this.db.insert(assets).values(input).run();
     return this.findAsset(input.id)!;
@@ -843,316 +1109,6 @@ export class StudioRepository {
       .from(assets)
       .orderBy(desc(assets.createdAt))
       .all();
-  }
-
-  private characterProfileAssetRows(profileId: string): AssetRow[] {
-    return this.db
-      .select({ asset: assets })
-      .from(characterProfileAssets)
-      .innerJoin(assets, eq(characterProfileAssets.assetId, assets.id))
-      .where(eq(characterProfileAssets.profileId, profileId))
-      .orderBy(asc(characterProfileAssets.ordinal))
-      .all()
-      .map((row) => row.asset);
-  }
-
-  private characterProfileToDto(
-    row: CharacterProfileRow,
-  ): CharacterProfileDto {
-    const referenceAssets = this.characterProfileAssetRows(row.id);
-    const parsed = characterProfileCreateSchema.parse({
-      name: row.name,
-      description: row.description,
-      referenceAssetIds: referenceAssets.map((asset) => asset.id),
-      prompts: parseJson<unknown>(row.promptsJson, {}),
-      instantLora: parseJson<unknown>(row.instantLoraJson, {}),
-      excludedTags: parseJson<unknown>(row.excludedTagsJson, []),
-      cache: parseJson<unknown>(row.cacheJson, {}),
-    });
-    const representative = row.representativeOutputId
-      ? this.findOutput(row.representativeOutputId)
-      : null;
-    return {
-      id: row.id,
-      ...parsed,
-      referenceAssets: referenceAssets.map(assetToDto),
-      representativeOutputId: representative?.id ?? null,
-      representativeOutput: representative
-        ? outputToDto(representative)
-        : null,
-      createdAt: toIso(row.createdAt) ?? row.createdAt,
-      updatedAt: toIso(row.updatedAt) ?? row.updatedAt,
-    };
-  }
-
-  createCharacterProfile(
-    input: CharacterProfileCreate,
-    id = crypto.randomUUID(),
-  ): CharacterProfileDto {
-    const now = new Date().toISOString();
-    this.database.sqlite.transaction(() => {
-      this.db
-        .insert(characterProfiles)
-        .values({
-          id,
-          name: input.name,
-          description: input.description,
-          promptsJson: JSON.stringify(input.prompts),
-          instantLoraJson: JSON.stringify(input.instantLora),
-          excludedTagsJson: JSON.stringify(input.excludedTags),
-          cacheJson: JSON.stringify(input.cache),
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-      if (input.referenceAssetIds.length > 0) {
-        this.db
-          .insert(characterProfileAssets)
-          .values(
-            input.referenceAssetIds.map((assetId, ordinal) => ({
-              profileId: id,
-              assetId,
-              ordinal,
-            })),
-          )
-          .run();
-      }
-    })();
-    return this.findCharacterProfile(id)!;
-  }
-
-  updateCharacterProfile(
-    id: string,
-    patch: CharacterProfileUpdate,
-  ): CharacterProfileDto | null {
-    if (!this.findCharacterProfileRow(id)) return null;
-    this.database.sqlite.transaction(() => {
-      const set: Record<string, unknown> = {
-        updatedAt: new Date().toISOString(),
-      };
-      if (patch.name !== undefined) set.name = patch.name;
-      if (patch.description !== undefined) set.description = patch.description;
-      if (patch.prompts !== undefined) {
-        set.promptsJson = JSON.stringify(patch.prompts);
-      }
-      if (patch.instantLora !== undefined) {
-        set.instantLoraJson = JSON.stringify(patch.instantLora);
-      }
-      if (patch.excludedTags !== undefined) {
-        set.excludedTagsJson = JSON.stringify(patch.excludedTags);
-      }
-      if (patch.cache !== undefined) {
-        set.cacheJson = JSON.stringify(patch.cache);
-      }
-      this.db
-        .update(characterProfiles)
-        .set(set)
-        .where(eq(characterProfiles.id, id))
-        .run();
-      if (patch.referenceAssetIds !== undefined) {
-        this.db
-          .delete(characterProfileAssets)
-          .where(eq(characterProfileAssets.profileId, id))
-          .run();
-        if (patch.referenceAssetIds.length > 0) {
-          this.db
-            .insert(characterProfileAssets)
-            .values(
-              patch.referenceAssetIds.map((assetId, ordinal) => ({
-                profileId: id,
-                assetId,
-                ordinal,
-              })),
-            )
-            .run();
-        }
-      }
-    })();
-    return this.findCharacterProfile(id);
-  }
-
-  setCharacterRepresentative(
-    id: string,
-    outputId: string | null,
-  ): CharacterProfileDto | null {
-    if (!this.findCharacterProfileRow(id)) return null;
-    this.db
-      .update(characterProfiles)
-      .set({
-        representativeOutputId: outputId,
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(characterProfiles.id, id))
-      .run();
-    return this.findCharacterProfile(id);
-  }
-
-  findCharacterProfileRow(id: string): CharacterProfileRow | null {
-    return (
-      this.db
-        .select()
-        .from(characterProfiles)
-        .where(eq(characterProfiles.id, id))
-        .get() ?? null
-    );
-  }
-
-  findCharacterProfile(id: string): CharacterProfileDto | null {
-    const row = this.findCharacterProfileRow(id);
-    return row ? this.characterProfileToDto(row) : null;
-  }
-
-  listCharacterProfiles(): CharacterProfileDto[] {
-    return this.db
-      .select()
-      .from(characterProfiles)
-      .orderBy(desc(characterProfiles.updatedAt), asc(characterProfiles.name))
-      .all()
-      .map((row) => this.characterProfileToDto(row));
-  }
-
-  deleteCharacterProfile(id: string): boolean {
-    return Boolean(
-      this.db
-        .delete(characterProfiles)
-        .where(eq(characterProfiles.id, id))
-        .returning({ id: characterProfiles.id })
-        .get(),
-    );
-  }
-
-  createModelPack(
-    input: ModelPackCreate,
-    id = crypto.randomUUID(),
-  ): ModelPackDto {
-    const now = new Date().toISOString();
-    this.db
-      .insert(modelPacks)
-      .values({
-        id,
-        name: input.name,
-        description: input.description,
-        modelJson: JSON.stringify(input.model),
-        lorasJson: JSON.stringify(input.loras),
-        createdAt: now,
-        updatedAt: now,
-      })
-      .run();
-    return this.findModelPack(id)!;
-  }
-
-  private modelPackToDto(row: ModelPackRow): ModelPackDto {
-    const parsed = modelPackCreateSchema.parse({
-      name: row.name,
-      description: row.description,
-      model: parseJson<unknown>(row.modelJson, {}),
-      loras: parseJson<unknown>(row.lorasJson, []),
-    });
-    return {
-      id: row.id,
-      ...parsed,
-      createdAt: toIso(row.createdAt) ?? row.createdAt,
-      updatedAt: toIso(row.updatedAt) ?? row.updatedAt,
-    };
-  }
-
-  findModelPackRow(id: string): ModelPackRow | null {
-    return (
-      this.db
-        .select()
-        .from(modelPacks)
-        .where(eq(modelPacks.id, id))
-        .get() ?? null
-    );
-  }
-
-  findModelPack(id: string): ModelPackDto | null {
-    const row = this.findModelPackRow(id);
-    return row ? this.modelPackToDto(row) : null;
-  }
-
-  listModelPacks(): ModelPackDto[] {
-    return this.db
-      .select()
-      .from(modelPacks)
-      .orderBy(desc(modelPacks.updatedAt), asc(modelPacks.name))
-      .all()
-      .map((row) => this.modelPackToDto(row));
-  }
-
-  updateModelPack(
-    id: string,
-    patch: ModelPackUpdate,
-  ): ModelPackDto | null {
-    if (!this.findModelPackRow(id)) return null;
-    const set: Record<string, unknown> = {
-      updatedAt: new Date().toISOString(),
-    };
-    if (patch.name !== undefined) set.name = patch.name;
-    if (patch.description !== undefined) set.description = patch.description;
-    if (patch.model !== undefined) set.modelJson = JSON.stringify(patch.model);
-    if (patch.loras !== undefined) set.lorasJson = JSON.stringify(patch.loras);
-    this.db
-      .update(modelPacks)
-      .set(set)
-      .where(eq(modelPacks.id, id))
-      .run();
-    return this.findModelPack(id);
-  }
-
-  deleteModelPack(id: string): boolean {
-    return Boolean(
-      this.db
-        .delete(modelPacks)
-        .where(eq(modelPacks.id, id))
-        .returning({ id: modelPacks.id })
-        .get(),
-    );
-  }
-
-  createGenerationBatch(input: {
-    id: string;
-    axes: VariationAxis[];
-    jobs: Array<{ jobId: string; label: string }>;
-    createdAt?: string;
-  }): void {
-    this.database.sqlite.transaction(() => {
-      this.db
-        .insert(generationBatches)
-        .values({
-          id: input.id,
-          axesJson: JSON.stringify(input.axes),
-          createdAt: input.createdAt ?? new Date().toISOString(),
-        })
-        .run();
-      this.db
-        .insert(generationBatchJobs)
-        .values(
-          input.jobs.map((job, ordinal) => ({
-            batchId: input.id,
-            jobId: job.jobId,
-            label: job.label,
-            ordinal,
-          })),
-        )
-        .run();
-    })();
-  }
-
-  hasCharacterProfiles(): boolean {
-    return Boolean(
-      this.db
-        .select({ id: characterProfiles.id })
-        .from(characterProfiles)
-        .limit(1)
-        .get(),
-    );
-  }
-
-  hasModelPacks(): boolean {
-    return Boolean(
-      this.db.select({ id: modelPacks.id }).from(modelPacks).limit(1).get(),
-    );
   }
 
   hasCompletedJobs(): boolean {
@@ -1436,21 +1392,7 @@ export class StudioRepository {
         id: row.id,
         label: `Generation from ${toIso(row.createdAt) ?? row.createdAt}`,
       }));
-    const profileReferences = this.db
-      .select({ id: characterProfiles.id, name: characterProfiles.name })
-      .from(characterProfileAssets)
-      .innerJoin(
-        characterProfiles,
-        eq(characterProfileAssets.profileId, characterProfiles.id),
-      )
-      .where(eq(characterProfileAssets.assetId, assetId))
-      .all()
-      .map((row) => ({
-        kind: "character_profile" as const,
-        id: row.id,
-        label: row.name,
-      }));
-    return [...profileReferences, ...jobReferences];
+    return jobReferences;
   }
 
   outputDependencies(outputId: string): RepositoryDependency[] {
@@ -1464,17 +1406,7 @@ export class StudioRepository {
         id: row.id,
         label: `Upscale from ${toIso(row.createdAt) ?? row.createdAt}`,
       }));
-    const profileReferences = this.db
-      .select({ id: characterProfiles.id, name: characterProfiles.name })
-      .from(characterProfiles)
-      .where(eq(characterProfiles.representativeOutputId, outputId))
-      .all()
-      .map((row) => ({
-        kind: "character_profile" as const,
-        id: row.id,
-        label: row.name,
-      }));
-    return [...profileReferences, ...jobReferences];
+    return jobReferences;
   }
 
   modelDependencies(filename: string): RepositoryDependency[] {
@@ -1488,23 +1420,6 @@ export class StudioRepository {
             value === normalized ||
             (basename !== undefined && value.split("/").at(-1) === basename),
         );
-    const packDependencies = this.listModelPacks().flatMap((pack) => {
-      const used = usesModel([
-        pack.model.diffusionModel,
-        pack.model.clip,
-        pack.model.vae,
-        ...pack.loras.map((lora) => lora.name),
-      ]);
-      return used
-        ? [
-            {
-              kind: "model_pack" as const,
-              id: pack.id,
-              label: pack.name,
-            },
-          ]
-        : [];
-    });
     const activeJobDependencies = this.db
       .select()
       .from(jobs)
@@ -1536,7 +1451,7 @@ export class StudioRepository {
             ]
           : [];
       });
-    return [...packDependencies, ...activeJobDependencies];
+    return activeJobDependencies;
   }
 
   deleteAssetRecord(id: string): boolean {

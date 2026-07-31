@@ -94,9 +94,7 @@ function formatDate(value: string | null) {
 }
 
 function dependencyKindLabel(kind: StorageDependency["kind"]) {
-  if (kind === "job") return "작업";
-  if (kind === "character_profile") return "캐릭터";
-  return "모델 팩";
+  return kind === "job" ? "작업" : kind;
 }
 
 export function StorageDashboard({
@@ -270,8 +268,7 @@ export function StorageDashboard({
             </h2>
           </div>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            서버가 관리하는 파일을 오래된 순서로 보여줍니다. 작업·프로필·모델
-            팩이 참조하는 항목은 보호되며 선택할 수 없습니다.
+            작업에서 사용 중인 항목은 보호되며 선택할 수 없습니다.
           </p>
         </div>
         <div className="flex items-start gap-3">

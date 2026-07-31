@@ -18,9 +18,6 @@ import {
   type StorageInventoryDto,
   type StorageItemDto,
 } from "@anima/shared";
-import type {
-  ModelDownloadRow,
-} from "../db/schema";
 import { StudioRepository } from "../db/repository";
 import { JobSubmissionError } from "./jobs";
 
@@ -33,14 +30,6 @@ function pathInside(root: string, candidate: string): boolean {
     !value.startsWith(`..${sep}`) &&
     !isAbsolute(value)
   );
-}
-
-function parseJson<T>(value: string, fallback: T): T {
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return fallback;
-  }
 }
 
 export class StorageInventoryService {
@@ -114,8 +103,7 @@ export class StorageInventoryService {
     return items;
   }
 
-  private modelPath(row: ModelDownloadRow): string | null {
-    if (!row.storagePath) return null;
+  private modelPath(row: { storagePath: string }): string | null {
     const candidate = resolve(row.storagePath);
     return this.modelRoots.some((root) => pathInside(root, candidate))
       ? candidate
@@ -137,7 +125,7 @@ export class StorageInventoryService {
           cleanupEligible: dependencies.length === 0,
           cleanupReason:
             dependencies.length > 0
-              ? "This reference image is used by a profile or generation."
+              ? "This reference image is used by a generation."
               : null,
         };
       });
@@ -155,38 +143,25 @@ export class StorageInventoryService {
           cleanupEligible: dependencies.length === 0,
           cleanupReason:
             dependencies.length > 0
-              ? "This result is used as a representative image or upscale source."
+              ? "This result is used as an upscale source."
               : null,
         };
       });
     const modelItems: StorageItemDto[] = [];
-    for (const row of this.repository.listModelDownloadRows()) {
+    for (const row of this.repository.listManagedModelInstallations()) {
       const path = this.modelPath(row);
       const fileSize = path ? await this.regularFileSize(path) : null;
       const dependencies = this.repository.modelDependencies(row.filename);
-      const completed = row.state === "completed";
-      const eligible =
-        completed &&
-        path !== null &&
-        fileSize !== null &&
-        dependencies.length === 0;
-      let cleanupReason: string | null = null;
-      if (!completed) cleanupReason = "Only completed downloads can be cleaned up.";
-      else if (!path) cleanupReason = "The model is outside managed model storage.";
-      else if (fileSize === null) cleanupReason = "The downloaded model file is unavailable.";
-      else if (dependencies.length > 0) {
-        cleanupReason =
-          "A saved model pack or active generation uses this model.";
-      }
       modelItems.push({
         kind: "model_download",
         id: row.id,
         name: row.filename,
         byteSize: fileSize ?? 0,
-        createdAt: row.createdAt,
+        createdAt: row.installedAt,
         dependencies,
-        cleanupEligible: eligible,
-        cleanupReason,
+        cleanupEligible: false,
+        cleanupReason:
+          "Remove managed models from the model library.",
       });
     }
     const items = [
@@ -239,7 +214,7 @@ export class StorageInventoryService {
       }
       return path;
     }
-    const row = this.repository.findModelDownloadRow(item.id);
+    const row = this.repository.findManagedModelInstallation(item.id);
     const path = row ? this.modelPath(row) : null;
     if (!row || !path) {
       throw new JobSubmissionError("Managed model download not found.", 404);
@@ -273,20 +248,7 @@ export class StorageInventoryService {
           throw new Error("Output record disappeared during cleanup.");
         }
       } else if (item.kind === "model_download") {
-        const row = this.repository.findModelDownloadRow(item.id);
-        if (!row) throw new Error("Model download disappeared during cleanup.");
-        const metadata = parseJson<Record<string, unknown>>(
-          row.metadataJson,
-          {},
-        );
-        this.repository.updateModelDownload(item.id, {
-          storagePath: null,
-          metadata: {
-            ...metadata,
-            deletedAt: new Date().toISOString(),
-            deletedFilename: row.filename,
-          },
-        });
+        throw new Error("Remove managed models from the model library.");
       }
     } catch (error) {
       await rename(staged, source).catch(() => undefined);

@@ -53,6 +53,9 @@ function modelFile(
     sha256: sha256(bytes),
     recommended: true,
     experimental: false,
+    installationId: null,
+    installationStatus: "not_installed",
+    installationProgress: null,
   };
 }
 

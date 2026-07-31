@@ -7,8 +7,8 @@ import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import { StudioRepository } from "./repository";
 import * as schema from "./schema";
 
-describe("model download identity migration", () => {
-  test("repairs the previously applied append-only migration and backfills Civitai identity", async () => {
+describe("managed model installation migration", () => {
+  test("backfills valid completed files and removes terminal download history", async () => {
     const legacy = new Database(":memory:", { create: true });
     legacy.exec(`
       PRAGMA foreign_keys = ON;
@@ -81,6 +81,17 @@ describe("model download identity migration", () => {
         FOREIGN KEY (operation_id) REFERENCES system_operations(id)
           ON DELETE cascade
       );
+      CREATE TABLE character_profiles (id text PRIMARY KEY NOT NULL);
+      CREATE TABLE character_profile_assets (
+        profile_id text NOT NULL,
+        asset_id text NOT NULL
+      );
+      CREATE TABLE model_packs (id text PRIMARY KEY NOT NULL);
+      CREATE TABLE generation_batches (id text PRIMARY KEY NOT NULL);
+      CREATE TABLE generation_batch_jobs (
+        batch_id text NOT NULL,
+        job_id text NOT NULL
+      );
       INSERT INTO system_operations (
         id, kind, status, phase, message
       ) VALUES (
@@ -96,7 +107,11 @@ describe("model download identity migration", () => {
         model_name,
         version_name,
         filename,
-        destination_root_id
+        destination_root_id,
+        expected_sha256,
+        actual_sha256,
+        storage_path,
+        completed_at
       ) VALUES (
         'old-download',
         'old-operation',
@@ -107,7 +122,47 @@ describe("model download identity migration", () => {
         'Old model',
         'v1',
         'old.safetensors',
-        'loras'
+        'loras',
+        '${"a".repeat(64)}',
+        '${"a".repeat(64)}',
+        'C:\\managed\\models\\loras\\old.safetensors',
+        '2026-07-30T12:00:00.000Z'
+      );
+      INSERT INTO system_operations (
+        id, kind, status, phase, message
+      ) VALUES (
+        'invalid-operation', 'model_download', 'completed', 'completed', 'Done'
+      );
+      INSERT INTO model_downloads (
+        id,
+        operation_id,
+        state,
+        model_id,
+        model_version_id,
+        file_id,
+        model_name,
+        version_name,
+        filename,
+        destination_root_id,
+        expected_sha256,
+        actual_sha256,
+        storage_path,
+        completed_at
+      ) VALUES (
+        'invalid-download',
+        'invalid-operation',
+        'completed',
+        124,
+        457,
+        790,
+        'Changed model',
+        'v1',
+        'changed.safetensors',
+        'loras',
+        '${"b".repeat(64)}',
+        '${"c".repeat(64)}',
+        'C:\\managed\\models\\loras\\changed.safetensors',
+        '2026-07-30T12:00:00.000Z'
       );
     `);
     const db = drizzle(legacy, { schema });
@@ -120,20 +175,44 @@ describe("model download identity migration", () => {
       close: () => legacy.close(),
     };
     const repository = new StudioRepository(database);
-    const migrated = repository.findModelDownload("old-download");
+    const migrated = repository.findManagedModelInstallation(
+      "old-download",
+    );
     const columns = database.sqlite
       .query("PRAGMA table_info(model_downloads)")
       .all() as Array<{ name: string; notnull: number }>;
+    const removedTables = database.sqlite
+      .query(
+        `SELECT name FROM sqlite_master
+         WHERE type = 'table'
+           AND name IN (
+             'character_profile_assets',
+             'character_profiles',
+             'model_packs',
+             'generation_batch_jobs',
+             'generation_batches'
+           )`,
+      )
+      .all();
 
     expect(migrated).toMatchObject({
       provider: "civitai",
       providerModelId: "123",
       providerVersionId: "456",
       providerFileId: "789",
-      modelId: 123,
-      modelVersionId: 456,
-      fileId: 789,
+      filename: "old.safetensors",
+      sha256: "a".repeat(64),
+      storagePath: "C:\\managed\\models\\loras\\old.safetensors",
     });
+    expect(repository.findModelDownload("old-download")).toBeNull();
+    expect(repository.findSystemOperation("old-operation")).toBeNull();
+    expect(
+      repository.findManagedModelInstallation("invalid-download"),
+    ).toBeNull();
+    expect(repository.findModelDownload("invalid-download")).toBeNull();
+    expect(
+      repository.findSystemOperation("invalid-operation"),
+    ).toBeNull();
     expect(
       columns
         .filter((column) =>
@@ -141,6 +220,7 @@ describe("model download identity migration", () => {
         )
         .every((column) => column.notnull === 0),
     ).toBeTrue();
+    expect(removedTables).toEqual([]);
 
     const operation = repository.createSystemOperation({
       id: "hf-operation",

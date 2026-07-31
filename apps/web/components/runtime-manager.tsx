@@ -35,7 +35,6 @@ import {
   type CompletionNotificationPanelProps,
   useCompletionNotifications,
 } from "@/components/completion-notifications";
-import { ResourceEstimate } from "@/components/resource-estimate";
 import {
   getComfyRuntime,
   getOperation,
@@ -699,21 +698,6 @@ export function RuntimeManager({
             ))}
           </div>
         ) : null}
-
-        <ResourceEstimate
-          hardware={runtime?.hardware ?? null}
-          label="기본 704×1408 · Instant LoRA 200 step"
-          workload={{
-            width: 704,
-            height: 1408,
-            batchSize: 1,
-            trainingSteps: 200,
-            samplingSteps: 30,
-            upscaleSteps: 0,
-            referenceCount: 3,
-            upscaleEnabled: false,
-          }}
-        />
 
         <div className="flex flex-wrap gap-2">
           <Button

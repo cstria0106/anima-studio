@@ -23,7 +23,6 @@ import {
   type CompletionNotificationPanelProps,
 } from "@/components/completion-notifications";
 import { DependencyRemedies } from "@/components/dependency-remedies";
-import { PortableSettingsTransfer } from "@/components/portable-settings-transfer";
 import { RuntimeManager } from "@/components/runtime-manager";
 import { StorageDashboard } from "@/components/storage-dashboard";
 import { SystemOnboarding } from "@/components/system-onboarding";
@@ -53,7 +52,6 @@ import type {
   HealthResponse,
   OnboardingStatus,
   OnboardingUpdate,
-  PortableImportPreview,
   StorageCleanupResult,
   StorageCleanupTarget,
   StorageInventory,
@@ -80,15 +78,6 @@ interface SettingsViewProps {
     targets: StorageCleanupTarget[],
     dryRun: boolean,
   ) => Promise<StorageCleanupResult>;
-  onExportPortable: () => Promise<unknown>;
-  onPreviewPortable: (
-    document: unknown,
-    file: File,
-  ) => Promise<PortableImportPreview>;
-  onImportPortable: (
-    document: unknown,
-    file: File,
-  ) => Promise<void>;
 }
 
 const sections: Array<{
@@ -123,9 +112,6 @@ export function SettingsView({
   storageError,
   onStorageRefresh,
   onStorageCleanup,
-  onExportPortable,
-  onPreviewPortable,
-  onImportPortable,
 }: SettingsViewProps) {
   const [copied, setCopied] = React.useState(false);
   const [section, setSection] = React.useState<SettingsSection>("overview");
@@ -167,15 +153,7 @@ export function SettingsView({
   return (
     <div className="animate-fade-in space-y-6">
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
-        <div>
-          <p className="text-xs font-medium text-muted-foreground">
-            Studio 환경
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">설정</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            준비 상태를 확인하고 엔진, 모델과 로컬 데이터를 관리합니다.
-          </p>
-        </div>
+        <h1 className="text-2xl font-semibold tracking-tight">설정</h1>
         <Button
           type="button"
           size="sm"
@@ -393,10 +371,7 @@ export function SettingsView({
           {notificationController ? (
             <Card>
               <CardHeader>
-                <SectionHeading
-                  title="완료 알림"
-                  description="생성 및 런타임 작업이 끝나면 브라우저 알림으로 알려드립니다."
-                />
+                <SectionHeading title="완료 알림" />
               </CardHeader>
               <CardContent>
                 <CompletionNotificationPanel
@@ -496,10 +471,7 @@ export function SettingsView({
 
           <Card id="installed-resources">
             <CardHeader>
-              <SectionHeading
-                title="설치된 리소스"
-                description="ComfyUI가 보고한 항목만 생성 화면 선택기에 표시됩니다."
-              />
+              <SectionHeading title="설치된 리소스" />
             </CardHeader>
             <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               {[
@@ -550,10 +522,7 @@ export function SettingsView({
 
           <Card>
             <CardHeader>
-              <SectionHeading
-                title="브라우저 생성 초안"
-                description="현재 브라우저에 임시 저장된 편집값만 초기화합니다. 서버 히스토리, 프로필과 결과 이미지는 유지됩니다."
-              />
+              <SectionHeading title="브라우저 생성 초안" />
             </CardHeader>
             <CardContent className="flex justify-end">
               <Button type="button" variant="outline" onClick={onClearDraft}>
@@ -563,11 +532,6 @@ export function SettingsView({
             </CardContent>
           </Card>
 
-          <PortableSettingsTransfer
-            onExport={onExportPortable}
-            onPreview={onPreviewPortable}
-            onImport={onImportPortable}
-          />
         </TabsContent>
       </Tabs>
     </div>

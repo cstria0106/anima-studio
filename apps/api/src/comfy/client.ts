@@ -1,4 +1,7 @@
-import type { ComfyOptions } from "@anima/shared";
+import {
+  CURATED_IMAGE_PRESETS,
+  type ComfyOptions,
+} from "@anima/shared";
 import type { AppConfig } from "../config";
 import type {
   ComfyHistory,
@@ -322,11 +325,7 @@ export class ComfyClient implements ComfyClientLike {
       imagePresets:
         imagePresets.length > 0
           ? imagePresets
-          : [
-              { label: "1:1 - 1024x1024", width: 1024, height: 1024 },
-              { label: "1:2 - 704x1408", width: 704, height: 1408 },
-              { label: "2:1 - 1408x704", width: 1408, height: 704 },
-            ],
+          : [...CURATED_IMAGE_PRESETS],
     };
   }
 

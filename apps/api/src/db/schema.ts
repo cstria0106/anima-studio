@@ -319,25 +319,22 @@ export const modelDownloads = sqliteTable(
   ],
 );
 
-export const characterProfiles = sqliteTable(
-  "character_profiles",
+export const managedModelInstallations = sqliteTable(
+  "managed_model_installations",
   {
     id: text("id").primaryKey(),
-    name: text("name").notNull(),
-    description: text("description").notNull().default(""),
-    promptsJson: text("prompts_json").notNull(),
-    instantLoraJson: text("instant_lora_json").notNull(),
-    excludedTagsJson: text("excluded_tags_json").notNull().default("[]"),
-    cacheJson: text("cache_json")
-      .notNull()
-      .default(
-        '{"state":"empty","cacheKey":null,"referenceFingerprint":null,"loraName":null,"trainedAt":null,"autoTags":[]}',
-      ),
-    representativeOutputId: text("representative_output_id").references(
-      () => outputs.id,
-      { onDelete: "set null" },
-    ),
-    createdAt: text("created_at")
+    provider: text("provider").notNull(),
+    providerModelId: text("provider_model_id").notNull(),
+    providerVersionId: text("provider_version_id").notNull(),
+    providerFileId: text("provider_file_id"),
+    modelName: text("model_name").notNull(),
+    versionName: text("version_name").notNull(),
+    filename: text("filename").notNull(),
+    destinationRootId: text("destination_root_id").notNull(),
+    relativeDir: text("relative_dir").notNull().default(""),
+    sha256: text("sha256").notNull(),
+    storagePath: text("storage_path").notNull(),
+    installedAt: text("installed_at")
       .notNull()
       .default(sql`CURRENT_TIMESTAMP`),
     updatedAt: text("updated_at")
@@ -345,85 +342,17 @@ export const characterProfiles = sqliteTable(
       .default(sql`CURRENT_TIMESTAMP`),
   },
   (table) => [
-    index("character_profiles_name_idx").on(table.name),
-    index("character_profiles_updated_at_idx").on(table.updatedAt),
-  ],
-);
-
-export const characterProfileAssets = sqliteTable(
-  "character_profile_assets",
-  {
-    profileId: text("profile_id")
-      .notNull()
-      .references(() => characterProfiles.id, { onDelete: "cascade" }),
-    assetId: text("asset_id")
-      .notNull()
-      .references(() => assets.id, { onDelete: "restrict" }),
-    ordinal: integer("ordinal").notNull(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.profileId, table.assetId] }),
-    uniqueIndex("character_profile_assets_ordinal_unique").on(
-      table.profileId,
-      table.ordinal,
+    uniqueIndex("managed_model_installations_provider_file_unique").on(
+      table.provider,
+      table.providerModelId,
+      table.providerVersionId,
+      table.providerFileId,
     ),
-    index("character_profile_assets_asset_idx").on(table.assetId),
-  ],
-);
-
-export const modelPacks = sqliteTable(
-  "model_packs",
-  {
-    id: text("id").primaryKey(),
-    name: text("name").notNull(),
-    description: text("description").notNull().default(""),
-    modelJson: text("model_json").notNull(),
-    lorasJson: text("loras_json").notNull().default("[]"),
-    createdAt: text("created_at")
-      .notNull()
-      .default(sql`CURRENT_TIMESTAMP`),
-    updatedAt: text("updated_at")
-      .notNull()
-      .default(sql`CURRENT_TIMESTAMP`),
-  },
-  (table) => [
-    index("model_packs_name_idx").on(table.name),
-    index("model_packs_updated_at_idx").on(table.updatedAt),
-  ],
-);
-
-export const generationBatches = sqliteTable(
-  "generation_batches",
-  {
-    id: text("id").primaryKey(),
-    axesJson: text("axes_json").notNull().default("[]"),
-    createdAt: text("created_at")
-      .notNull()
-      .default(sql`CURRENT_TIMESTAMP`),
-  },
-  (table) => [
-    index("generation_batches_created_at_idx").on(table.createdAt),
-  ],
-);
-
-export const generationBatchJobs = sqliteTable(
-  "generation_batch_jobs",
-  {
-    batchId: text("batch_id")
-      .notNull()
-      .references(() => generationBatches.id, { onDelete: "cascade" }),
-    jobId: text("job_id")
-      .notNull()
-      .references(() => jobs.id, { onDelete: "cascade" }),
-    label: text("label").notNull(),
-    ordinal: integer("ordinal").notNull(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.batchId, table.jobId] }),
-    uniqueIndex("generation_batch_jobs_job_unique").on(table.jobId),
-    uniqueIndex("generation_batch_jobs_ordinal_unique").on(
-      table.batchId,
-      table.ordinal,
+    uniqueIndex("managed_model_installations_storage_path_unique").on(
+      table.storagePath,
+    ),
+    index("managed_model_installations_installed_at_idx").on(
+      table.installedAt,
     ),
   ],
 );
@@ -437,6 +366,5 @@ export type SystemOperationEventRow =
   typeof systemOperationEvents.$inferSelect;
 export type RuntimeSessionRow = typeof runtimeSessions.$inferSelect;
 export type ModelDownloadRow = typeof modelDownloads.$inferSelect;
-export type CharacterProfileRow = typeof characterProfiles.$inferSelect;
-export type ModelPackRow = typeof modelPacks.$inferSelect;
-export type GenerationBatchRow = typeof generationBatches.$inferSelect;
+export type ManagedModelInstallationRow =
+  typeof managedModelInstallations.$inferSelect;

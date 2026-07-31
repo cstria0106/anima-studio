@@ -9,6 +9,7 @@ export type JobStatus =
 
 export interface ReferenceAsset {
   id: string;
+  sha256?: string;
   name: string;
   url: string;
   width?: number;
@@ -91,50 +92,6 @@ export interface GenerationDraft {
   };
 }
 
-/**
- * A reusable character setup. The API stores a complete draft snapshot so a
- * profile remains reproducible even when defaults change between releases.
- * `representativeOutputId` is deliberately an output id (not a Comfy filename)
- * because app outputs outlive the ComfyUI history.
- */
-export interface CharacterProfile {
-  id: string;
-  name: string;
-  description?: string;
-  draft: GenerationDraft;
-  representativeOutputId?: string;
-  representativeUrl?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CharacterProfileInput {
-  name: string;
-  description?: string;
-  draft: GenerationDraft;
-}
-
-/**
- * Model packs intentionally contain only the base model selection and ordered
- * LoRA stack. Applying one must never replace prompts, references, or sampling.
- */
-export interface ModelPack {
-  id: string;
-  name: string;
-  description?: string;
-  models: GenerationDraft["models"];
-  loras: LoraSelection[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface ModelPackInput {
-  name: string;
-  description?: string;
-  models: GenerationDraft["models"];
-  loras: LoraSelection[];
-}
-
 export type PromptSourceKind =
   | "base-positive"
   | "user-positive"
@@ -157,23 +114,6 @@ export interface PromptConflict {
   left: string;
   right: string;
   reason: string;
-}
-
-export interface VariationCombination {
-  id: string;
-  label: string;
-  positive: string;
-  seedMode: "random" | "fixed";
-  seed: number;
-}
-
-export interface VariationMatrixRequest {
-  baseDraft: GenerationDraft;
-  combinations: VariationCombination[];
-}
-
-export interface VariationMatrixResponse {
-  jobs: StudioJob[];
 }
 
 export interface ComparisonItem {
@@ -288,7 +228,6 @@ export type OnboardingStepId =
   | "welcome"
   | "runtime"
   | "models"
-  | "character"
   | "test_generation";
 
 export interface OnboardingStep {
@@ -319,7 +258,7 @@ export type StorageItemKind =
   | "model_download";
 
 export interface StorageDependency {
-  kind: "job" | "character_profile" | "model_pack";
+  kind: "job";
   id: string;
   label: string;
 }
@@ -362,115 +301,6 @@ export interface StorageCleanupResult {
     reason: string | null;
     dependencies: StorageDependency[];
   }>;
-}
-
-export interface PortableAsset {
-  sha256: string;
-  name: string;
-  mimeType: "image/png" | "image/jpeg" | "image/webp";
-  byteSize: number;
-  width: number | null;
-  height: number | null;
-  dataBase64: string;
-}
-
-export interface PortableInstantLora {
-  profile: string;
-  modelStrength: number;
-  clipStrength: number;
-  tagging: {
-    generalThreshold: number;
-    characterThreshold: number;
-    prependTags: string;
-    appendTags: string;
-    excludeTags: string;
-    replaceTags: string;
-    removeUnderscore: boolean;
-  };
-  training: {
-    steps: number;
-    learningRate: number;
-    networkDim: number;
-    networkAlpha: number;
-    resolution: string;
-    gradientCheckpointing: boolean;
-    cacheLatents: boolean;
-    cacheTextEncoderOutputs: boolean;
-    seed: number;
-    forceRetrain: boolean;
-    batchSize: number;
-  };
-}
-
-export interface PortableCharacterProfile {
-  sourceId?: string;
-  name: string;
-  description: string;
-  referenceAssetSha256: string[];
-  prompts: GenerationDraft["prompts"];
-  instantLora: PortableInstantLora;
-  excludedTags: string[];
-  cache: {
-    state: "empty" | "ready" | "stale";
-    cacheKey: string | null;
-    referenceFingerprint: string | null;
-    loraName: string | null;
-    trainedAt: string | null;
-    autoTags: string[];
-  };
-}
-
-export interface PortableModelPack {
-  sourceId?: string;
-  name: string;
-  description: string;
-  model: {
-    diffusionModel: string;
-    clip: string;
-    clipType: string;
-    vae: string;
-    weightDtype: string;
-  };
-  loras: Array<{
-    name: string;
-    modelStrength: number;
-    clipStrength: number;
-    enabled: boolean;
-  }>;
-}
-
-export interface PortableBundle {
-  format: "anima-studio-portable";
-  version: 1;
-  exportedAt: string;
-  assets: PortableAsset[];
-  characterProfiles: PortableCharacterProfile[];
-  modelPacks: PortableModelPack[];
-}
-
-export interface PortableImportIssue {
-  kind: "node" | "model" | "asset" | "bundle" | "endpoint";
-  id: string;
-  label: string;
-  package?: string;
-  installUrl?: string;
-}
-
-export interface PortableImportPreview {
-  valid: boolean;
-  assetCount: number;
-  newAssetCount: number;
-  deduplicatedAssetCount: number;
-  totalAssetBytes: number;
-  characterProfileCount: number;
-  modelPackCount: number;
-  missing: PortableImportIssue[];
-}
-
-export interface PortableImportResult {
-  preview: PortableImportPreview;
-  characterProfiles: CharacterProfile[];
-  modelPacks: ModelPack[];
 }
 
 export interface HealthResponse {
@@ -723,6 +553,9 @@ export interface CivitaiFile {
   sha256: string | null;
   primary: boolean;
   downloadUrl?: string;
+  installationId: string | null;
+  installationStatus: ModelInstallationStatus;
+  installationProgress: number | null;
 }
 
 export interface CivitaiVersion {
@@ -731,6 +564,7 @@ export interface CivitaiVersion {
   baseModel: string | null;
   createdAt: string | null;
   earlyAccessEndsAt: string | null;
+  thumbnailUrl: string | null;
   trainedWords: string[];
   files: CivitaiFile[];
 }
@@ -751,17 +585,6 @@ export interface CivitaiModelInspection {
   versions: CivitaiVersion[];
 }
 
-export type ModelDownloadState =
-  | "resolving"
-  | "queued"
-  | "downloading"
-  | "paused"
-  | "verifying"
-  | "indexing"
-  | "completed"
-  | "failed"
-  | "cancelled";
-
 export type ModelDestination =
   | "loras"
   | "diffusion_models"
@@ -769,36 +592,19 @@ export type ModelDestination =
   | "text_encoders"
   | "vae";
 
-export interface ModelDownload {
-  id: string;
-  operationId: string;
-  state: ModelDownloadState;
-  provider: "civitai" | "huggingface";
-  providerModelId: string;
-  providerVersionId: string;
-  providerFileId: string | null;
-  modelId: number | null;
-  modelVersionId: number | null;
-  fileId: number | null;
-  modelName: string;
-  versionName: string;
-  filename: string;
-  destinationRootId: ModelDestination;
-  relativeDir: string;
-  expectedSha256: string | null;
-  actualSha256: string | null;
-  bytesCompleted: number;
-  bytesTotal: number | null;
-  bytesPerSecond: number | null;
-  triggerWords: string[];
-  metadata: Record<string, unknown>;
-  error: string | null;
-  createdAt: string;
-  updatedAt: string;
-  completedAt: string | null;
+export type ModelInstallationStatus =
+  | "not_installed"
+  | "installing"
+  | "installed";
+
+export interface ModelInstallTask {
+  installationId: string;
+  status: "installing" | "installed" | "failed";
+  progress: number;
+  error?: string;
 }
 
-export interface ModelDownloadCreate {
+export interface CivitaiModelInstallRequest {
   modelId: number;
   modelVersionId: number;
   fileId?: number;
@@ -808,10 +614,6 @@ export interface ModelDownloadCreate {
     "loras" | "diffusion_models" | "checkpoints"
   >;
   relativeDir?: string;
-}
-
-export interface ModelDownloadListResponse {
-  downloads: ModelDownload[];
 }
 
 export type HuggingFaceAnimaFileKind =
@@ -831,6 +633,9 @@ export interface HuggingFaceAnimaFile {
   sha256: string;
   recommended: boolean;
   experimental: boolean;
+  installationId: string | null;
+  installationStatus: ModelInstallationStatus;
+  installationProgress: number | null;
 }
 
 export interface HuggingFaceAnimaCatalog {
@@ -869,9 +674,4 @@ export interface HuggingFaceAnimaInstallRequest {
   path: string;
   includeDependencies: boolean;
   acceptedLicense: true;
-}
-
-export interface HuggingFaceAnimaInstallResult {
-  downloads: ModelDownload[];
-  alreadyInstalled: string[];
 }

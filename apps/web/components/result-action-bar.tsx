@@ -8,7 +8,6 @@ import {
   Maximize2,
   PencilLine,
   RefreshCw,
-  Star,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { StudioJob } from "@/lib/types";
@@ -18,33 +17,28 @@ type ActionName =
   | "new-seed"
   | "edit"
   | "load"
-  | "upscale"
-  | "representative";
+  | "upscale";
 
 interface ResultActionBarProps {
   job: StudioJob;
   canUpscale?: boolean;
-  activeProfileName?: string;
   compact?: boolean;
   onRepeat: (job: StudioJob) => Promise<void> | void;
   onNewSeed: (job: StudioJob) => Promise<void> | void;
   onEditPrompt: (job: StudioJob) => Promise<void> | void;
   onLoadSettings: (job: StudioJob) => Promise<void> | void;
   onUpscale?: (job: StudioJob) => Promise<void> | void;
-  onSetRepresentative?: (job: StudioJob) => Promise<void> | void;
 }
 
 export function ResultActionBar({
   job,
   canUpscale,
-  activeProfileName,
   compact,
   onRepeat,
   onNewSeed,
   onEditPrompt,
   onLoadSettings,
   onUpscale,
-  onSetRepresentative,
 }: ResultActionBarProps) {
   const [busy, setBusy] = React.useState<ActionName | null>(null);
   const [error, setError] = React.useState("");
@@ -132,27 +126,6 @@ export function ResultActionBar({
           >
             {icon("upscale", <Maximize2 />)}
             동일 시드 업스케일
-          </Button>
-        ) : null}
-        {onSetRepresentative ? (
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            disabled={busy !== null || !activeProfileName}
-            title={
-              activeProfileName
-                ? `${activeProfileName}의 대표 이미지로 지정`
-                : "먼저 생성 화면에서 캐릭터 프로필을 선택하세요."
-            }
-            onClick={() =>
-              void run("representative", onSetRepresentative)
-            }
-          >
-            {icon("representative", <Star />)}
-            {activeProfileName
-              ? `${activeProfileName} 대표`
-              : "프로필 대표"}
           </Button>
         ) : null}
       </div>

@@ -7,13 +7,12 @@ import {
   type RuntimeState as ManagedRuntimeState,
 } from "@anima/runtime";
 import {
-  PORTABLE_MAX_JSON_BYTES,
+  CURATED_IMAGE_PRESETS,
   civitaiInspectRequestSchema,
   huggingFaceAnimaDownloadCreateSchema,
   modelDownloadCreateSchema,
   runtimeConfigSchema,
   type JobStatus,
-  type ModelDownloadDto,
   type RuntimeConfig,
   type RuntimeDto,
   type RuntimeHardwareDto,
@@ -75,15 +74,12 @@ import { JobService, JobSubmissionError } from "./services/jobs";
 import { ModelDownloadCoordinator } from "./services/model-downloads";
 import { OperationService } from "./services/operations";
 import { OnboardingService } from "./services/onboarding";
-import { PortableWorkspaceService } from "./services/portable";
 import { StorageInventoryService } from "./services/storage-inventory";
-import { StudioLibraryService } from "./services/studio-library";
 import {
   initializeDanbooruTagIndex,
   initializeFallbackTagIndex,
 } from "./services/tag-index";
 import { JobTracker } from "./services/tracker";
-import { VariationBatchService } from "./services/variations";
 import {
   FetchHuggingFaceJsonTransport,
   HuggingFaceAnimaClient,
@@ -107,11 +103,8 @@ export interface ApiRuntime {
   events: JobEventService;
   operations: OperationService;
   jobs: JobService;
-  library: StudioLibraryService;
-  portable: PortableWorkspaceService;
   storageInventory: StorageInventoryService;
   onboarding: OnboardingService;
-  variations: VariationBatchService;
   tracker: JobTracker;
   runtimeController: ManagedComfyRuntimeController;
   modelLibrary: ModelLibraryService;
@@ -144,15 +137,7 @@ export type ModelLibraryService = Pick<
   | "deleteToken"
   | "inspect"
   | "create"
-  | "get"
-  | "list"
-  | "progress"
-  | "pause"
-  | "resume"
-  | "cancel"
-  | "retry"
   | "settled"
-  | "reconcileInterruptedDownloads"
   | "shutdown"
 >;
 
@@ -161,14 +146,7 @@ export type HuggingFaceLibraryService = Pick<
   | "providerStatus"
   | "catalog"
   | "install"
-  | "get"
-  | "list"
-  | "pause"
-  | "resume"
-  | "cancel"
-  | "retry"
   | "settled"
-  | "reconcileInterruptedDownloads"
   | "shutdown"
 >;
 
@@ -829,13 +807,8 @@ export async function createRuntime(
     repository,
     modelLibrary,
     huggingFaceLibrary,
-  );
-  const library = new StudioLibraryService(repository);
-  const portable = new PortableWorkspaceService(
-    repository,
-    storage,
-    library,
-    capabilities,
+    modelDestinations,
+    join(config.dataDir, "quarantine", "model-removals"),
   );
   const storageInventory = new StorageInventoryService(repository, {
     dataDir: config.dataDir,
@@ -863,9 +836,7 @@ export async function createRuntime(
       ).length,
     };
   });
-  const variations = new VariationBatchService(repository, jobs);
-  modelLibrary.reconcileInterruptedDownloads();
-  huggingFaceLibrary.reconcileInterruptedDownloads();
+  await modelDownloads.reconcileInstallations();
   for (const orphan of repository.listActiveSystemOperations()) {
     operations.fail(
       orphan.id,
@@ -928,11 +899,8 @@ export async function createRuntime(
     events,
     operations,
     jobs,
-    library,
-    portable,
     storageInventory,
     onboarding,
-    variations,
     tracker,
     runtimeController,
     runtimeLogs: logs,
@@ -965,11 +933,8 @@ export async function createRuntime(
     events,
     operations,
     jobs,
-    library,
-    portable,
     storageInventory,
     onboarding,
-    variations,
     tracker,
     runtimeController,
     modelLibrary,
@@ -1000,11 +965,8 @@ interface AppServices {
   events: JobEventService;
   operations: OperationService;
   jobs: JobService;
-  library: StudioLibraryService;
-  portable: PortableWorkspaceService;
   storageInventory: StorageInventoryService;
   onboarding: OnboardingService;
-  variations: VariationBatchService;
   tracker: JobTracker;
   runtimeController: ManagedComfyRuntimeController;
   runtimeLogs: RuntimeLogService;
@@ -1694,11 +1656,11 @@ export function createApp(services: AppServices): Hono {
     }
   };
 
-  const refreshOptionsAfterDownload = (download: ModelDownloadDto) => {
+  const refreshOptionsAfterInstall = (installationId: string) => {
     void services.modelDownloads
-      .settled(download.id)
+      .settledTask(installationId)
       .then((completed) => {
-        if (completed.state === "completed") {
+        if (completed.status === "installed") {
           services.capabilities.invalidate();
         }
       })
@@ -1753,7 +1715,7 @@ export function createApp(services: AppServices): Hono {
     return c.json({ provider: await civitaiProvider() });
   });
 
-  app.post("/api/model-downloads/inspect", async (c) => {
+  app.post("/api/model-installations/civitai/inspect", async (c) => {
     const parsed = civitaiInspectRequestSchema.safeParse(
       await parseJson(c.req.raw),
     );
@@ -1765,18 +1727,22 @@ export function createApp(services: AppServices): Hono {
       );
     }
     return c.json({
-      model: await services.modelLibrary.inspect(parsed.data.url),
+      model: services.modelDownloads.decorateCivitai(
+        await services.modelLibrary.inspect(parsed.data.url),
+      ),
     });
   });
 
   app.get("/api/download-providers/huggingface/anima", async (c) => {
     return c.json({
       provider: await huggingFaceProvider(),
-      catalog: await services.huggingFaceLibrary.catalog(),
+      catalog: services.modelDownloads.decorateAnima(
+        await services.huggingFaceLibrary.catalog(),
+      ),
     });
   });
 
-  app.post("/api/model-downloads/huggingface/anima", async (c) => {
+  app.post("/api/model-installations/anima", async (c) => {
     await assertHuggingFaceDownloadsAvailable();
     const parsed = huggingFaceAnimaDownloadCreateSchema.safeParse(
       await parseJson(c.req.raw),
@@ -1788,16 +1754,36 @@ export function createApp(services: AppServices): Hono {
         400,
       );
     }
+    const current = services.modelDownloads.current(
+      "huggingface",
+      "circlestone-labs/Anima",
+      parsed.data.revision,
+      parsed.data.path,
+    );
+    if (current) return c.json(current, 200);
     const result = await services.huggingFaceLibrary.install(
       parsed.data,
     );
-    for (const download of result.downloads) {
-      refreshOptionsAfterDownload(download);
+    const primary =
+      result.downloads.find(
+        (download) => download.providerFileId === parsed.data.path,
+      ) ?? result.downloads[0];
+    if (!primary) {
+      throw new HuggingFaceError(
+        "DOWNLOAD_FAILED",
+        "Anima 모델 설치 작업을 만들지 못했습니다.",
+        500,
+      );
     }
-    return c.json(result, 202);
+    const task = services.modelDownloads.track(
+      result.downloads,
+      primary.id,
+    );
+    refreshOptionsAfterInstall(task.installationId);
+    return c.json(task, 202);
   });
 
-  app.post("/api/model-downloads", async (c) => {
+  app.post("/api/model-installations/civitai", async (c) => {
     await assertCivitaiDownloadsAvailable();
     const parsed = modelDownloadCreateSchema.safeParse(
       await parseJson(c.req.raw),
@@ -1809,272 +1795,51 @@ export function createApp(services: AppServices): Hono {
         400,
       );
     }
+    const current = services.modelDownloads.current(
+      "civitai",
+      String(parsed.data.modelId),
+      String(parsed.data.modelVersionId),
+      parsed.data.fileId === undefined
+        ? null
+        : String(parsed.data.fileId),
+    );
+    if (current) return c.json(current, 200);
     const download = await services.modelLibrary.create(parsed.data);
-    refreshOptionsAfterDownload(download);
-    return c.json({ download }, 202);
+    const task = services.modelDownloads.track([download], download.id);
+    refreshOptionsAfterInstall(task.installationId);
+    return c.json(task, 202);
   });
 
-  app.get("/api/model-downloads", (c) => {
-    const limit = numberParameter(c.req.query("limit"), 50, 1, 100);
-    return c.json({
-      downloads: services.modelDownloads.list(limit),
-    });
-  });
-
-  app.get("/api/model-downloads/:id", (c) =>
-    c.json({
-      download: services.modelDownloads.get(c.req.param("id")),
-    }),
-  );
-
-  app.post("/api/model-downloads/:id/pause", async (c) =>
-    c.json({
-      download: await services.modelDownloads.pause(c.req.param("id")),
-    }),
-  );
-
-  app.post("/api/model-downloads/:id/resume", async (c) => {
-    const current = services.modelDownloads.get(c.req.param("id"));
-    if (current.provider === "civitai") {
-      await assertCivitaiDownloadsAvailable();
-    } else {
-      await assertHuggingFaceDownloadsAvailable();
-    }
-    return c.json({
-      download: await services.modelDownloads.resume(c.req.param("id")),
-    });
-  });
-
-  app.post("/api/model-downloads/:id/cancel", async (c) =>
-    c.json({
-      download: await services.modelDownloads.cancel(c.req.param("id")),
-    }),
-  );
-
-  app.post("/api/model-downloads/:id/retry", async (c) => {
-    const current = services.modelDownloads.get(c.req.param("id"));
-    if (current.provider === "civitai") {
-      await assertCivitaiDownloadsAvailable();
-    } else {
-      await assertHuggingFaceDownloadsAvailable();
-    }
-    const download = await services.modelDownloads.retry(
+  app.delete("/api/model-installations/:id", async (c) => {
+    const removed = await services.modelDownloads.remove(
       c.req.param("id"),
     );
-    refreshOptionsAfterDownload(download);
-    return c.json({ download }, 202);
+    services.capabilities.invalidate();
+    return c.json({ installationId: removed.id });
   });
 
-  app.get("/api/model-downloads/:id/events", (c) => {
-    const downloadId = c.req.param("id");
-    const download = services.modelDownloads.get(downloadId);
-    const operationId = download.operationId;
-    const after = numberParameter(
-      c.req.query("after") ?? c.req.header("Last-Event-ID"),
-      0,
-      0,
-      Number.MAX_SAFE_INTEGER,
-    );
+  app.get("/api/model-installations/:id/events", (c) => {
+    const installationId = c.req.param("id");
+    services.modelDownloads.getTask(installationId);
     return streamSSE(c, async (stream) => {
       let closed = false;
-      let cursor = after;
-      const pending: ReturnType<typeof services.operations.events> = [];
-      const queuedIds = new Set<number>();
-      let wake: (() => void) | null = null;
       stream.onAbort(() => {
         closed = true;
-        wake?.();
       });
-      const push = (event: (typeof pending)[number]) => {
-        if (event.id <= cursor || queuedIds.has(event.id)) return;
-        pending.push(event);
-        queuedIds.add(event.id);
-        wake?.();
-        wake = null;
-      };
-      const unsubscribe = services.operations.broker.subscribe(
-        operationId,
-        push,
-      );
-      try {
-        for (const event of services.operations.events(
-          operationId,
-          cursor,
-        )) {
-          push(event);
-        }
+      let eventId = 0;
+      while (!closed) {
+        const task = services.modelDownloads.getTask(installationId);
+        eventId += 1;
         await stream.writeSSE({
-          event: "ready",
-          data: JSON.stringify({ downloadId, after: cursor }),
+          id: String(eventId),
+          event: "installation",
+          data: JSON.stringify(task),
         });
-        while (!closed) {
-          while (pending.length > 0) {
-            const event = pending.shift()!;
-            queuedIds.delete(event.id);
-            cursor = event.id;
-            const current = services.modelDownloads.get(downloadId);
-            await stream.writeSSE({
-              id: String(event.id),
-              event: "download",
-              data: JSON.stringify({ download: current, event }),
-            });
-            if (
-              current.state === "completed" ||
-              current.state === "failed" ||
-              current.state === "cancelled"
-            ) {
-              return;
-            }
-          }
-          const current = services.modelDownloads.get(downloadId);
-          if (
-            current.state === "completed" ||
-            current.state === "failed" ||
-            current.state === "cancelled"
-          ) {
-            return;
-          }
-          const signal = new Promise<void>((resolve) => {
-            wake = resolve;
-          });
-          await Promise.race([signal, stream.sleep(15_000)]);
-          if (!closed && pending.length === 0) {
-            await stream.writeSSE({
-              event: "ping",
-              data: new Date().toISOString(),
-            });
-          }
-        }
-      } finally {
-        unsubscribe();
+        if (task.status !== "installing") return;
+        await stream.sleep(350);
       }
     });
   });
-
-  app.get("/api/character-profiles", (c) =>
-    c.json({ profiles: services.library.listCharacterProfiles() }),
-  );
-
-  app.post("/api/character-profiles", async (c) => {
-    const profile = services.library.createCharacterProfile(
-      await parseJson(c.req.raw),
-    );
-    return c.json({ profile }, 201);
-  });
-
-  app.get("/api/character-profiles/:id", (c) =>
-    c.json({
-      profile: services.library.getCharacterProfile(c.req.param("id")),
-    }),
-  );
-
-  app.put("/api/character-profiles/:id", async (c) =>
-    c.json({
-      profile: services.library.updateCharacterProfile(
-        c.req.param("id"),
-        await parseJson(c.req.raw),
-      ),
-    }),
-  );
-
-  app.delete("/api/character-profiles/:id", (c) => {
-    services.library.deleteCharacterProfile(c.req.param("id"));
-    return c.json({ deleted: true });
-  });
-
-  app.post(
-    "/api/character-profiles/:id/representative",
-    async (c) =>
-      c.json({
-        profile: services.library.setRepresentative(
-          c.req.param("id"),
-          await parseJson(c.req.raw),
-        ),
-      }),
-  );
-
-  app.get("/api/model-packs", (c) =>
-    c.json({ modelPacks: services.library.listModelPacks() }),
-  );
-
-  app.post("/api/model-packs", async (c) => {
-    const modelPack = services.library.createModelPack(
-      await parseJson(c.req.raw),
-    );
-    return c.json({ modelPack }, 201);
-  });
-
-  app.get("/api/model-packs/:id", (c) =>
-    c.json({ modelPack: services.library.getModelPack(c.req.param("id")) }),
-  );
-
-  app.put("/api/model-packs/:id", async (c) =>
-    c.json({
-      modelPack: services.library.updateModelPack(
-        c.req.param("id"),
-        await parseJson(c.req.raw),
-      ),
-    }),
-  );
-
-  app.delete("/api/model-packs/:id", (c) => {
-    services.library.deleteModelPack(c.req.param("id"));
-    return c.json({ deleted: true });
-  });
-
-  app.post("/api/portable/export", async (c) =>
-    c.json({
-      bundle: await services.portable.export(await parseJson(c.req.raw)),
-    }),
-  );
-
-  const portableImportBodyLimit = bodyLimit({
-    maxSize: PORTABLE_MAX_JSON_BYTES,
-    onError: (c) =>
-      c.json(
-        {
-          message: `Portable bundle exceeds ${PORTABLE_MAX_JSON_BYTES} bytes.`,
-          error: {
-            code: "FILE_ERROR",
-            message: `Portable bundle exceeds ${PORTABLE_MAX_JSON_BYTES} bytes.`,
-          },
-        },
-        413,
-      ),
-  });
-
-  app.post(
-    "/api/portable/import/preview",
-    portableImportBodyLimit,
-    async (c) =>
-      c.json({
-        preview: await services.portable.preview(
-          await parseJson(c.req.raw),
-        ),
-      }),
-  );
-
-  app.post(
-    "/api/portable/preview",
-    portableImportBodyLimit,
-    async (c) =>
-      c.json({
-        preview: await services.portable.preview(
-          await parseJson(c.req.raw),
-        ),
-      }),
-  );
-
-  app.post(
-    "/api/portable/import",
-    portableImportBodyLimit,
-    async (c) =>
-      c.json({
-        result: await services.portable.import(
-          await parseJson(c.req.raw),
-        ),
-      }, 201),
-  );
 
   app.get("/api/storage", async (c) =>
     c.json({ storage: await services.storageInventory.inventory() }),
@@ -2113,9 +1878,7 @@ export function createApp(services: AppServices): Hono {
         loras: [],
         samplers: [],
         schedulers: [],
-        imagePresets: [
-          { label: "704 × 1408", width: 704, height: 1408 },
-        ],
+        imagePresets: [...CURATED_IMAGE_PRESETS],
         upscaleMethods: [
           "nearest-exact",
           "bilinear",
@@ -2261,19 +2024,6 @@ export function createApp(services: AppServices): Hono {
       (body as { config: unknown }).config,
     );
     return c.json({ job }, 202);
-  });
-
-  app.post("/api/jobs/variations", async (c) => {
-    const batch = await services.variations.create(
-      await parseJson(c.req.raw),
-    );
-    return c.json(
-      {
-        batch,
-        jobs: batch.jobs.map((entry) => entry.job),
-      },
-      202,
-    );
   });
 
   app.get("/api/jobs", (c) => {

@@ -137,7 +137,9 @@ function kindForDirectory(
   return { kind: "vae", destinationRootId: "vae" };
 }
 
-function catalogFile(entry: z.infer<typeof treeEntrySchema>) {
+function catalogFile(
+  entry: z.infer<typeof treeEntrySchema>,
+): HuggingFaceAnimaFileDto | null {
   const match = entry.path.match(supportedPath);
   if (!match) return null;
   const [, directory, filename] = match;
@@ -164,6 +166,9 @@ function catalogFile(entry: z.infer<typeof treeEntrySchema>) {
       lower === "anima-base-v1.0.safetensors" ||
       lower === "anima-aesthetic-v1.1.safetensors",
     experimental: lower.includes("preview"),
+    installationId: null,
+    installationStatus: "not_installed",
+    installationProgress: null,
   } satisfies HuggingFaceAnimaFileDto;
 }
 

@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   ChevronRight,
   Circle,
-  ImagePlus,
   LoaderCircle,
   Play,
   Puzzle,
@@ -55,12 +54,6 @@ const stepPresentation: Record<
     icon: Puzzle,
     pendingMessage: "기반 모델과 워크플로우에 필요한 노드를 준비하세요.",
     completeMessage: "모델과 필수 노드 계약을 확인했습니다.",
-  },
-  character: {
-    label: "캐릭터 프로필",
-    icon: ImagePlus,
-    pendingMessage: "참조 이미지와 프롬프트를 캐릭터 프로필로 저장하세요.",
-    completeMessage: "재사용 가능한 캐릭터 프로필이 준비됐습니다.",
   },
   test_generation: {
     label: "첫 테스트 생성",
@@ -177,7 +170,7 @@ export function SystemOnboarding({
         : { label: "모델 확인", action: onOpenModels };
     }
     return {
-      label: id === "character" ? "프로필 만들기" : "생성 화면 열기",
+      label: "생성 화면 열기",
       action: onNavigateToCreate,
     };
   }
@@ -227,9 +220,6 @@ export function SystemOnboarding({
           <h2 id="onboarding-title" className="mt-2 text-base font-semibold">
             첫 이미지 생성 준비
           </h2>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            서버에 저장된 준비 상태를 기준으로 설치부터 첫 생성까지 안내합니다.
-          </p>
         </div>
         <Button
           type="button"
@@ -246,7 +236,7 @@ export function SystemOnboarding({
 
       <Progress value={(completed / steps.length) * 100} className="mt-4" />
 
-      <div className="mt-4 grid gap-2 lg:grid-cols-5">
+      <div className="mt-4 grid gap-2 lg:grid-cols-4">
         {steps.map((step) => {
           const presentation = stepPresentation[step.id];
           const Icon = presentation.icon;

@@ -1,10 +1,10 @@
 "use client";
 
+import { CURATED_IMAGE_PRESETS } from "@anima/shared";
 import {
   ChevronDown,
   Dices,
   Expand,
-  Gauge,
   RotateCw,
   Settings2,
   Sparkles,
@@ -44,87 +44,28 @@ export function GenerationControls({
   const patchUpscale = (patch: Partial<GenerationDraft["upscale"]>) =>
     onChange({ ...value, upscale: { ...upscale, ...patch } });
 
-  const presets = options.presets.length
-    ? options.presets
-    : [
-        { label: "Portrait · 1:2", width: 704, height: 1408 },
-        { label: "Tall · 2:3", width: 832, height: 1248 },
-        { label: "Square · 1:1", width: 1024, height: 1024 },
-        { label: "Wide · 3:2", width: 1216, height: 832 },
-      ];
+  const curatedKeys = new Set(
+    CURATED_IMAGE_PRESETS.map(({ width, height }) => `${width}x${height}`),
+  );
+  const extraPresets = options.presets.filter(
+    ({ width, height }, index, presets) => {
+      const key = `${width}x${height}`;
+      return (
+        !curatedKeys.has(key) &&
+        presets.findIndex(
+          (preset) =>
+            preset.width === width && preset.height === height,
+        ) === index
+      );
+    },
+  );
+  const selectedExtraPreset = extraPresets.find(
+    (preset) =>
+      preset.width === sampling.width && preset.height === sampling.height,
+  );
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-4 md:grid-cols-2">
-        <Field label="Sampler" htmlFor="sampler">
-          <SearchableSelect
-            id="sampler"
-            value={sampling.sampler}
-            options={optionsFromStrings(options.samplers)}
-            onChange={(sampler) => patchSampling({ sampler })}
-            placeholder="Sampler 선택"
-          />
-        </Field>
-        <Field label="Scheduler" htmlFor="scheduler">
-          <SearchableSelect
-            id="scheduler"
-            value={sampling.scheduler}
-            options={optionsFromStrings(options.schedulers)}
-            onChange={(scheduler) => patchSampling({ scheduler })}
-            placeholder="Scheduler 선택"
-          />
-        </Field>
-        <CommittedNumberField
-          label="Steps"
-          value={sampling.steps}
-          onChange={(steps) => patchSampling({ steps })}
-          min={1}
-          max={10000}
-        />
-        <CommittedNumberField
-          label="CFG"
-          value={sampling.cfg}
-          onChange={(cfg) => patchSampling({ cfg })}
-          min={0}
-          max={100}
-          step={0.1}
-        />
-      </div>
-
-      <div className="rounded-lg border border-border/70 bg-background/35 p-4">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Dices className="size-4 text-pink-300" />
-            <div>
-              <p className="text-xs font-medium">생성 시드</p>
-              <p className="mt-0.5 text-[10px] text-muted-foreground">
-                랜덤 시드도 히스토리에 실제 값으로 기록됩니다.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] text-muted-foreground">
-              {sampling.seedMode === "random" ? "랜덤" : "고정"}
-            </span>
-            <Switch
-              checked={sampling.seedMode === "random"}
-              onCheckedChange={(random) =>
-                patchSampling({ seedMode: random ? "random" : "fixed" })
-              }
-              aria-label="랜덤 시드"
-            />
-          </div>
-        </div>
-        <CommittedNumberField
-          label="시드 값"
-          value={sampling.seed}
-          min={0}
-          max={Number.MAX_SAFE_INTEGER}
-          disabled={sampling.seedMode === "random"}
-          onChange={(seed) => patchSampling({ seed })}
-        />
-      </div>
-
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -135,8 +76,8 @@ export function GenerationControls({
             {sampling.width} × {sampling.height}
           </Badge>
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          {presets.slice(0, 6).map((preset) => {
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {CURATED_IMAGE_PRESETS.map((preset) => {
             const selected =
               preset.width === sampling.width &&
               preset.height === sampling.height;
@@ -164,6 +105,34 @@ export function GenerationControls({
             );
           })}
         </div>
+        {extraPresets.length ? (
+          <Field label="기타 크기" htmlFor="additional-image-size">
+            <SearchableSelect
+              id="additional-image-size"
+              value={
+                selectedExtraPreset
+                  ? `${selectedExtraPreset.width}x${selectedExtraPreset.height}`
+                  : ""
+              }
+              options={extraPresets.map((preset) => ({
+                name: `${preset.label} · ${preset.width} × ${preset.height}`,
+                value: `${preset.width}x${preset.height}`,
+              }))}
+              onChange={(size) => {
+                const preset = extraPresets.find(
+                  ({ width, height }) => `${width}x${height}` === size,
+                );
+                if (preset) {
+                  patchSampling({
+                    width: preset.width,
+                    height: preset.height,
+                  });
+                }
+              }}
+              placeholder="ComfyUI 추가 크기"
+            />
+          </Field>
+        ) : null}
         <div className="grid grid-cols-3 gap-3">
           <CommittedNumberField
             label="Width"
@@ -195,15 +164,80 @@ export function GenerationControls({
         </div>
       </div>
 
+      <div className="grid gap-4 rounded-lg border border-border/70 bg-background/35 p-4 sm:grid-cols-2 lg:grid-cols-4">
+        <CommittedNumberField
+          label="Steps"
+          value={sampling.steps}
+          onChange={(steps) => patchSampling({ steps })}
+          min={1}
+          max={10000}
+        />
+        <CommittedNumberField
+          label="CFG"
+          value={sampling.cfg}
+          onChange={(cfg) => patchSampling({ cfg })}
+          min={0}
+          max={100}
+          step={0.1}
+        />
+        <div className="sm:col-span-2">
+          <div className="mb-2 flex h-5 items-center justify-between gap-3">
+            <span className="inline-flex items-center gap-2 text-xs font-medium">
+              <Dices className="size-3.5 text-pink-300" />
+              시드
+            </span>
+            <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              {sampling.seedMode === "random" ? "랜덤" : "고정"}
+              <Switch
+                checked={sampling.seedMode === "random"}
+                onCheckedChange={(random) =>
+                  patchSampling({ seedMode: random ? "random" : "fixed" })
+                }
+                aria-label="랜덤 시드"
+              />
+            </label>
+          </div>
+          <CommittedNumberField
+            label="시드 값"
+            value={sampling.seed}
+            min={0}
+            max={Number.MAX_SAFE_INTEGER}
+            disabled={sampling.seedMode === "random"}
+            onChange={(seed) => patchSampling({ seed })}
+          />
+        </div>
+      </div>
+
       <details className="group rounded-lg border border-border/70 bg-background/30">
         <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3">
           <span className="inline-flex items-center gap-2 text-xs font-medium">
             <Settings2 className="size-4 text-pink-300" />
-            샘플링 고급 설정
+            Sampler · Scheduler
+          </span>
+          <span className="ml-auto mr-3 max-w-[45%] truncate text-[10px] text-muted-foreground">
+            {sampling.sampler} · {sampling.scheduler}
           </span>
           <ChevronDown className="size-4 text-muted-foreground transition group-open:rotate-180" />
         </summary>
         <div className="grid gap-4 border-t border-border/60 p-4 md:grid-cols-2">
+          <Field label="Sampler" htmlFor="sampler">
+            <SearchableSelect
+              id="sampler"
+              value={sampling.sampler}
+              options={optionsFromStrings(options.samplers)}
+              onChange={(sampler) => patchSampling({ sampler })}
+              placeholder="Sampler 선택"
+            />
+          </Field>
+          <Field label="Scheduler" htmlFor="scheduler">
+            <SearchableSelect
+              id="scheduler"
+              value={sampling.scheduler}
+              options={optionsFromStrings(options.schedulers)}
+              onChange={(scheduler) => patchSampling({ scheduler })}
+              placeholder="Scheduler 선택"
+            />
+          </Field>
           <CommittedNumberField
             label="Denoise"
             value={sampling.denoise}
@@ -212,7 +246,6 @@ export function GenerationControls({
             max={1}
             step={0.01}
           />
-          <div />
           <CommittedNumberField
             label="CFG 적용 시작"
             value={sampling.cfgStart}
@@ -452,28 +485,26 @@ export function GenerationControls({
         </div>
       </details>
 
-      <div className="rounded-lg border border-border bg-surface-2 p-4">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <span className="grid size-9 place-items-center rounded-lg bg-violet-400/10 text-violet-300">
-              <RotateCw className="size-4" />
-            </span>
-            <div>
-              <p className="text-sm font-medium">업스케일</p>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">
-                2차 latent sampling으로 디테일을 보강합니다.
-              </p>
-            </div>
-          </div>
+      <details className="group rounded-lg border border-border/70 bg-background/30">
+        <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3">
+          <span className="inline-flex items-center gap-2 text-xs font-medium">
+            <RotateCw className="size-4 text-violet-300" />
+            업스케일
+          </span>
+          <span className="ml-auto text-[10px] text-muted-foreground">
+            {upscale.enabled ? `${upscale.scale}×` : "꺼짐"}
+          </span>
           <Switch
             checked={upscale.enabled}
+            onClick={(event) => event.stopPropagation()}
             onCheckedChange={(enabled) => patchUpscale({ enabled })}
             aria-label="업스케일 활성화"
           />
-        </div>
-
-        {upscale.enabled ? (
-          <div className="mt-5 grid animate-fade-in gap-4 border-t border-border/60 pt-4 md:grid-cols-2">
+          <ChevronDown className="size-4 text-muted-foreground transition group-open:rotate-180" />
+        </summary>
+        <div className="grid gap-4 border-t border-border/60 p-4 md:grid-cols-2">
+          {upscale.enabled ? (
+            <>
             <Field label="방식" htmlFor="upscale-method">
               <SearchableSelect
                 id="upscale-method"
@@ -516,18 +547,10 @@ export function GenerationControls({
               max={1}
               step={0.01}
             />
-          </div>
-        ) : null}
-      </div>
-
-      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-        <Gauge className="size-3.5" />
-        예상 출력: {sampling.batchSize}장 · {sampling.width}×
-        {sampling.height}
-        {upscale.enabled
-          ? ` → ${Math.round(sampling.width * upscale.scale)}×${Math.round(sampling.height * upscale.scale)}`
-          : ""}
-      </div>
+            </>
+          ) : null}
+        </div>
+      </details>
     </div>
   );
 }

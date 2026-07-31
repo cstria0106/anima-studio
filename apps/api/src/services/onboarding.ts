@@ -1,5 +1,6 @@
 import {
   onboardingPreferencesSchema,
+  onboardingStepIds,
   onboardingUpdateSchema,
   type OnboardingPreferences,
   type OnboardingStatusDto,
@@ -23,9 +24,24 @@ export class OnboardingService {
   ) {}
 
   private preferences(): OnboardingPreferences {
-    return onboardingPreferencesSchema.parse(
-      this.repository.getSetting<unknown>(ONBOARDING_SETTING) ?? {},
-    );
+    const raw = this.repository.getSetting<unknown>(ONBOARDING_SETTING);
+    const value =
+      raw && typeof raw === "object"
+        ? (raw as {
+            dismissed?: unknown;
+            completedSteps?: unknown;
+          })
+        : {};
+    const supportedSteps = new Set<string>(onboardingStepIds);
+    return onboardingPreferencesSchema.parse({
+      ...value,
+      completedSteps: Array.isArray(value.completedSteps)
+        ? value.completedSteps.filter(
+            (step): step is string =>
+              typeof step === "string" && supportedSteps.has(step),
+          )
+        : [],
+    });
   }
 
   async status(): Promise<OnboardingStatusDto> {
@@ -64,16 +80,6 @@ export class OnboardingService {
             ? "Generation models and required nodes are available."
             : "Select installed models and resolve required node issues.",
         actionHref: "/library",
-      },
-      {
-        id: "character",
-        label: "Character profile",
-        complete:
-          manuallyCompleted.has("character") ||
-          this.repository.hasCharacterProfiles(),
-        blocking: false,
-        message: "Save reference images and prompts as a reusable character.",
-        actionHref: "/create?section=character",
       },
       {
         id: "test_generation",

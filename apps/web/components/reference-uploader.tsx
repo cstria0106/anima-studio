@@ -3,8 +3,6 @@
 import * as React from "react";
 import Image from "next/image";
 import {
-  ArrowLeft,
-  ArrowRight,
   ImagePlus,
   LoaderCircle,
   RotateCcw,
@@ -23,6 +21,17 @@ interface ReferenceUploaderProps {
   disabled?: boolean;
 }
 
+function sortReferenceAssets(values: ReferenceAsset[]): ReferenceAsset[] {
+  return [...values].sort((left, right) => {
+    const leftHash = left.sha256;
+    const rightHash = right.sha256;
+    if (leftHash && rightHash) return leftHash.localeCompare(rightHash);
+    if (leftHash) return -1;
+    if (rightHash) return 1;
+    return left.id.localeCompare(right.id);
+  });
+}
+
 export function ReferenceUploader({
   assets,
   onChange,
@@ -31,16 +40,20 @@ export function ReferenceUploader({
   const inputRef = React.useRef<HTMLInputElement>(null);
   const assetsRef = React.useRef(assets);
   const [draggingOver, setDraggingOver] = React.useState(false);
-  const [dragIndex, setDragIndex] = React.useState<number | null>(null);
+  const displayedAssets = React.useMemo(
+    () => sortReferenceAssets(assets),
+    [assets],
+  );
 
   React.useEffect(() => {
-    assetsRef.current = assets;
+    assetsRef.current = sortReferenceAssets(assets);
   }, [assets]);
 
   const commit = React.useCallback(
     (next: ReferenceAsset[]) => {
-      assetsRef.current = next;
-      onChange(next);
+      const sorted = sortReferenceAssets(next);
+      assetsRef.current = sorted;
+      onChange(sorted);
     },
     [onChange],
   );
@@ -102,19 +115,10 @@ export function ReferenceUploader({
     [commit],
   );
 
-  function move(index: number, direction: -1 | 1) {
-    const nextIndex = index + direction;
-    if (nextIndex < 0 || nextIndex >= assets.length) return;
-    const reordered = [...assets];
-    const [item] = reordered.splice(index, 1);
-    reordered.splice(nextIndex, 0, item);
-    commit(reordered);
-  }
-
   function remove(index: number) {
-    const asset = assets[index];
+    const asset = displayedAssets[index];
     if (asset.url.startsWith("blob:")) URL.revokeObjectURL(asset.url);
-    commit(assets.filter((_, itemIndex) => itemIndex !== index));
+    commit(assets.filter((item) => item.id !== asset.id));
   }
 
   function retry(index: number) {
@@ -172,54 +176,31 @@ export function ReferenceUploader({
           이미지를 놓거나 클릭해서 추가
         </span>
         <span className="mt-1 text-xs text-muted-foreground">
-          PNG, JPG, WebP · 여러 각도와 거리를 섞으면 재현력이 좋아집니다
+          PNG, JPG, WebP
         </span>
       </button>
 
-      {assets.length ? (
+      {displayedAssets.length ? (
         <div>
-          <div className="mb-2 flex items-center justify-between">
-            <p className="text-xs text-muted-foreground">
-              참조 순서는 학습 입력 순서에 반영됩니다.
-            </p>
-            <Badge variant="secondary">{assets.length}장</Badge>
+          <div className="mb-2 flex items-center justify-end">
+            <Badge variant="secondary">{displayedAssets.length}장</Badge>
           </div>
           <div
             className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4"
             aria-label="참조 이미지 목록"
           >
-            {assets.map((asset, index) => (
+            {displayedAssets.map((asset, index) => (
               <div
                 key={asset.id}
-                draggable={asset.status === "ready"}
                 tabIndex={0}
-                onDragStart={() => setDragIndex(index)}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={() => {
-                  if (dragIndex === null || dragIndex === index) return;
-                  const reordered = [...assets];
-                  const [item] = reordered.splice(dragIndex, 1);
-                  reordered.splice(index, 0, item);
-                  commit(reordered);
-                  setDragIndex(null);
-                }}
                 onKeyDown={(event) => {
-                  if (event.altKey && event.key === "ArrowLeft") {
-                    event.preventDefault();
-                    move(index, -1);
-                  }
-                  if (event.altKey && event.key === "ArrowRight") {
-                    event.preventDefault();
-                    move(index, 1);
-                  }
                   if (event.key === "Delete") remove(index);
                 }}
                 className={cn(
                   "group relative aspect-square overflow-hidden rounded-lg border border-border bg-muted outline-none transition focus-visible:ring-2 focus-visible:ring-primary/40",
-                  dragIndex === index && "opacity-50",
                   asset.status === "error" && "border-red-500/40",
                 )}
-                aria-label={`${index + 1}번째 참조 이미지, ${asset.name}. Alt+화살표로 순서 변경, Delete로 제거`}
+                aria-label={`${asset.name}. Delete 키로 제거`}
               >
                 <Image
                   src={asset.url}
@@ -231,30 +212,7 @@ export function ReferenceUploader({
                   className="object-cover"
                 />
                 <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-gradient-to-t from-black/90 via-black/55 to-transparent px-2 pb-2 pt-8 opacity-0 transition group-hover:opacity-100 group-focus:opacity-100">
-                  <div className="flex items-center">
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="size-7 text-white/75 hover:bg-white/10 hover:text-white"
-                      disabled={index === 0}
-                      aria-label={`${asset.name} 왼쪽으로 이동`}
-                      onClick={() => move(index, -1)}
-                    >
-                      <ArrowLeft />
-                    </Button>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="size-7 text-white/75 hover:bg-white/10 hover:text-white"
-                      disabled={index === assets.length - 1}
-                      aria-label={`${asset.name} 오른쪽으로 이동`}
-                      onClick={() => move(index, 1)}
-                    >
-                      <ArrowRight />
-                    </Button>
-                  </div>
+                  <span />
                   <Button
                     type="button"
                     size="icon"
@@ -266,9 +224,6 @@ export function ReferenceUploader({
                     <Trash2 />
                   </Button>
                 </div>
-                <span className="absolute left-2 top-2 grid size-6 place-items-center rounded-full bg-black/65 text-[10px] font-semibold text-white backdrop-blur">
-                  {index + 1}
-                </span>
                 {asset.status === "uploading" ? (
                   <div className="absolute inset-0 grid place-items-center bg-black/55 backdrop-blur-sm">
                     <LoaderCircle className="size-5 animate-spin text-pink-300" />

@@ -28,7 +28,7 @@ import type {
   JobStatus,
   StudioJob,
 } from "@/lib/types";
-import type { PreflightIssue, WorkloadEstimate } from "@/lib/studio-ux";
+import type { PreflightIssue } from "@/lib/studio-ux";
 import { cn, formatElapsed, outputUrl } from "@/lib/utils";
 import { useJobTracker } from "@/components/use-job-tracker";
 
@@ -69,7 +69,6 @@ interface JobPanelProps {
   canGenerate: boolean;
   validationMessage?: string;
   preflightIssues?: PreflightIssue[];
-  workload?: WorkloadEstimate;
   onResolveIssue?: (issue: PreflightIssue) => void;
   onGenerate: () => void;
   onJobUpdate: (job: StudioJob) => void;
@@ -77,8 +76,6 @@ interface JobPanelProps {
   onRepeat: (job: StudioJob) => Promise<void>;
   onNewSeed: (job: StudioJob) => Promise<void>;
   onEditPrompt: (job: StudioJob) => void;
-  onSetRepresentative: (job: StudioJob) => Promise<void>;
-  activeProfileName?: string;
 }
 
 export function JobPanel({
@@ -89,7 +86,6 @@ export function JobPanel({
   canGenerate,
   validationMessage,
   preflightIssues = [],
-  workload,
   onResolveIssue,
   onGenerate,
   onJobUpdate,
@@ -97,8 +93,6 @@ export function JobPanel({
   onRepeat,
   onNewSeed,
   onEditPrompt,
-  onSetRepresentative,
-  activeProfileName,
 }: JobPanelProps) {
   const latestEvent = useJobTracker(job, onJobUpdate);
   const [selectedOutputId, setSelectedOutputId] = React.useState<string | null>(
@@ -187,7 +181,10 @@ export function JobPanel({
   }
 
   return (
-    <aside id="execution-dock" className="hidden xl:sticky xl:top-28 xl:block">
+    <aside
+      id="execution-dock"
+      className="hidden 2xl:sticky 2xl:top-28 2xl:block"
+    >
       <div className="glass-surface overflow-hidden rounded-xl border border-border shadow-sm">
         <div className="flex items-center justify-between border-b border-border/70 px-4 py-3">
           <div className="flex items-center gap-2">
@@ -315,23 +312,6 @@ export function JobPanel({
         ) : null}
 
         <div className="space-y-4 border-t border-border/70 p-4">
-          {workload ? (
-            <dl className="grid grid-cols-2 gap-2 rounded-lg border border-border bg-surface-2 p-3 text-xs">
-              <div>
-                <dt className="text-muted-foreground">추정 VRAM</dt>
-                <dd className="mt-1 font-medium">
-                  {workload.estimatedVramGiB.toFixed(1)} GB
-                </dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">예상 시간 상한</dt>
-                <dd className="mt-1 font-medium">
-                  {Math.max(1, Math.ceil(workload.upperSeconds / 60))}분
-                </dd>
-              </div>
-            </dl>
-          ) : null}
-
           {job ? (
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3">
@@ -409,13 +389,11 @@ export function JobPanel({
                   job={job}
                   compact
                   canUpscale={canUpscaleResult}
-                  activeProfileName={activeProfileName}
                   onRepeat={onRepeat}
                   onNewSeed={onNewSeed}
                   onEditPrompt={onEditPrompt}
                   onLoadSettings={onLoadSettings}
                   onUpscale={async () => handleUpscale()}
-                  onSetRepresentative={onSetRepresentative}
                 />
               ) : null}
 

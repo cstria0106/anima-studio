@@ -8,6 +8,7 @@ import {
   ArrowUp,
   Box,
   Check,
+  ChevronDown,
   ImageIcon,
   Plus,
   Search,
@@ -39,6 +40,7 @@ interface ModelLoraControlsProps {
   onLorasChange: (loras: LoraSelection[]) => void;
   onInsertTriggers: (words: string[]) => void;
   validationWarning?: string;
+  validationFieldId?: string;
 }
 
 function LoraFinder({
@@ -156,7 +158,21 @@ export function ModelLoraControls({
   onLorasChange,
   onInsertTriggers,
   validationWarning,
+  validationFieldId,
 }: ModelLoraControlsProps) {
+  const detailsRef = React.useRef<HTMLDetailsElement>(null);
+
+  React.useEffect(() => {
+    if (!validationWarning || !detailsRef.current) return;
+    detailsRef.current.open = true;
+    const frame = window.requestAnimationFrame(() => {
+      document
+        .getElementById(validationFieldId ?? "model-settings-summary")
+        ?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [validationFieldId, validationWarning]);
+
   function addLora(option: LoraOption) {
     onLorasChange([
       ...loras,
@@ -189,7 +205,27 @@ export function ModelLoraControls({
   }
 
   return (
-    <div className="space-y-6">
+    <details
+      ref={detailsRef}
+      className="group rounded-xl border border-border/70 bg-card/45"
+    >
+      <summary
+        id="model-settings-summary"
+        className="flex cursor-pointer list-none items-center gap-3 px-4 py-3"
+      >
+        <span className="inline-flex items-center gap-2 text-sm font-medium">
+          <Box className="size-4 text-pink-300" />
+          모델 · CLIP · VAE · LoRA
+        </span>
+        <span className="ml-auto max-w-[45%] truncate text-[10px] text-muted-foreground">
+          {models.diffusion
+            ? models.diffusion.split(/[\\/]/).at(-1)
+            : "모델 미선택"}
+          {loras.length ? ` · LoRA ${loras.length}` : ""}
+        </span>
+        <ChevronDown className="size-4 text-muted-foreground transition group-open:rotate-180" />
+      </summary>
+      <div className="space-y-6 border-t border-border/60 p-4">
       {validationWarning ? (
         <div
           role="alert"
@@ -389,14 +425,9 @@ export function ModelLoraControls({
               </div>
             ))}
           </div>
-        ) : (
-          <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center">
-            <p className="text-xs text-muted-foreground">
-              Style LoRA는 선택 사항입니다.
-            </p>
-          </div>
-        )}
+        ) : null}
       </div>
-    </div>
+      </div>
+    </details>
   );
 }

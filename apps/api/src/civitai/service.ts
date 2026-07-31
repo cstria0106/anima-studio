@@ -178,6 +178,7 @@ export function toCivitaiInspectDto(
       baseModel: version.baseModel,
       createdAt: version.createdAt,
       earlyAccessEndsAt: version.earlyAccessEndsAt,
+      thumbnailUrl: version.thumbnailUrl,
       trainedWords: version.triggerWords,
       files: version.files.flatMap((file): CivitaiFileDto[] => {
         if (!file.eligible || file.id === null) return [];
@@ -192,6 +193,9 @@ export function toCivitaiInspectDto(
             sizeBytes: file.sizeBytes,
             sha256: file.sha256,
             primary: file.primary,
+            installationId: null,
+            installationStatus: "not_installed",
+            installationProgress: null,
           },
         ];
       }),
@@ -209,7 +213,7 @@ export function toCivitaiInspectDto(
     description: null,
     contentRating: inspection.nsfw ? "mature" : "safe",
     license: { ...inspection.license },
-    thumbnailUrl: null,
+    thumbnailUrl: versions[0]?.thumbnailUrl ?? null,
     versions,
   };
 }

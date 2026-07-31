@@ -24,6 +24,153 @@ export interface RuntimeLogSubscription {
 
 const SESSION_ID = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/;
 
+const SINGLE_CHARACTER_ESCAPES = new Set([
+  "7",
+  "8",
+  "D",
+  "E",
+  "H",
+  "M",
+  "N",
+  "O",
+  "Z",
+  "c",
+  "=",
+  ">",
+]);
+
+/**
+ * Removes terminal control sequences before logs cross the storage/API
+ * boundary. This deliberately runs before secret redaction so a color or OSC
+ * sequence cannot split a configured secret into otherwise-unmatched pieces.
+ */
+export function sanitizeRuntimeLog(value: string): string {
+  let result = "";
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+
+    if (code === 0x1b) {
+      const introducer = value[index + 1];
+      if (introducer === "[") {
+        // ECMA-48 control sequence introducer (CSI).
+        index += 1;
+        while (index + 1 < value.length) {
+          const next = value.charCodeAt(index + 1);
+          if (next === 0x0a || next === 0x0d) break;
+          index += 1;
+          if (next >= 0x40 && next <= 0x7e) break;
+        }
+        continue;
+      }
+      if (
+        introducer === "]" ||
+        introducer === "P" ||
+        introducer === "X" ||
+        introducer === "^" ||
+        introducer === "_"
+      ) {
+        // OSC, DCS, SOS, PM and APC strings terminate with BEL/ST. Stop at a
+        // line boundary as well so a malformed legacy entry cannot hide all
+        // subsequent log lines.
+        index += 1;
+        while (index + 1 < value.length) {
+          const next = value.charCodeAt(index + 1);
+          if (next === 0x07) {
+            index += 1;
+            break;
+          }
+          if (next === 0x9c) {
+            index += 1;
+            break;
+          }
+          if (next === 0x0a || next === 0x0d) break;
+          if (
+            next === 0x1b &&
+            value.charCodeAt(index + 2) === 0x5c
+          ) {
+            index += 2;
+            break;
+          }
+          index += 1;
+        }
+        continue;
+      }
+      if (
+        introducer &&
+        introducer.charCodeAt(0) >= 0x20 &&
+        introducer.charCodeAt(0) <= 0x2f
+      ) {
+        // Escape sequences with intermediate bytes, such as charset
+        // selection (ESC ( B).
+        index += 1;
+        while (index + 1 < value.length) {
+          const next = value.charCodeAt(index + 1);
+          if (next === 0x0a || next === 0x0d) break;
+          index += 1;
+          if (next >= 0x30 && next <= 0x7e) break;
+        }
+        continue;
+      }
+      if (introducer && SINGLE_CHARACTER_ESCAPES.has(introducer)) {
+        index += 1;
+      }
+      // Unknown/orphan ESC bytes are discarded without discarding the next
+      // printable character.
+      continue;
+    }
+
+    if (code === 0x9b) {
+      // 8-bit CSI.
+      while (index + 1 < value.length) {
+        const next = value.charCodeAt(index + 1);
+        if (next === 0x0a || next === 0x0d) break;
+        index += 1;
+        if (next >= 0x40 && next <= 0x7e) break;
+      }
+      continue;
+    }
+    if (
+      code === 0x90 ||
+      code === 0x98 ||
+      code === 0x9d ||
+      code === 0x9e ||
+      code === 0x9f
+    ) {
+      // 8-bit DCS, SOS, OSC, PM and APC.
+      while (index + 1 < value.length) {
+        const next = value.charCodeAt(index + 1);
+        if (next === 0x07 || next === 0x9c) {
+          index += 1;
+          break;
+        }
+        if (next === 0x0a || next === 0x0d) break;
+        if (
+          next === 0x1b &&
+          value.charCodeAt(index + 2) === 0x5c
+        ) {
+          index += 2;
+          break;
+        }
+        index += 1;
+      }
+      continue;
+    }
+    if (code >= 0x80 && code <= 0x9f) continue;
+    if (
+      (code >= 0x00 && code <= 0x08) ||
+      code === 0x0b ||
+      code === 0x0c ||
+      (code >= 0x0e && code <= 0x1f) ||
+      code === 0x7f
+    ) {
+      continue;
+    }
+
+    result += value[index];
+  }
+  return result;
+}
+
 export function redactRuntimeLog(
   value: string,
   secrets: Iterable<string> = [],
@@ -137,7 +284,10 @@ export class RuntimeLogService {
       this.assertSessionId(sessionId);
       await mkdir(this.directory, { recursive: true });
       const createdAt = this.now().toISOString();
-      let redacted = redactRuntimeLog(line.replace(/[\r\n]+$/g, ""), this.secrets);
+      const sanitized = sanitizeRuntimeLog(
+        line.replace(/[\r\n]+$/g, ""),
+      );
+      let redacted = redactRuntimeLog(sanitized, this.secrets);
       let encoded = new TextEncoder().encode(
         `${createdAt} [${source}] ${redacted}\n`,
       );
@@ -234,8 +384,13 @@ export class RuntimeLogService {
       combined.set(chunk, offset);
       offset += chunk.byteLength;
     }
+    const sanitized = redactRuntimeLog(
+      sanitizeRuntimeLog(new TextDecoder().decode(combined)),
+      this.secrets,
+    );
+    const encoded = new TextEncoder().encode(sanitized);
     return new TextDecoder().decode(
-      combined.slice(Math.max(0, combined.byteLength - Math.max(1, maxBytes))),
+      encoded.slice(Math.max(0, encoded.byteLength - Math.max(1, maxBytes))),
     );
   }
 

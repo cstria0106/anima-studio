@@ -42,19 +42,18 @@ function TagTextarea({
   value,
   onChange,
   placeholder,
-  description,
 }: {
   id: string;
   label: string;
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
-  description?: string;
 }) {
   const [suggestions, setSuggestions] = React.useState<TagSuggestion[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [open, setOpen] = React.useState(false);
   const [activeIndex, setActiveIndex] = React.useState(0);
+  const requestSequence = React.useRef(0);
   const latestTag = getLastTag(value);
   const tags = React.useMemo(() => extractTags(value), [value]);
   const contextTags = React.useMemo(
@@ -72,32 +71,52 @@ function TagTextarea({
   }, [tags]);
 
   React.useEffect(() => {
-    if (latestTag.length < 2) {
+    const requestId = ++requestSequence.current;
+    if (latestTag.length < 1) {
       setSuggestions([]);
       setOpen(false);
+      setLoading(false);
       return;
     }
     const controller = new AbortController();
-    const timer = window.setTimeout(() => {
-      setLoading(true);
-      searchTags(latestTag, {
-        context: contextTags,
-        limit: 10,
-        signal: controller.signal,
+    setSuggestions([]);
+    setOpen(false);
+    setLoading(true);
+    void searchTags(latestTag, {
+      context: contextTags,
+      limit: 10,
+      signal: controller.signal,
+    })
+      .then((results) => {
+        if (
+          controller.signal.aborted ||
+          requestSequence.current !== requestId
+        ) {
+          return;
+        }
+        setSuggestions(results.slice(0, 10));
+        setOpen(Boolean(results.length));
+        setActiveIndex(0);
       })
-        .then((results) => {
-          setSuggestions(results.slice(0, 10));
-          setOpen(Boolean(results.length));
-          setActiveIndex(0);
-        })
-        .catch((error) => {
-          if ((error as Error).name !== "AbortError") setSuggestions([]);
-        })
-        .finally(() => setLoading(false));
-    }, 180);
+      .catch((error) => {
+        if (
+          (error as Error).name !== "AbortError" &&
+          requestSequence.current === requestId
+        ) {
+          setSuggestions([]);
+          setOpen(false);
+        }
+      })
+      .finally(() => {
+        if (
+          !controller.signal.aborted &&
+          requestSequence.current === requestId
+        ) {
+          setLoading(false);
+        }
+      });
     return () => {
       controller.abort();
-      window.clearTimeout(timer);
     };
   }, [contextTags, latestTag]);
 
@@ -217,11 +236,6 @@ function TagTextarea({
           </div>
         ) : null}
       </div>
-      {description ? (
-        <p className="text-[11px] leading-5 text-muted-foreground">
-          {description}
-        </p>
-      ) : null}
       {tags.length ? (
         <div className="flex max-h-20 flex-wrap gap-1.5 overflow-y-auto">
           {tags.slice(0, 24).map((tag, index) => {
@@ -258,6 +272,11 @@ export function PromptEditor({
   loras = [],
   autoTags = [],
 }: PromptEditorProps) {
+  const negativeTagCount = extractTags(value.negative).length;
+  const baseTagCount =
+    extractTags(value.basePositive).length +
+    extractTags(value.baseNegative).length;
+
   return (
     <div className="space-y-5">
       <TagTextarea
@@ -266,7 +285,6 @@ export function PromptEditor({
         value={value.positive}
         onChange={(positive) => onChange({ ...value, positive })}
         placeholder="1girl, solo, red eyes, white pupils, ..."
-        description="쉼표 단위로 태그를 입력하세요. 2글자부터 오프라인 태그 제안이 표시됩니다."
       />
 
       <Field
@@ -290,30 +308,27 @@ export function PromptEditor({
         />
       </Field>
 
-      <TagTextarea
-        id="negative-prompt"
-        label="추가 부정 프롬프트"
-        value={value.negative}
-        onChange={(negative) => onChange({ ...value, negative })}
-        placeholder="필요한 경우에만 추가하세요"
-        description="워크플로우 기본 부정 태그 뒤에 이어 붙습니다."
-      />
-
-      <PromptInspector
-        prompts={value}
-        loras={loras}
-        autoTags={autoTags}
-      />
-
       <details className="group rounded-lg border border-border/70 bg-background/30">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-xs font-medium text-muted-foreground transition hover:text-foreground">
-          <span className="inline-flex items-center gap-2">
-            <AlertCircle className="size-3.5" />
-            워크플로우 기본 태그
+          <span className="min-w-0">
+            <span className="inline-flex items-center gap-2 text-foreground">
+              <AlertCircle className="size-3.5" />
+              프롬프트 고급 설정
+            </span>
+            <span className="ml-2 truncate text-[11px] font-normal">
+              부정 {negativeTagCount} · 기본 {baseTagCount}
+            </span>
           </span>
           <ChevronDown className="size-4 transition group-open:rotate-180" />
         </summary>
         <div className="grid gap-4 border-t border-border/60 p-4">
+          <TagTextarea
+            id="negative-prompt"
+            label="추가 부정 프롬프트"
+            value={value.negative}
+            onChange={(negative) => onChange({ ...value, negative })}
+            placeholder="필요한 경우에만 추가하세요"
+          />
           <Field label="기본 긍정" htmlFor="base-positive">
             <Input
               id="base-positive"
@@ -334,10 +349,11 @@ export function PromptEditor({
               className="min-h-20 font-mono text-xs"
             />
           </Field>
-          <p className="text-[11px] leading-5 text-muted-foreground">
-            기본 태그 → 사용자 태그 → 자연어 순서로 결합됩니다. 완료 후 자동
-            태그는 결과에서 확인하고 필요한 것만 추가할 수 있습니다.
-          </p>
+          <PromptInspector
+            prompts={value}
+            loras={loras}
+            autoTags={autoTags}
+          />
         </div>
       </details>
     </div>

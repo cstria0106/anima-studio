@@ -43,6 +43,26 @@ export interface ValidatedGeneration {
   assetRows: AssetRow[];
 }
 
+function compareAssetHashes(left: AssetRow, right: AssetRow): number {
+  if (left.sha256 < right.sha256) return -1;
+  if (left.sha256 > right.sha256) return 1;
+  return left.id.localeCompare(right.id);
+}
+
+function canonicalizeGeneration(
+  config: GenerationConfig,
+  assetRows: readonly AssetRow[],
+): ValidatedGeneration {
+  const canonicalAssets = [...assetRows].sort(compareAssetHashes);
+  return {
+    config: {
+      ...config,
+      referenceAssetIds: canonicalAssets.map((asset) => asset.id),
+    },
+    assetRows: canonicalAssets,
+  };
+}
+
 function hasPrompt(
   tuples: ArrayLike<unknown[]>,
   promptId: string,
@@ -284,7 +304,7 @@ export class JobService {
           },
         );
       }
-      return { config, assetRows };
+      return canonicalizeGeneration(config, assetRows);
     });
     const report = await this.capabilities.report();
     if (!report.compatible) {
@@ -320,7 +340,10 @@ export class JobService {
   async createValidated(
     validated: ValidatedGeneration,
   ): Promise<JobDto> {
-    const { config, assetRows } = validated;
+    const { config, assetRows } = canonicalizeGeneration(
+      validated.config,
+      validated.assetRows,
+    );
     const actualSeed = resolveSeed(config);
     const jobId = crypto.randomUUID();
     const createdAt = new Date().toISOString();
@@ -402,7 +425,7 @@ export class JobService {
       );
     }
 
-    const config = generationConfigSchema.parse({
+    let config = generationConfigSchema.parse({
       ...sourceJob.config,
       seed: { mode: "fixed", value: source.actualSeed },
       instantLora: {
@@ -431,13 +454,14 @@ export class JobService {
     }
     validateInstalledSelections(config, await this.capabilities.options());
 
-    const assetRows = this.repository.getJobAssets(sourceJobId);
+    let assetRows = this.repository.getJobAssets(sourceJobId);
     if (assetRows.length !== config.referenceAssetIds.length) {
       throw new JobSubmissionError(
         "One or more original reference assets are unavailable.",
         409,
       );
     }
+    ({ config, assetRows } = canonicalizeGeneration(config, assetRows));
     const jobId = crypto.randomUUID();
     const createdAt = new Date().toISOString();
     this.repository.createJob({

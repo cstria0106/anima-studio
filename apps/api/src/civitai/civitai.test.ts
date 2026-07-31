@@ -79,6 +79,28 @@ function modelResponse(): Record<string, unknown> {
         name: "v1",
         baseModel: "Illustrious",
         trainedWords: ["trigger", "trigger"],
+        images: [
+          {
+            type: "video",
+            url: "https://image.civitai.com/preview.mp4",
+          },
+          {
+            type: "image",
+            url: "https://cdn.example.test/untrusted.jpeg",
+          },
+          {
+            type: "image",
+            url: "http://image.civitai.com/insecure.jpeg",
+          },
+          {
+            type: "image",
+            url: "https://token@image.civitai.com/credential.jpeg",
+          },
+          {
+            type: "image",
+            url: "https://image.civitai.com/v1.jpeg",
+          },
+        ],
         files: [
           {
             id: 10,
@@ -118,6 +140,12 @@ function modelResponse(): Record<string, unknown> {
       {
         id: 789,
         name: "v2",
+        images: [
+          {
+            type: "image",
+            url: "https://image.civitai.red/v2.webp",
+          },
+        ],
         files: [],
       },
     ],
@@ -193,6 +221,9 @@ describe("Civitai metadata client", () => {
       `Bearer ${reflectedSecret}`,
     );
     expect(inspection.versions).toHaveLength(1);
+    expect(inspection.versions[0]?.thumbnailUrl).toBe(
+      "https://image.civitai.com/v1.jpeg",
+    );
     expect(
       inspection.versions[0]?.files.map(
         ({ name, eligible, blockReason }) => ({
@@ -230,6 +261,34 @@ describe("Civitai metadata client", () => {
     expect(JSON.stringify(await tokenService.clear())).not.toContain(
       reflectedSecret,
     );
+  });
+
+  test("keeps a distinct first safe preview for every model version", async () => {
+    const client = new CivitaiApiClient({
+      async getJson(): Promise<CivitaiHttpResponse> {
+        return { status: 200, body: modelResponse() };
+      },
+    });
+
+    const inspection = await client.inspect(
+      "https://civitai.com/models/123",
+    );
+
+    expect(
+      inspection.versions.map((version) => ({
+        id: version.id,
+        thumbnailUrl: version.thumbnailUrl,
+      })),
+    ).toEqual([
+      {
+        id: 456,
+        thumbnailUrl: "https://image.civitai.com/v1.jpeg",
+      },
+      {
+        id: 789,
+        thumbnailUrl: "https://image.civitai.red/v2.webp",
+      },
+    ]);
   });
 
   test("does not reflect remote bodies or thrown transport errors", async () => {

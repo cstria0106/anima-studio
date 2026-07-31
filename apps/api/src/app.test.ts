@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createHash } from "node:crypto";
 import {
   mkdir,
   mkdtemp,
@@ -306,7 +305,40 @@ class FakeHuggingFaceLibrary implements HuggingFaceLibraryService {
 
   install(_input: HuggingFaceAnimaDownloadCreate) {
     this.installCalls += 1;
-    return Promise.resolve({ downloads: [], alreadyInstalled: [] });
+    const id = crypto.randomUUID();
+    return Promise.resolve({
+      downloads: [
+        {
+          id,
+          operationId: crypto.randomUUID(),
+          state: "queued" as const,
+          provider: "huggingface" as const,
+          providerModelId: "circlestone-labs/Anima",
+          providerVersionId: this.revision,
+          providerFileId: _input.path,
+          modelId: null,
+          modelVersionId: null,
+          fileId: null,
+          modelName: "Anima",
+          versionName: "latest",
+          filename: "anima-base-v1.0.safetensors",
+          destinationRootId: "diffusion_models" as const,
+          relativeDir: "",
+          expectedSha256: "a".repeat(64),
+          actualSha256: null,
+          bytesCompleted: 0,
+          bytesTotal: 100,
+          bytesPerSecond: null,
+          triggerWords: [],
+          metadata: {},
+          error: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          completedAt: null,
+        },
+      ],
+      alreadyInstalled: [],
+    });
   }
 
   get(_id: string): ModelDownloadDto {
@@ -842,7 +874,7 @@ describe("Anima Studio API", () => {
     });
 
     const installResponse = await api.app.request(
-      "/api/model-downloads/huggingface/anima",
+      "/api/model-installations/anima",
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -859,7 +891,7 @@ describe("Anima Studio API", () => {
     expect(huggingFace.installCalls).toBe(0);
   });
 
-  test("blocks persisted Hugging Face resume and retry actions in external mode", async () => {
+  test("does not expose resume or retry actions", async () => {
     const huggingFace = new FakeHuggingFaceLibrary();
     const { runtime: api } = await runtime(huggingFace);
     const paused = createHuggingFaceDownload(
@@ -882,8 +914,8 @@ describe("Anima Studio API", () => {
       { method: "POST" },
     );
 
-    expect(resumeResponse.status).toBe(409);
-    expect(retryResponse.status).toBe(409);
+    expect(resumeResponse.status).toBe(404);
+    expect(retryResponse.status).toBe(404);
     expect(huggingFace.resumeCalls).toBe(0);
     expect(huggingFace.retryCalls).toBe(0);
   });
@@ -907,7 +939,7 @@ describe("Anima Studio API", () => {
     });
 
     const installResponse = await api.app.request(
-      "/api/model-downloads/huggingface/anima",
+      "/api/model-installations/anima",
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -1013,7 +1045,7 @@ describe("Anima Studio API", () => {
     });
 
     const downloadResponse = await api.app.request(
-      "/api/model-downloads",
+      "/api/model-installations/civitai",
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -1391,121 +1423,6 @@ describe("Anima Studio API", () => {
     );
   });
 
-  test("persists reusable character profiles, representatives, model packs, and onboarding progress", async () => {
-    const { runtime: api } = await runtime();
-    const assetId = await uploadReference(api);
-    const createdProfile = await api.app.request(
-      "/api/character-profiles",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          name: "Pink cat",
-          description: "Primary avatar",
-          referenceAssetIds: [assetId],
-          excludedTags: ["blue eyes"],
-        }),
-      },
-    );
-    expect(createdProfile.status).toBe(201);
-    const profile = (await createdProfile.json()) as {
-      profile: { id: string; referenceAssets: Array<{ id: string }> };
-    };
-    expect(profile.profile.referenceAssets).toEqual([
-      expect.objectContaining({ id: assetId }),
-    ]);
-
-    const jobId = crypto.randomUUID();
-    api.repository.createJob({
-      id: jobId,
-      clientId: "profile-test",
-      config: {
-        ...structuredClone(testGenerationConfig),
-        referenceAssetIds: [assetId],
-      },
-      actualSeed: 42,
-      assetIds: [assetId],
-      createdAt: new Date().toISOString(),
-    });
-    const png = Uint8Array.from(
-      atob(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQmcAAAAASUVORK5CYII=",
-      ),
-      (character) => character.charCodeAt(0),
-    );
-    const output = await api.storage.storeOutput({
-      jobId,
-      kind: "base",
-      nodeId: "profile-representative",
-      comfyFilename: "representative.png",
-      comfySubfolder: "",
-      comfyType: "output",
-      bytes: png,
-      contentType: "image/png",
-    });
-    const representative = await api.app.request(
-      `/api/character-profiles/${profile.profile.id}/representative`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ outputId: output.id }),
-      },
-    );
-    expect(representative.status).toBe(200);
-    expect(await representative.json()).toMatchObject({
-      profile: {
-        representativeOutputId: output.id,
-        representativeOutput: { id: output.id },
-      },
-    });
-
-    const modelPack = await api.app.request("/api/model-packs", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        name: "Anima defaults",
-        model: testGenerationConfig.model,
-        loras: [
-          {
-            name: "style.safetensors",
-            modelStrength: 0.8,
-            clipStrength: 0.7,
-            enabled: true,
-          },
-        ],
-      }),
-    });
-    expect(modelPack.status).toBe(201);
-    expect(await modelPack.json()).toMatchObject({
-      modelPack: {
-        name: "Anima defaults",
-        loras: [{ name: "style.safetensors" }],
-      },
-    });
-
-    const onboarding = await api.app.request("/api/onboarding");
-    expect(onboarding.status).toBe(200);
-    expect(await onboarding.json()).toMatchObject({
-      onboarding: {
-        steps: expect.arrayContaining([
-          expect.objectContaining({ id: "character", complete: true }),
-        ]),
-      },
-    });
-    const updated = await api.app.request("/api/onboarding", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        dismissed: true,
-        completedSteps: ["welcome"],
-      }),
-    });
-    expect(updated.status).toBe(200);
-    expect(await updated.json()).toMatchObject({
-      onboarding: { dismissed: true },
-    });
-  });
-
   test("never lets manual onboarding preferences bypass blocking runtime checks", async () => {
     const { runtime: api } = await runtime();
     const onboarding = new OnboardingService(api.repository, async () => ({
@@ -1514,12 +1431,23 @@ describe("Anima Studio API", () => {
       modelsAvailable: false,
       capabilityIssueCount: 2,
     }));
+    api.repository.setSetting("onboarding-preferences-v1", {
+      dismissed: false,
+      completedSteps: ["welcome", "character"],
+    });
+    const legacyStatus = await onboarding.status();
+    expect(legacyStatus.steps.map((step) => step.id)).not.toContain(
+      "character",
+    );
+    expect(
+      legacyStatus.steps.find((step) => step.id === "welcome")?.complete,
+    ).toBeTrue();
+
     const status = await onboarding.update({
       completedSteps: [
         "welcome",
         "runtime",
         "models",
-        "character",
         "test_generation",
       ],
     });
@@ -1534,204 +1462,21 @@ describe("Anima Studio API", () => {
     ]);
   });
 
-  test("exports verified embedded references and imports them with SHA-256 deduplication and compatibility warnings", async () => {
+  test("removed legacy studio APIs return 404", async () => {
     const { runtime: api } = await runtime();
-    const assetId = await uploadReference(api);
-    const profileResponse = await api.app.request(
-      "/api/character-profiles",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          name: "Portable avatar",
-          referenceAssetIds: [assetId],
-        }),
-      },
-    );
-    const profile = (await profileResponse.json()) as {
-      profile: { id: string };
-    };
-    const duplicateReferenceProfileResponse = await api.app.request(
-      "/api/character-profiles",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          name: "Portable avatar alternate",
-          referenceAssetIds: [assetId],
-        }),
-      },
-    );
-    const duplicateReferenceProfile =
-      (await duplicateReferenceProfileResponse.json()) as {
-        profile: { id: string };
-      };
-    const packResponse = await api.app.request("/api/model-packs", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        name: "Missing model fixture",
-        model: {
-          ...testGenerationConfig.model,
-          diffusionModel: "not-installed.safetensors",
-        },
-        loras: [],
-      }),
-    });
-    const pack = (await packResponse.json()) as {
-      modelPack: { id: string };
-    };
-    const exported = await api.app.request("/api/portable/export", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        characterProfileIds: [
-          profile.profile.id,
-          duplicateReferenceProfile.profile.id,
-        ],
-        modelPackIds: [pack.modelPack.id],
-      }),
-    });
-    expect(exported.status).toBe(200);
-    const exportBody = (await exported.json()) as {
-      bundle: {
-        format: string;
-        assets: Array<{
-          sha256: string;
-          byteSize: number;
-          dataBase64: string;
-          width: number | null;
-          height: number | null;
-        }>;
-        characterProfiles: Array<{
-          referenceAssetSha256: string[];
-        }>;
-      };
-    };
-    expect(exportBody.bundle.format).toBe("anima-studio-portable");
-    expect(exportBody.bundle.assets).toHaveLength(1);
-    expect(exportBody.bundle.assets[0]!.sha256).toMatch(/^[a-f0-9]{64}$/);
-    expect(exportBody.bundle.assets[0]!.byteSize).toBeGreaterThan(0);
-    expect(exportBody.bundle.assets[0]!.dataBase64.length).toBeGreaterThan(0);
-    api.workflow.capabilities = (_objectInfo, comfyUrl) => ({
-      compatible: false,
-      comfyUrl,
-      requiredNodes: ["InstantReferenceLora"],
-      missing: [
-        {
-          kind: "node",
-          id: "InstantReferenceLora",
-          label: "InstantReferenceLora is not installed.",
-          package: "ComfyUI Instant Reference",
-        },
-      ],
-      optional: [],
-    });
-    api.capabilities.invalidate();
+    const responses = await Promise.all([
+      api.app.request("/api/character-profiles"),
+      api.app.request("/api/model-packs"),
+      api.app.request("/api/portable/export", { method: "POST" }),
+      api.app.request("/api/jobs/variations", { method: "POST" }),
+    ]);
 
-    const previewResponse = await api.app.request(
-      "/api/portable/preview",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ bundle: exportBody.bundle }),
-      },
-    );
-    expect(previewResponse.status).toBe(200);
-    const previewBody = (await previewResponse.json()) as {
-      preview: {
-        valid: boolean;
-        assetCount: number;
-        newAssetCount: number;
-        deduplicatedAssetCount: number;
-        characterProfileCount: number;
-        missing: Array<{ kind: string; id: string }>;
-      };
-    };
-    expect(previewBody.preview).toMatchObject({
-      valid: true,
-      assetCount: 1,
-      newAssetCount: 0,
-      deduplicatedAssetCount: 1,
-      characterProfileCount: 2,
-    });
-    expect(previewBody.preview.missing).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          kind: "model",
-          id: "not-installed.safetensors",
-        }),
-        expect.objectContaining({
-          kind: "node",
-          id: "InstantReferenceLora",
-        }),
-      ]),
-    );
-
-    const importResponse = await api.app.request("/api/portable/import", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ bundle: exportBody.bundle }),
-    });
-    expect(importResponse.status).toBe(201);
-    expect(await importResponse.json()).toMatchObject({
-      result: {
-        preview: { deduplicatedAssetCount: 1 },
-        characterProfiles: [
-          { name: "Portable avatar" },
-          { name: "Portable avatar alternate" },
-        ],
-        modelPacks: [{ name: "Missing model fixture" }],
-      },
-    });
-    expect(api.repository.listAssetRows()).toHaveLength(1);
-
-    const tampered = structuredClone(exportBody.bundle);
-    tampered.assets[0]!.dataBase64 =
-      `${tampered.assets[0]!.dataBase64.slice(0, -4)}AAAA`;
-    const rejected = await api.app.request(
-      "/api/portable/preview",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ bundle: tampered }),
-      },
-    );
-    expect(rejected.status).toBe(422);
-
-    const oversized = structuredClone(exportBody.bundle);
-    const oversizedBytes = new Uint8Array(24);
-    oversizedBytes.set([137, 80, 78, 71, 13, 10, 26, 10]);
-    const oversizedView = new DataView(oversizedBytes.buffer);
-    oversizedView.setUint32(16, 20_000);
-    oversizedView.setUint32(20, 20_000);
-    const oversizedHash = createHash("sha256")
-      .update(oversizedBytes)
-      .digest("hex");
-    const originalHash = oversized.assets[0]!.sha256;
-    oversized.assets[0] = {
-      ...oversized.assets[0]!,
-      sha256: oversizedHash,
-      byteSize: oversizedBytes.byteLength,
-      width: 20_000,
-      height: 20_000,
-      dataBase64: Buffer.from(oversizedBytes).toString("base64"),
-    };
-    for (const profileEntry of oversized.characterProfiles) {
-      profileEntry.referenceAssetSha256 =
-        profileEntry.referenceAssetSha256.map((sha256) =>
-          sha256 === originalHash ? oversizedHash : sha256,
-        );
-    }
-    const oversizedPreview = await api.app.request(
-      "/api/portable/preview",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ bundle: oversized }),
-      },
-    );
-    expect(oversizedPreview.status).toBe(413);
+    expect(responses.map((response) => response.status)).toEqual([
+      404,
+      404,
+      404,
+      404,
+    ]);
   });
 
   test("storage cleanup is a dry-run by default and deletes only explicitly selected eligible records", async () => {
@@ -1790,9 +1535,16 @@ describe("Anima Studio API", () => {
       deleted: false,
     });
 
-    api.library.createCharacterProfile({
-      name: "Cleanup guard",
-      referenceAssetIds: [assetId],
+    api.repository.createJob({
+      id: crypto.randomUUID(),
+      clientId: "cleanup-guard",
+      config: {
+        ...structuredClone(testGenerationConfig),
+        referenceAssetIds: [assetId],
+      },
+      actualSeed: 42,
+      assetIds: [assetId],
+      createdAt: new Date().toISOString(),
     });
     const cleanup = await api.storageInventory.cleanup({
       targets: [{ kind: "asset", id: assetId }],
@@ -1802,7 +1554,7 @@ describe("Anima Studio API", () => {
       eligible: false,
       deleted: false,
       dependencies: [
-        expect.objectContaining({ kind: "character_profile" }),
+        expect.objectContaining({ kind: "job" }),
       ],
     });
     expect(api.repository.findAsset(assetId)).not.toBeNull();
@@ -1835,7 +1587,7 @@ describe("Anima Studio API", () => {
     expect(api.repository.findAsset(assetId)).toBeNull();
   });
 
-  test("storage inventory protects models used by active jobs and stops counting deleted files", async () => {
+  test("storage inventory reports managed installations but delegates removal to the model library", async () => {
     const { runtime: api } = await runtime();
     const filename = testGenerationConfig.model.diffusionModel;
     const modelDirectory = join(
@@ -1848,30 +1600,18 @@ describe("Anima Studio API", () => {
     await mkdir(modelDirectory, { recursive: true });
     await writeFile(modelPath, new Uint8Array(128));
 
-    const operationId = crypto.randomUUID();
-    api.repository.createSystemOperation({
-      id: operationId,
-      kind: "model_download",
-      status: "completed",
-      phase: "completed",
-    });
-    const download = api.repository.createModelDownload({
+    const installation = api.repository.upsertManagedModelInstallation({
       id: crypto.randomUUID(),
-      operationId,
-      state: "completed",
-      modelId: 1,
-      modelVersionId: 1,
+      provider: "civitai",
+      providerModelId: "1",
+      providerVersionId: "1",
+      providerFileId: "1",
       modelName: "Active model",
       versionName: "v1",
       filename,
       destinationRootId: "diffusion_models",
-      bytesTotal: 128,
-    });
-    api.repository.updateModelDownload(download.id, {
-      state: "completed",
+      sha256: "a".repeat(64),
       storagePath: modelPath,
-      bytesCompleted: 128,
-      completedAt: new Date().toISOString(),
     });
     const activeJob = api.repository.createJob({
       id: crypto.randomUUID(),
@@ -1884,7 +1624,8 @@ describe("Anima Studio API", () => {
 
     const protectedInventory = await api.storageInventory.inventory();
     const protectedModel = protectedInventory.items.find(
-      (item) => item.kind === "model_download" && item.id === download.id,
+      (item) =>
+        item.kind === "model_download" && item.id === installation.id,
     );
     expect(protectedModel).toMatchObject({
       byteSize: 128,
@@ -1900,121 +1641,23 @@ describe("Anima Studio API", () => {
       completedAt: new Date().toISOString(),
     });
     const cleanup = await api.storageInventory.cleanup({
-      targets: [{ kind: "model_download", id: download.id }],
+      targets: [{ kind: "model_download", id: installation.id }],
       dryRun: false,
     });
     expect(cleanup.results[0]).toMatchObject({
-      deleted: true,
+      eligible: false,
+      deleted: false,
       byteSize: 128,
+      reason: "Remove managed models from the model library.",
     });
     const cleanedInventory = await api.storageInventory.inventory();
     expect(
       cleanedInventory.items.find(
-        (item) => item.kind === "model_download" && item.id === download.id,
+        (item) =>
+          item.kind === "model_download" &&
+          item.id === installation.id,
       ),
-    ).toMatchObject({ byteSize: 0, cleanupEligible: false });
+    ).toMatchObject({ byteSize: 128, cleanupEligible: false });
   });
 
-  test("validates an entire variation matrix before queueing up to sixteen jobs", async () => {
-    const { runtime: api, comfy } = await runtime();
-    const assetId = await uploadReference(api);
-    const baseConfig: GenerationConfig = {
-      ...structuredClone(testGenerationConfig),
-      referenceAssetIds: [assetId],
-      seed: { mode: "fixed", value: 101 },
-    };
-    const created = await api.app.request("/api/jobs/variations", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        baseConfig,
-        axes: [
-          {
-            kind: "prompt",
-            values: [
-              { label: "Smile", positive: "smile" },
-              { label: "Wink", positive: "wink" },
-            ],
-          },
-          {
-            kind: "seed",
-            values: [11, 12],
-          },
-        ],
-      }),
-    });
-    expect(created.status).toBe(202);
-    const createdBody = (await created.json()) as {
-      batch: { id: string; jobs: unknown[] };
-      jobs: unknown[];
-    };
-    expect(createdBody.batch.id).toBeString();
-    expect(createdBody.batch.jobs).toHaveLength(4);
-    expect(createdBody.jobs).toHaveLength(4);
-    expect(comfy.queuedPrompts).toHaveLength(4);
-
-    const queuedBeforeInvalidRequest = comfy.queuedPrompts.length;
-    const invalid = await api.app.request("/api/jobs/variations", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        baseConfig,
-        combinations: [
-          { label: "Valid", config: baseConfig },
-          {
-            label: "Missing model",
-            config: {
-              ...baseConfig,
-              model: {
-                ...baseConfig.model,
-                diffusionModel: "missing.safetensors",
-              },
-            },
-          },
-        ],
-      }),
-    });
-    expect(invalid.status).toBe(422);
-    expect(comfy.queuedPrompts).toHaveLength(queuedBeforeInvalidRequest);
-
-    const builderInvalid = await api.app.request("/api/jobs/variations", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        baseConfig,
-        combinations: [
-          { label: "Valid", config: baseConfig },
-          {
-            label: "Invalid CFG interval",
-            config: {
-              ...baseConfig,
-              sampling: {
-                ...baseConfig.sampling,
-                cfgStart: 0.9,
-                cfgEnd: 0.1,
-              },
-            },
-          },
-        ],
-      }),
-    });
-    expect(builderInvalid.status).toBe(422);
-    expect(comfy.queuedPrompts).toHaveLength(queuedBeforeInvalidRequest);
-
-    const tooMany = await api.app.request("/api/jobs/variations", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        baseConfig,
-        axes: [
-          {
-            kind: "seed",
-            values: Array.from({ length: 17 }, (_, index) => index),
-          },
-        ],
-      }),
-    });
-    expect(tooMany.status).toBe(422);
-    expect(comfy.queuedPrompts).toHaveLength(queuedBeforeInvalidRequest);
-  });
 });

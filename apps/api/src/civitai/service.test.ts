@@ -473,6 +473,7 @@ function inspection(expectedSha256: string): CivitaiModelInspection {
         createdAt: null,
         publishedAt: null,
         earlyAccessEndsAt: null,
+        thumbnailUrl: "https://image.civitai.com/model-preview.jpeg",
         triggerWords: ["character_trigger"],
         files: [
           {
@@ -564,6 +565,12 @@ describe("Civitai model library service", () => {
       "https://civitai.red/models/123?modelVersionId=456",
     );
     expect(inspected.host).toBe("civitai.red");
+    expect(inspected.thumbnailUrl).toBe(
+      "https://image.civitai.com/model-preview.jpeg",
+    );
+    expect(inspected.versions[0]?.thumbnailUrl).toBe(
+      inspected.thumbnailUrl,
+    );
     expect(inspected.versions[0]?.files).toEqual([
       expect.objectContaining({
         id: 10,
