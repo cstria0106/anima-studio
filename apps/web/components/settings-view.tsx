@@ -5,6 +5,9 @@ import {
   AlertTriangle,
   BellRing,
   Database,
+  ExternalLink,
+  Info,
+  RefreshCw,
   ServerCog,
 } from "lucide-react";
 import {
@@ -13,6 +16,8 @@ import {
 } from "@/components/completion-notifications";
 import { RuntimeManager } from "@/components/runtime-manager";
 import { StorageDashboard } from "@/components/storage-dashboard";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { SectionHeading } from "@/components/ui/field";
 import {
   Tabs,
@@ -26,10 +31,13 @@ import {
   type SettingsSection,
 } from "@/lib/studio-ux";
 import type {
+  AppInfo,
+  AppUpdateInfo,
   StorageCleanupResult,
   StorageCleanupTarget,
   StorageInventory,
 } from "@/lib/types";
+import { getAppInfo, getAppUpdate } from "@/lib/api";
 
 interface SettingsViewProps {
   error?: string;
@@ -70,10 +78,29 @@ export function SettingsView({
   onStorageCleanup,
 }: SettingsViewProps) {
   const [section, setSection] = React.useState<SettingsSection>("overview");
+  const [appInfo, setAppInfo] = React.useState<AppInfo | null>(null);
+  const [appUpdate, setAppUpdate] = React.useState<AppUpdateInfo | null>(null);
+  const [appInfoError, setAppInfoError] = React.useState("");
+  const [checkingUpdate, setCheckingUpdate] = React.useState(false);
+
+  const refreshAppInfo = React.useCallback(async () => {
+    setCheckingUpdate(true);
+    setAppInfoError("");
+    const [info, update] = await Promise.allSettled([
+      getAppInfo(),
+      getAppUpdate(),
+    ]);
+    if (info.status === "fulfilled") setAppInfo(info.value);
+    else setAppInfoError("앱 정보를 불러오지 못했습니다.");
+    if (update.status === "fulfilled") setAppUpdate(update.value);
+    setCheckingUpdate(false);
+  }, []);
+
   React.useEffect(() => {
     const saved = window.localStorage.getItem(SETTINGS_SECTION_STORAGE_KEY);
     if (isSettingsSection(saved)) setSection(saved);
-  }, []);
+    void refreshAppInfo();
+  }, [refreshAppInfo]);
 
   function selectSection(next: string) {
     if (!isSettingsSection(next)) return;
@@ -122,6 +149,60 @@ export function SettingsView({
           forceMount
           className="mt-5 min-h-0 flex-1 overflow-y-auto data-[state=inactive]:hidden"
         >
+          <div className="space-y-6">
+            <section className="space-y-4">
+              <SectionHeading title="앱 정보" />
+              <Card>
+                <CardContent className="space-y-4 p-5 text-sm">
+                  {appInfoError ? (
+                    <p className="text-danger">{appInfoError}</p>
+                  ) : appInfo ? (
+                    <dl className="grid gap-3 sm:grid-cols-[9rem_1fr]">
+                      <dt className="text-muted-foreground">현재 버전</dt>
+                      <dd>{appInfo.version}</dd>
+                      <dt className="text-muted-foreground">데이터 경로</dt>
+                      <dd className="break-all font-mono text-xs">{appInfo.dataPath}</dd>
+                      <dt className="text-muted-foreground">업데이트</dt>
+                      <dd>
+                        {appUpdate?.updateAvailable
+                          ? `새 버전 ${appUpdate.latestVersion} 사용 가능`
+                          : appUpdate?.latestVersion
+                            ? `최신 버전 (${appUpdate.latestVersion})`
+                            : "확인할 수 없음 (오프라인 사용 가능)"}
+                      </dd>
+                    </dl>
+                  ) : (
+                    <p className="text-muted-foreground">앱 정보를 불러오는 중입니다.</p>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={checkingUpdate}
+                      onClick={() => void refreshAppInfo()}
+                    >
+                      <RefreshCw className={checkingUpdate ? "animate-spin" : ""} />
+                      업데이트 확인
+                    </Button>
+                    {appUpdate?.releaseUrl ? (
+                      <Button asChild size="sm" variant="outline">
+                        <a href={appUpdate.releaseUrl} target="_blank" rel="noreferrer">
+                          <ExternalLink /> 릴리스 페이지
+                        </a>
+                      </Button>
+                    ) : null}
+                    {appInfo ? (
+                      <Button asChild size="sm" variant="ghost">
+                        <a href={appInfo.license.url} target="_blank" rel="noreferrer">
+                          <Info /> MIT 및 제3자 라이선스
+                        </a>
+                      </Button>
+                    ) : null}
+                  </div>
+                </CardContent>
+              </Card>
+            </section>
           {notificationController ? (
             <section className="space-y-4">
               <SectionHeading title="완료 알림" />
@@ -130,6 +211,7 @@ export function SettingsView({
               />
             </section>
           ) : null}
+          </div>
         </TabsContent>
 
         <TabsContent

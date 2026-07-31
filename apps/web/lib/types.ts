@@ -616,3 +616,20 @@ export interface HuggingFaceAnimaInstallRequest {
   includeDependencies: boolean;
   acceptedLicense: true;
 }
+export interface AppInfo {
+  id: string;
+  version: string;
+  port: number;
+  dataPath: string;
+  repositoryUrl: string;
+  license: { name: string; url: string };
+  thirdPartyLicensesUrl?: string;
+}
+
+export interface AppUpdateInfo {
+  currentVersion: string;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  releaseUrl: string | null;
+  checkedAt: string | null;
+}

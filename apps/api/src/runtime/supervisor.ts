@@ -19,6 +19,12 @@ import {
   validateManagedCustomNodeAllowlist,
 } from "./provision";
 import type { RuntimeStateRepository } from "./repository";
+import {
+  CimWindowsProcessInspector,
+  isSameWindowsProcess,
+  type ObservedWindowsProcess,
+  type WindowsProcessInspector,
+} from "../process/windows";
 
 export interface RuntimeChildProcess {
   pid: number;
@@ -111,103 +117,15 @@ export class BunRuntimeProcessRunner implements RuntimeProcessRunner {
   }
 }
 
-export interface ObservedProcess {
-  pid: number;
-  executable: string;
-  commandLine: string;
-  startedAt: string;
-}
-
-export interface RuntimeProcessInspector {
-  observe(pid: number): Promise<ObservedProcess | null>;
-  terminateTree(pid: number, force: boolean): Promise<void>;
-}
-
-async function processOutput(
-  command: string[],
-): Promise<{ code: number; stdout: string; stderr: string }> {
-  const child = Bun.spawn(command, {
-    stdout: "pipe",
-    stderr: "pipe",
-    windowsHide: true,
-  });
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ]);
-  return { stdout, stderr, code };
-}
-
-export class WindowsRuntimeProcessInspector
-  implements RuntimeProcessInspector
-{
-  async observe(pid: number): Promise<ObservedProcess | null> {
-    if (!Number.isSafeInteger(pid) || pid <= 0) return null;
-    const script = [
-      `$p = Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}"`,
-      "if ($null -eq $p) { exit 3 }",
-      "$created = $p.CreationDate.ToUniversalTime().ToString('o')",
-      "[pscustomobject]@{ pid = [int]$p.ProcessId; executable = [string]$p.ExecutablePath; commandLine = [string]$p.CommandLine; startedAt = $created } | ConvertTo-Json -Compress",
-    ].join("; ");
-    const result = await processOutput([
-      "powershell.exe",
-      "-NoLogo",
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      script,
-    ]);
-    if (result.code === 3) return null;
-    if (result.code !== 0) {
-      throw new Error(
-        `Could not inspect managed process ${pid}: ${result.stderr.trim()}`,
-      );
-    }
-    const parsed = JSON.parse(result.stdout) as ObservedProcess;
-    return parsed;
-  }
-
-  async terminateTree(pid: number, force: boolean): Promise<void> {
-    if (!Number.isSafeInteger(pid) || pid <= 0) {
-      throw new Error("Refusing to terminate an invalid PID.");
-    }
-    const result = await processOutput([
-      "taskkill.exe",
-      "/PID",
-      String(pid),
-      "/T",
-      ...(force ? ["/F"] : []),
-    ]);
-    if (result.code !== 0 && !/not found|not running/i.test(result.stderr)) {
-      throw new Error(
-        `Could not terminate managed process ${pid}: ${result.stderr.trim()}`,
-      );
-    }
-  }
-}
-
-function normalizedPath(value: string): string {
-  return resolve(value).replaceAll("\\", "/").toLowerCase();
-}
+export type ObservedProcess = ObservedWindowsProcess;
+export type RuntimeProcessInspector = WindowsProcessInspector;
+export { CimWindowsProcessInspector as WindowsRuntimeProcessInspector };
 
 export function isOwnedRuntimeProcess(
   expected: OwnedRuntimeProcess,
   actual: ObservedProcess,
 ): boolean {
-  if (expected.pid !== actual.pid) return false;
-  if (normalizedPath(expected.executable) !== normalizedPath(actual.executable)) {
-    return false;
-  }
-  const expectedStartedAt = Date.parse(expected.startedAt);
-  const actualStartedAt = Date.parse(actual.startedAt);
-  if (
-    !Number.isFinite(expectedStartedAt) ||
-    !Number.isFinite(actualStartedAt) ||
-    Math.abs(expectedStartedAt - actualStartedAt) > 15_000
-  ) {
-    return false;
-  }
+  if (!isSameWindowsProcess(expected, actual)) return false;
   const commandLine = actual.commandLine.replaceAll("\\", "/").toLowerCase();
   const entrypoint = expected.entrypoint.replaceAll("\\", "/").toLowerCase();
   return (
@@ -478,7 +396,7 @@ export class ManagedRuntimeSupervisor {
     this.processRunner =
       options.processRunner ?? new BunRuntimeProcessRunner();
     this.inspector =
-      options.processInspector ?? new WindowsRuntimeProcessInspector();
+      options.processInspector ?? new CimWindowsProcessInspector();
     this.ports = options.portProbe ?? new TcpRuntimePortProbe();
     this.readiness =
       options.readiness ?? new HttpRuntimeReadinessProbe();

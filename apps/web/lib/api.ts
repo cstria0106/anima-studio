@@ -1,4 +1,6 @@
 import {
+  type AppInfo,
+  type AppUpdateInfo,
   type CapabilitiesResponse,
   type CivitaiModelInspection,
   type CivitaiProviderStatus,
@@ -30,6 +32,14 @@ import {
   type StorageInventory,
   type TagSuggestion,
 } from "@/lib/types";
+
+export function getAppInfo(signal?: AbortSignal): Promise<AppInfo> {
+  return apiFetch<AppInfo>("/api/app/info", { signal });
+}
+
+export function getAppUpdate(signal?: AbortSignal): Promise<AppUpdateInfo> {
+  return apiFetch<AppUpdateInfo>("/api/app/update", { signal });
+}
 
 interface ApiGenerationConfig {
   referenceAssetIds: string[];

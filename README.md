@@ -291,3 +291,87 @@ bun run db:generate  # generate a Drizzle migration after schema changes
 bun run db:migrate   # apply committed migrations
 bun run start        # start the production API and Next server
 ```
+
+## Portable Windows EXE
+
+Public releases contain one unsigned Windows x64 executable. Build it with the
+repository-pinned Bun 1.3.14 toolchain:
+
+```powershell
+bun install --frozen-lockfile
+bun run typecheck
+bun run test
+bun run build
+dist\AnimaStudio.exe
+```
+
+The root `package.json` version is the single application/release version. The
+build statically exports the Next.js UI, embeds it with database migrations and
+offline tag data, generates dependency notices, and compiles the UI server,
+API, and launcher into `dist\AnimaStudio.exe`.
+
+Copy only `AnimaStudio.exe` to a writable folder such as `C:\AnimaStudio`.
+The visible console shows the version, dynamically assigned localhost URL,
+portable data path, and Ctrl+C shutdown instruction. The default browser opens
+automatically. `--no-browser` is available for CI and `--version` prints the
+version; custom data-directory and fixed-port options are deliberately absent.
+
+Windows SmartScreen may warn because releases are unsigned. After verifying
+the GitHub Release checksum, choose **More info → Run anyway** (Korean Windows:
+**추가 정보 → 실행**). There is no installer, code signature, SignPath
+integration, tray process, or automatic EXE replacement.
+
+```text
+AnimaStudio.exe
+data/
+  anima-studio.sqlite
+  assets/
+  outputs/
+  runtime/              # downloaded ComfyUI, models, logs, and caches
+  _app/
+    instance.lock
+    instance.json
+    resources/<hash>/   # verified migrations and offline tag data
+    update-cache.json
+```
+
+Moving an existing `data` directory next to a new EXE preserves its database,
+models, managed runtime, results, and settings. User data and the managed
+runtime are never embedded or modified by the build. If the EXE directory is
+not writable, startup stops and recommends `C:\AnimaStudio`; data is never
+redirected to LocalAppData.
+
+### Privacy and network behavior
+
+The UI/API and authenticated instance check bind only to a dynamically assigned
+`127.0.0.1` port. Generation history, references, outputs, settings, encrypted
+Civitai credentials, and downloads remain under `data`. Outbound requests are
+made for user-requested runtime/model metadata and downloads, configured
+ComfyUI access, and a non-blocking GitHub Releases update check. The update
+check uses ETag and a 24-hour disk cache and never downloads or replaces the
+EXE. Offline or GitHub failures do not prevent local use. Provider requests may
+send credentials and request metadata to that provider; review its terms first.
+
+### Release maintenance
+
+Do not edit `THIRD_PARTY_NOTICES.md` or packaged resource imports by hand.
+`bun run build` regenerates the dependency notices, statically exports the web
+UI, calculates embedded resource hashes, and compiles the final executable.
+Rebuild after changing dependencies, web assets, Drizzle migrations, tag data,
+or the root package version.
+
+Before publishing a Windows release, run:
+
+```powershell
+bun install --frozen-lockfile
+bun run typecheck
+bun run test
+bun run --cwd apps/web lint
+bun run build
+.\scripts\smoke-portable.ps1 -Executable .\dist\AnimaStudio.exe
+```
+
+The release tag must be exactly `v<package-version>`. Publish only
+`AnimaStudio.exe` and `SHA256SUMS.txt`; GitHub Actions also attaches public
+artifact provenance. Keep the unsigned-build and SmartScreen guidance above in
+release notes.

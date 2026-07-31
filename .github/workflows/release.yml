@@ -1,0 +1,71 @@
+name: Windows release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Verify release tag
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_NAME -ne "v$version") { throw "Tag/version mismatch" }
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run test
+      - run: bun run build:web
+      - run: bun run build:exe
+      - name: Smoke test single EXE
+        shell: pwsh
+        run: |
+          $smoke = Join-Path $env:RUNNER_TEMP "Anima Studio 한글 smoke"
+          New-Item -ItemType Directory -Force -Path $smoke | Out-Null
+          Copy-Item dist\AnimaStudio.exe $smoke
+          $exe = Join-Path $smoke "AnimaStudio.exe"
+          $process = Start-Process -FilePath $exe -ArgumentList "--no-browser" -WorkingDirectory $smoke -PassThru
+          try {
+            $descriptor = Join-Path $smoke "data\_app\instance.json"
+            $deadline = (Get-Date).AddMinutes(3)
+            while (!(Test-Path $descriptor) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
+            if (!(Test-Path $descriptor)) { throw "instance.json was not created" }
+            $instance = Get-Content $descriptor | ConvertFrom-Json
+            $base = "http://127.0.0.1:$($instance.port)"
+            if ((Invoke-WebRequest "$base/" -UseBasicParsing).StatusCode -ne 200) { throw "UI failed" }
+            if (!(Invoke-RestMethod "$base/api/health").ok) { throw "Health failed" }
+            $info = Invoke-RestMethod "$base/api/app/info"
+            if ($info.port -ne $instance.port) { throw "Port mismatch" }
+            if ($info.dataPath -ne (Join-Path $smoke "data")) { throw "Data path mismatch" }
+          } finally {
+            if (!$process.HasExited) { Stop-Process -Id $process.Id }
+            $process.WaitForExit(30000)
+          }
+      - name: Create checksums
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash dist\AnimaStudio.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  AnimaStudio.exe" | Set-Content -Encoding ascii dist\SHA256SUMS.txt
+      - uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: |
+            dist/AnimaStudio.exe
+            dist/SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            dist/AnimaStudio.exe
+            dist/SHA256SUMS.txt

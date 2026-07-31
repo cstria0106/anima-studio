@@ -1,5 +1,6 @@
 {
   "name": "portable-anima-studio",
+  "version": "0.1.0",
   "private": true,
   "packageManager": "bun@1.3.14",
   "workspaces": [
@@ -8,7 +9,11 @@
   ],
   "scripts": {
     "dev": "concurrently -n api,web -c magenta,cyan \"bun run --cwd apps/api dev\" \"bun run --cwd apps/web dev\"",
-    "build": "bun run --filter '*' build",
+    "build": "bun run build:web && bun run build:exe",
+    "build:web": "bun run --cwd apps/web build",
+    "build:notices": "bun scripts/generate-third-party-notices.ts",
+    "build:resources": "bun run build:notices && bun scripts/generate-portable-resources.ts",
+    "build:exe": "bun run build:resources && bun build apps/api/src/portable-main.ts --compile --target=bun-windows-x64 --outfile dist/AnimaStudio.exe",
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun test apps packages",
     "db:generate": "bun run --cwd apps/api db:generate",

@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { join } from "node:path";
 import {
   MANAGED_ENGINE_MANIFEST,
@@ -81,6 +82,9 @@ import {
   PortableWorkflowEngine,
   type WorkflowEngine,
 } from "./workflow/engine";
+import type { EmbeddedStaticSite } from "./portable/static";
+import type { GitHubUpdateService } from "./portable/update";
+import { MIT_LICENSE } from "./portable/license";
 
 export interface ApiRuntime {
   app: Hono;
@@ -118,6 +122,19 @@ export interface RuntimeOverrides {
   modelLibrary?: ModelLibraryService;
   huggingFaceLibrary?: HuggingFaceLibraryService;
   logger?: Pick<Console, "info" | "warn" | "error">;
+  portableApp?: PortableAppServices;
+}
+
+export interface PortableAppServices {
+  id: string;
+  version: string;
+  repositoryUrl: string;
+  dataDir: string;
+  instanceToken: string;
+  port(): number;
+  updates: GitHubUpdateService;
+  staticSite: EmbeddedStaticSite;
+  thirdPartyNotices: string;
 }
 
 export type ModelLibraryService = Pick<
@@ -349,6 +366,13 @@ function isLocalOrigin(origin: string): boolean {
   } catch {
     return false;
   }
+}
+
+function tokensMatch(expected: string, received: string | undefined): boolean {
+  if (!received) return false;
+  const left = Buffer.from(expected);
+  const right = Buffer.from(received);
+  return left.length === right.length && timingSafeEqual(left, right);
 }
 
 function tagContextParameter(...rawValues: Array<string | undefined>): string[] {
@@ -748,6 +772,7 @@ export async function createRuntime(
     modelLibrary,
     huggingFaceLibrary,
     modelDownloads,
+    ...(overrides.portableApp ? { portableApp: overrides.portableApp } : {}),
   });
 
   if (trackerEnabled && gateway.available && !tracker.running) {
@@ -808,6 +833,7 @@ interface AppServices {
   modelLibrary: ModelLibraryService;
   huggingFaceLibrary: HuggingFaceLibraryService;
   modelDownloads: ModelDownloadCoordinator;
+  portableApp?: PortableAppServices;
 }
 
 export function createApp(services: AppServices): Hono {
@@ -1262,6 +1288,67 @@ export function createApp(services: AppServices): Hono {
         subscription.close();
       }
     });
+  });
+
+  app.get("/api/app/instance", (c) => {
+    const portable = services.portableApp;
+    if (
+      !portable ||
+      !tokensMatch(
+        portable.instanceToken,
+        c.req.header("X-Anima-Instance-Token"),
+      )
+    ) {
+      return c.json({ message: "Instance token is invalid." }, 404);
+    }
+    return c.json({ ok: true, id: portable.id, port: portable.port() });
+  });
+
+  app.get("/api/app/info", (c) => {
+    const portable = services.portableApp;
+    if (!portable) {
+      return c.json({
+        id: "anima-studio",
+        version: "development",
+        port: services.config.port,
+        dataPath: services.config.dataDir,
+        repositoryUrl: "https://github.com/cstria0106/anima-studio",
+        license: { name: "MIT", url: "/api/app/licenses" },
+      });
+    }
+    return c.json({
+      id: portable.id,
+      version: portable.version,
+      port: portable.port(),
+      dataPath: portable.dataDir,
+      repositoryUrl: portable.repositoryUrl,
+      license: { name: "MIT", url: "/api/app/licenses" },
+      thirdPartyLicensesUrl: "/api/app/licenses",
+    });
+  });
+
+  app.get("/api/app/update", async (c) => {
+    const portable = services.portableApp;
+    if (!portable) {
+      return c.json({
+        currentVersion: "development",
+        latestVersion: null,
+        updateAvailable: false,
+        releaseUrl: null,
+        checkedAt: null,
+      });
+    }
+    return c.json(await portable.updates.check());
+  });
+
+  app.get("/api/app/licenses", (c) => {
+    const notices = services.portableApp?.thirdPartyNotices ??
+      "Third-party notices are generated for packaged releases.";
+    return c.text(
+      MIT_LICENSE + "\n\n" + notices,
+      200,
+      { "Content-Type": "text/plain; charset=utf-8" },
+    );
   });
 
   app.get("/api/health", async (c) => {
@@ -1994,8 +2081,12 @@ export function createApp(services: AppServices): Hono {
     });
   });
 
-  app.notFound((c) =>
-    c.json(
+  app.notFound((c) => {
+    if (!c.req.path.startsWith("/api/")) {
+      const response = services.portableApp?.staticSite.response(c.req.path);
+      if (response) return response;
+    }
+    return c.json(
       {
         message: "API route not found.",
         error: {
@@ -2004,8 +2095,8 @@ export function createApp(services: AppServices): Hono {
         },
       },
       404,
-    ),
-  );
+    );
+  });
 
   return app;
 }
