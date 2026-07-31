@@ -561,6 +561,7 @@ function inspection(expectedSha256: string): CivitaiModelInspection {
 async function fixture(
   downloader: CivitaiDownloadClient,
   expectedSha256: string,
+  tokenConfigured = true,
 ) {
   const directory = await mkdtemp(
     join(tmpdir(), "anima-civitai-service-"),
@@ -570,6 +571,7 @@ async function fixture(
   const persistence = new MemoryDownloads();
   const operations = new RecordingOperations();
   const tokens = new CivitaiTokenService(new MemorySecrets());
+  if (tokenConfigured) await tokens.configure("test-token");
   const service = new CivitaiModelLibraryService(
     metadata,
     tokens,
@@ -605,6 +607,23 @@ const createRequest: ModelDownloadCreate = {
 };
 
 describe("Civitai model library service", () => {
+  test("rejects a model download before creating work when the API key is missing", async () => {
+    const bytes = new TextEncoder().encode("model bytes");
+    const expected = sha256(bytes);
+    const context = await fixture(
+      new FileWritingDownloader(bytes, expected),
+      expected,
+      false,
+    );
+
+    await expect(
+      context.service.create(createRequest),
+    ).rejects.toMatchObject({ code: "AUTH_REQUIRED", status: 401 });
+    expect(context.metadata.sources).toEqual([]);
+    expect(context.persistence.rows.size).toBe(0);
+    expect(context.operations.phases).toEqual([]);
+  });
+
   test("persists pushed byte progress without waiting for a polling interval", async () => {
     const bytes = new TextEncoder().encode("model bytes");
     const expected = sha256(bytes);
@@ -636,7 +655,7 @@ describe("Civitai model library service", () => {
 
     expect(await context.service.providerStatus()).toMatchObject({
       provider: "civitai",
-      tokenConfigured: false,
+      tokenConfigured: true,
       supportedHosts: ["civitai.com", "civitai.red"],
       supportedFormats: [".safetensors"],
       destinations: [

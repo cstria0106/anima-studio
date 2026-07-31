@@ -1,3 +1,5 @@
+import { CIVITAI_API_KEY_REQUIRED_MESSAGE } from "@anima/shared";
+
 import { CivitaiError } from "./errors";
 import type {
   CivitaiTokenStatus,
@@ -7,6 +9,31 @@ import type {
 export const CIVITAI_TOKEN_SECRET = "civitai.api-token";
 
 const maximumTokenLength = 2_048;
+
+export async function readRequiredCivitaiToken(
+  secrets: SecretStore,
+  key = CIVITAI_TOKEN_SECRET,
+): Promise<string> {
+  let token: string | null;
+  try {
+    token = await secrets.read(key);
+  } catch {
+    throw new CivitaiError(
+      "AUTH_REQUIRED",
+      "The Civitai token store is unavailable.",
+      503,
+    );
+  }
+  const normalized = token?.trim();
+  if (!normalized) {
+    throw new CivitaiError(
+      "AUTH_REQUIRED",
+      CIVITAI_API_KEY_REQUIRED_MESSAGE,
+      401,
+    );
+  }
+  return normalized;
+}
 
 /**
  * Write-only facade used by HTTP routes. It deliberately exposes status rather
@@ -21,6 +48,10 @@ export class CivitaiTokenService {
 
   async status(): Promise<CivitaiTokenStatus> {
     return { tokenConfigured: await this.secrets.has(this.key) };
+  }
+
+  async requireConfigured(): Promise<void> {
+    await readRequiredCivitaiToken(this.secrets, this.key);
   }
 
   async configure(token: string): Promise<CivitaiTokenStatus> {

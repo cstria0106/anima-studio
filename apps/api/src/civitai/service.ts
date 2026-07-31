@@ -718,6 +718,7 @@ export class CivitaiModelLibraryService {
     input: ModelDownloadCreate,
     context: CreateContext,
   ): Promise<ModelDownloadDto> {
+    await this.tokens.requireConfigured();
     const operation = this.operations.create(
       "model_download",
       "resolving",

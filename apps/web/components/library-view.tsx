@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import * as React from "react";
+import { CIVITAI_API_KEY_REQUIRED_MESSAGE } from "@anima/shared";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -332,6 +333,7 @@ export function LibraryView({
   const managedDownloadReady =
     provider?.available === true &&
     provider.managedDownloads === true;
+  const civitaiApiKeyMissing = provider?.tokenConfigured === false;
   const previewHidden =
     Boolean(inspection) &&
     modelIsSensitive(inspection!) &&
@@ -784,7 +786,7 @@ export function LibraryView({
                 <div className="space-y-1.5">
                   <CardTitle>Civitai 연결 설정</CardTitle>
                   <p className="text-xs leading-5 text-muted-foreground">
-                    제한된 모델과 미리보기에 접근할 API 토큰을 관리합니다.
+                    모델 다운로드와 제한된 미리보기에 사용할 API 키를 관리합니다.
                   </p>
                 </div>
               </div>
@@ -954,43 +956,69 @@ export function LibraryView({
                   </div>
 
                   {selectedFile ? (
-                    <Button
-                      type="button"
-                      className="w-full"
-                      variant={
-                        selectedFile.installationStatus === "installed"
-                          ? "destructive"
-                          : "default"
+                    <div
+                      className="group relative"
+                      tabIndex={
+                        selectedFile.installationStatus === "not_installed" &&
+                        civitaiApiKeyMissing
+                          ? 0
+                          : undefined
                       }
-                      disabled={
-                        selectedFile.installationStatus === "installing" ||
-                        (selectedFile.installationStatus !== "installed" &&
-                          !managedDownloadReady)
+                      aria-describedby={
+                        selectedFile.installationStatus === "not_installed" &&
+                        civitaiApiKeyMissing
+                          ? "civitai-api-key-tooltip"
+                          : undefined
                       }
-                      onClick={() => {
-                        if (
-                          selectedFile.installationStatus === "installed" &&
-                          selectedFile.installationId
-                        ) {
-                          setPendingCivitaiRemoval(selectedFile.installationId);
-                        } else {
-                          void installCivitai();
-                        }
-                      }}
                     >
-                      {selectedFile.installationStatus === "installing" ? (
-                        <LoaderCircle className="animate-spin" />
-                      ) : selectedFile.installationStatus === "installed" ? (
-                        <Trash2 />
-                      ) : (
-                        <Download />
-                      )}
-                      {selectedFile.installationStatus === "installing"
-                        ? `설치 중 ${Math.round(selectedFile.installationProgress ?? 0)}%`
-                        : selectedFile.installationStatus === "installed"
-                          ? "제거"
-                          : "설치"}
-                    </Button>
+                      <Button
+                        type="button"
+                        className="w-full"
+                        variant={
+                          selectedFile.installationStatus === "installed"
+                            ? "destructive"
+                            : "default"
+                        }
+                        disabled={
+                          selectedFile.installationStatus === "installing" ||
+                          (selectedFile.installationStatus !== "installed" &&
+                            (!managedDownloadReady || civitaiApiKeyMissing))
+                        }
+                        onClick={() => {
+                          if (
+                            selectedFile.installationStatus === "installed" &&
+                            selectedFile.installationId
+                          ) {
+                            setPendingCivitaiRemoval(selectedFile.installationId);
+                          } else {
+                            void installCivitai();
+                          }
+                        }}
+                      >
+                        {selectedFile.installationStatus === "installing" ? (
+                          <LoaderCircle className="animate-spin" />
+                        ) : selectedFile.installationStatus === "installed" ? (
+                          <Trash2 />
+                        ) : (
+                          <Download />
+                        )}
+                        {selectedFile.installationStatus === "installing"
+                          ? `설치 중 ${Math.round(selectedFile.installationProgress ?? 0)}%`
+                          : selectedFile.installationStatus === "installed"
+                            ? "제거"
+                            : "설치"}
+                      </Button>
+                      {selectedFile.installationStatus === "not_installed" &&
+                      civitaiApiKeyMissing ? (
+                        <div
+                          id="civitai-api-key-tooltip"
+                          role="tooltip"
+                          className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-max max-w-72 -translate-x-1/2 rounded-md border border-border bg-popover px-3 py-2 text-xs text-popover-foreground opacity-0 shadow-md transition-opacity group-hover:opacity-100 group-focus:opacity-100"
+                        >
+                          {CIVITAI_API_KEY_REQUIRED_MESSAGE}
+                        </div>
+                      ) : null}
+                    </div>
                   ) : null}
                 </div>
               </div>

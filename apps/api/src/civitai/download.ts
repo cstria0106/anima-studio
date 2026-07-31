@@ -8,7 +8,10 @@ import {
   type VerifiedFileDownloader,
 } from "../runtime";
 import { CivitaiError, assertCivitai } from "./errors";
-import { CIVITAI_TOKEN_SECRET } from "./secrets";
+import {
+  CIVITAI_TOKEN_SECRET,
+  readRequiredCivitaiToken,
+} from "./secrets";
 import type {
   CivitaiFileInspection,
   CivitaiModelKind,
@@ -156,16 +159,10 @@ export class DirectCivitaiDownloadClient implements CivitaiDownloadClient {
       400,
     );
 
-    let token: string | null;
-    try {
-      token = await this.secrets.read(this.tokenKey);
-    } catch {
-      throw new CivitaiError(
-        "AUTH_REQUIRED",
-        "The Civitai token store is unavailable.",
-        503,
-      );
-    }
+    const token = await readRequiredCivitaiToken(
+      this.secrets,
+      this.tokenKey,
+    );
 
     const session: DirectDownloadSession = {
       id: input.downloadId,
@@ -215,9 +212,7 @@ export class DirectCivitaiDownloadClient implements CivitaiDownloadClient {
               filename: input.file.name,
               bytes: input.file.sizeBytes,
               sha256: input.file.sha256,
-              ...(token
-                ? { headers: { authorization: `Bearer ${token}` } }
-                : {}),
+              headers: { authorization: `Bearer ${token}` },
             },
             input.destination.absoluteDirectory,
             {

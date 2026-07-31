@@ -26,6 +26,10 @@ afterEach(async () => {
 class MemorySecrets implements SecretStore {
   readonly values = new Map<string, string>();
 
+  constructor(token: string | null = "test-token") {
+    if (token) this.values.set(CIVITAI_TOKEN_SECRET, token);
+  }
+
   read(key: string): Promise<string | null> {
     return Promise.resolve(this.values.get(key) ?? null);
   }
@@ -78,6 +82,24 @@ async function input(): Promise<CivitaiDownloadInput> {
 }
 
 describe("direct Civitai downloader", () => {
+  test("rejects before starting a transfer when the API key is missing", async () => {
+    const secrets = new MemorySecrets(null);
+    let transfers = 0;
+    const files: VerifiedFileDownloader = {
+      async download() {
+        transfers += 1;
+        throw new Error("download should not start");
+      },
+    };
+    const client = new DirectCivitaiDownloadClient(secrets, files);
+
+    await expect(client.download(await input())).rejects.toMatchObject({
+      code: "AUTH_REQUIRED",
+      status: 401,
+    });
+    expect(transfers).toBe(0);
+  });
+
   test("passes the token only as an authorization header and reports progress", async () => {
     const secrets = new MemorySecrets();
     secrets.values.set(CIVITAI_TOKEN_SECRET, "private-token");

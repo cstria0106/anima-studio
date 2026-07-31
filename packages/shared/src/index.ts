@@ -477,6 +477,8 @@ export const modelDownloadStates = [
 
 export type ModelDownloadState = (typeof modelDownloadStates)[number];
 export type ModelDownloadProvider = "civitai" | "huggingface";
+export const CIVITAI_API_KEY_REQUIRED_MESSAGE =
+  "모델을 다운로드하려면 Civitai API 키를 설정해야 합니다.";
 export const modelInstallationStatuses = [
   "not_installed",
   "installing",
