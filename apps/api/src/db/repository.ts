@@ -75,6 +75,19 @@ export interface TagIndexStats {
   skippedCooccurrences: number;
 }
 
+function tagLexicalTier(tag: string, normalizedQuery: string): number {
+  if (!normalizedQuery) return 0;
+  const normalizedTag = normalizeDanbooruTag(tag).toLowerCase();
+  if (normalizedTag === normalizedQuery) return 0;
+  if (normalizedTag.startsWith(normalizedQuery)) return 1;
+  if (normalizedTag.includes(normalizedQuery)) return 2;
+  return 3;
+}
+
+function compareTagNames(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 const terminalStatuses = new Set<JobStatus>([
   "completed",
   "failed",
@@ -1680,9 +1693,12 @@ export class StudioRepository {
     };
   }
 
-  private searchTagsByText(query: string, limit: number): TagSuggestion[] {
+  private searchTagsByText(
+    query: string,
+    limit: number,
+  ): TagSuggestion[] {
     const boundedLimit = Math.min(Math.max(limit, 1), 50);
-    const trimmed = query.trim().toLowerCase().replaceAll("_", " ");
+    const trimmed = normalizeDanbooruTag(query).toLowerCase();
     if (!trimmed) {
       return this.db
         .select()
@@ -1715,28 +1731,48 @@ export class StudioRepository {
             description: string;
             aliases: string;
           },
-          [string, number]
+          [string, string, number]
         >(
-          `SELECT t.tag, t.category, t.count, t.description, t.aliases
+          `SELECT
+             t.tag,
+             t.category,
+             t.count,
+             t.description,
+             t.aliases
            FROM tag_search
            JOIN tags AS t ON t.id = tag_search.rowid
-           WHERE tag_search MATCH ?
-           ORDER BY bm25(tag_search), t.count DESC
-           LIMIT ?`,
+           WHERE tag_search MATCH ?1
+           ORDER BY
+             CASE
+               WHEN lower(t.tag) = ?2 THEN 0
+               WHEN instr(lower(t.tag), ?2) = 1 THEN 1
+               WHEN instr(lower(t.tag), ?2) > 0 THEN 2
+               ELSE 3
+             END ASC,
+             t.count DESC,
+             t.tag ASC
+           LIMIT ?3`,
         )
-        .all(ftsQuery, boundedLimit)
+        .all(ftsQuery, trimmed, boundedLimit)
         .map((row) => this.tagSuggestion(row));
     } catch {
+      const lexicalTier = sql<number>`CASE
+        WHEN lower(${tags.tag}) = ${trimmed} THEN 0
+        WHEN instr(lower(${tags.tag}), ${trimmed}) = 1 THEN 1
+        WHEN instr(lower(${tags.tag}), ${trimmed}) > 0 THEN 2
+        ELSE 3
+      END`;
       return this.db
         .select()
         .from(tags)
         .where(
           or(
-            like(tags.tag, `${trimmed}%`),
-            like(tags.aliases, `%${trimmed}%`),
+            sql`instr(lower(${tags.tag}), ${trimmed}) > 0`,
+            sql`instr(lower(${tags.aliases}), ${trimmed}) > 0`,
+            sql`instr(lower(${tags.description}), ${trimmed}) > 0`,
           ),
         )
-        .orderBy(desc(tags.count), asc(tags.tag))
+        .orderBy(lexicalTier, desc(tags.count), asc(tags.tag))
         .limit(boundedLimit)
         .all()
         .map((row) =>
@@ -1836,6 +1872,7 @@ export class StudioRepository {
     context: readonly string[] = [],
   ): TagSuggestion[] {
     const boundedLimit = Math.min(Math.max(limit, 1), 50);
+    const normalizedQuery = normalizeDanbooruTag(query).toLowerCase();
     const textMatches = this.searchTagsByText(
       query,
       context.length > 0 ? Math.min(boundedLimit * 3, 50) : boundedLimit,
@@ -1853,6 +1890,10 @@ export class StudioRepository {
     return [...merged.values()]
       .filter((entry) => !contextTags.has(entry.tag.toLowerCase()))
       .sort((left, right) => {
+        const tierDifference =
+          tagLexicalTier(left.tag, normalizedQuery) -
+          tagLexicalTier(right.tag, normalizedQuery);
+        if (tierDifference !== 0) return tierDifference;
         const matchedDifference =
           (right.matchedContext?.length ?? 0) -
           (left.matchedContext?.length ?? 0);
@@ -1861,9 +1902,8 @@ export class StudioRepository {
           (right.cooccurrenceCount ?? 0) - (left.cooccurrenceCount ?? 0);
         if (relationDifference !== 0) return relationDifference;
         const countDifference = right.count - left.count;
-        return countDifference !== 0
-          ? countDifference
-          : left.tag.localeCompare(right.tag);
+        if (countDifference !== 0) return countDifference;
+        return compareTagNames(left.tag, right.tag);
       })
       .slice(0, boundedLimit);
   }

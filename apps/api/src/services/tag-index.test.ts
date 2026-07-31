@@ -78,6 +78,75 @@ async function fixture(): Promise<{
   };
 }
 
+function replaceAutocompleteRankingFixture(repository: StudioRepository): void {
+  repository.replaceTagIndex(
+    [
+      {
+        tag: "1girl",
+        category: "general",
+        count: 1_000,
+        description: "",
+      },
+      {
+        tag: "solo",
+        category: "general",
+        count: 800,
+        description: "",
+        aliases: ["female solo", "solo female"],
+      },
+      {
+        tag: "solo focus",
+        category: "general",
+        count: 700,
+        description: "",
+      },
+      {
+        tag: "solosis",
+        category: "character",
+        count: 700,
+        description: "",
+      },
+      {
+        tag: "@solokitsune",
+        category: "artist",
+        count: 375,
+        description: "",
+      },
+      {
+        tag: "wishiwashi (solo)",
+        category: "character",
+        count: 400,
+        description: "",
+      },
+      {
+        tag: "ensemble",
+        category: "general",
+        count: 10_000,
+        description: "",
+        aliases: ["solo ensemble"],
+      },
+      {
+        tag: "chorus",
+        category: "general",
+        count: 9_000,
+        description: "solo performance",
+      },
+    ],
+    [
+      { tag: "1girl", relatedTag: "solo", count: 100 },
+      { tag: "1girl", relatedTag: "solo focus", count: 1_000 },
+      { tag: "1girl", relatedTag: "solosis", count: 2_000 },
+      { tag: "1girl", relatedTag: "wishiwashi (solo)", count: 5_000 },
+      { tag: "1girl", relatedTag: "ensemble", count: 9_000 },
+    ],
+    {
+      fingerprint: "autocomplete-ranking-fixture",
+      source: "danbooru",
+      minimumCooccurrenceCount: 0,
+    },
+  );
+}
+
 describe("Danbooru tag index", () => {
   test("imports tags, aliases, and cooccurrences then skips an unchanged reopen", async () => {
     const files = await fixture();
@@ -143,6 +212,71 @@ describe("Danbooru tag index", () => {
         cooccurrenceCount: 450,
         matchedContext: ["red eyes"],
       }),
+    ]);
+    database.close();
+  });
+
+  test("ranks canonical lexical tiers before popularity and LIMIT", async () => {
+    const files = await fixture();
+    const database = createDatabase(files);
+    const repository = new StudioRepository(database);
+    replaceAutocompleteRankingFixture(repository);
+
+    const expected = [
+      "solo",
+      "solo focus",
+      "solosis",
+      "wishiwashi (solo)",
+      "@solokitsune",
+      "ensemble",
+      "chorus",
+    ];
+    expect(repository.searchTags("solo", 1).map(({ tag }) => tag)).toEqual([
+      "solo",
+    ]);
+    expect(repository.searchTags("solo", 20).map(({ tag }) => tag)).toEqual(
+      expected,
+    );
+
+    database.sqlite.exec("DROP TABLE tag_search");
+    expect(repository.searchTags("solo", 1).map(({ tag }) => tag)).toEqual([
+      "solo",
+    ]);
+    expect(repository.searchTags("solo", 20).map(({ tag }) => tag)).toEqual(
+      expected,
+    );
+    database.close();
+  });
+
+  test("keeps canonical aliases searchable", async () => {
+    const files = await fixture();
+    const database = createDatabase(files);
+    const repository = new StudioRepository(database);
+    replaceAutocompleteRankingFixture(repository);
+
+    expect(repository.searchTags("female solo", 1)).toEqual([
+      expect.objectContaining({
+        tag: "solo",
+        aliases: ["female solo", "solo female"],
+      }),
+    ]);
+    database.close();
+  });
+
+  test("pins an exact tag before stronger contextual prefix matches", async () => {
+    const files = await fixture();
+    const database = createDatabase(files);
+    const repository = new StudioRepository(database);
+    replaceAutocompleteRankingFixture(repository);
+
+    expect(
+      repository
+        .searchTags("solo", 3, ["1girl"])
+        .map(({ tag, cooccurrenceCount }) => ({ tag, cooccurrenceCount })),
+    ).toEqual([
+      { tag: "solo", cooccurrenceCount: 100 },
+      { tag: "solosis", cooccurrenceCount: 2_000 },
+      { tag: "solo focus", cooccurrenceCount: 1_000 },
     ]);
     database.close();
   });
