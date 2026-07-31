@@ -408,7 +408,6 @@ function runtimeEvent(
 function expandArguments(
   manifest: EngineManifest,
   paths: RuntimePaths,
-  releaseRoot: string,
   port: number,
 ): string[] {
   const values: Record<string, string> = {
@@ -557,7 +556,6 @@ export class ManagedRuntimeSupervisor {
       const args = expandArguments(
         this.manifest,
         this.paths,
-        releaseRoot,
         port,
       );
       if (args.some((argument) => argument === "--fast")) {

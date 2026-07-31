@@ -16,8 +16,6 @@ import {
   type ManagedModelInstallation,
   type ModelInstallTask,
   type ModelOption,
-  type OnboardingStatus,
-  type OnboardingUpdate,
   type JobPreview,
   type ReferenceAsset,
   type RuntimeAction,
@@ -535,29 +533,6 @@ export async function cleanupStorage(
     },
   );
   return raw.cleanup;
-}
-
-export async function getOnboarding(
-  signal?: AbortSignal,
-): Promise<OnboardingStatus> {
-  const raw = await apiFetch<{ onboarding: OnboardingStatus }>(
-    "/api/onboarding",
-    { signal },
-  );
-  return raw.onboarding;
-}
-
-export async function updateOnboarding(
-  patch: OnboardingUpdate,
-): Promise<OnboardingStatus> {
-  const raw = await apiFetch<{ onboarding: OnboardingStatus }>(
-    "/api/onboarding",
-    {
-      method: "PUT",
-      body: JSON.stringify(patch),
-    },
-  );
-  return raw.onboarding;
 }
 
 function draftToConfig(draft: GenerationDraft): ApiGenerationConfig {

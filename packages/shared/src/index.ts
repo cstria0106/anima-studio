@@ -221,52 +221,6 @@ export interface JobDto {
   preview?: JobPreviewDto;
 }
 
-export const onboardingStepIds = [
-  "welcome",
-  "runtime",
-  "models",
-  "test_generation",
-] as const;
-
-export type OnboardingStepId = (typeof onboardingStepIds)[number];
-
-export const onboardingPreferencesSchema = z
-  .object({
-    dismissed: z.boolean().default(false),
-    completedSteps: z.array(z.enum(onboardingStepIds)).default([]),
-  })
-  .strict();
-
-export const onboardingUpdateSchema = z
-  .object({
-    dismissed: z.boolean().optional(),
-    completedSteps: z.array(z.enum(onboardingStepIds)).optional(),
-  })
-  .strict()
-  .refine((value) => Object.keys(value).length > 0, {
-    message: "At least one onboarding preference is required.",
-  });
-
-export type OnboardingPreferences = z.infer<
-  typeof onboardingPreferencesSchema
->;
-
-export interface OnboardingStepDto {
-  id: OnboardingStepId;
-  label: string;
-  complete: boolean;
-  blocking: boolean;
-  message: string;
-  actionHref: string;
-}
-
-export interface OnboardingStatusDto {
-  version: 1;
-  dismissed: boolean;
-  complete: boolean;
-  steps: OnboardingStepDto[];
-}
-
 export const storageItemKinds = [
   "asset",
   "output",

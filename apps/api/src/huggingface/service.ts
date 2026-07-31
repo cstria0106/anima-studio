@@ -11,10 +11,6 @@ import type {
 } from "@anima/shared";
 
 import type {
-  ModelDownloadPatch,
-  NewModelDownload,
-} from "../db/repository";
-import type {
   VerifiedFileDownload,
   VerifiedFileDownloader,
 } from "../runtime/download";

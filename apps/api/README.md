@@ -15,25 +15,55 @@ bun --cwd apps/api dev
 
 The service listens on `127.0.0.1:8787` and applies the checked-in Drizzle
 migrations at startup. Assets, downloaded outputs, and the SQLite database are
-stored below the repository's `data` directory; the database stores relative
-paths only.
+stored below the repository's `data` directory. Asset and generated-output
+records use paths relative to that directory. Managed runtime sessions and
+model installation records retain their app-owned absolute paths.
 
 ## API contract
 
+### Runtime and health
+
 - `GET /api/health`
 - `GET /api/capabilities`
+- `GET|PUT /api/comfy/runtime`
+- `POST /api/comfy/runtime/install|update|repair`
+- `POST /api/comfy/runtime/start|stop|restart`
+- `GET /api/comfy/runtime/logs`
+- `GET /api/comfy/runtime/logs/events` — SSE
+
+### Operations, providers, and managed models
+
+- `GET /api/operations`
+- `GET /api/operations/:id`
+- `GET /api/operations/:id/events` — SSE
+- `GET /api/download-providers/civitai`
+- `PUT|DELETE /api/download-providers/civitai/token`
+- `GET /api/download-providers/huggingface/anima`
+- `POST /api/model-installations/civitai/inspect`
+- `POST /api/model-installations/civitai`
+- `POST /api/model-installations/anima`
+- `GET /api/model-installations/civitai/loras`
+- `GET /api/model-installations/:id/events` — SSE
+- `DELETE /api/model-installations/:id`
+
+### Studio data and jobs
+
 - `GET /api/options`
 - `GET /api/tags?q=red+eyes`
-- `GET /api/tags?q=white&context=1girl,red+eyes` — retains the existing
-  `{ tags }` envelope, ranks matching tags by cooccurrence, and additionally
-  returns `related` plus source/query/context metadata. `related=` is accepted
-  as a compatibility alias for `context=`.
+- `GET /api/tags?q=white&context=1girl,red+eyes` — retains the `{ tags }`
+  envelope, ranks matching tags by cooccurrence, and additionally returns
+  `related` plus source/query/context metadata. `related=` is accepted as a
+  compatibility alias for `context=`.
+- `GET /api/lora-thumbnail`
 - `POST /api/assets` — multipart form field `files`, one or many images;
   returns `{ "assets": AssetDto[] }`
 - `GET /api/assets/:id`
+- `GET /api/outputs/:id`
+- `GET /api/storage`
+- `POST /api/storage/cleanup`
 - `POST /api/jobs` — JSON `{ "config": GenerationConfig }`
 - `GET /api/jobs`
-- `GET /api/jobs/:id`
+- `GET|DELETE /api/jobs/:id`
 - `GET /api/jobs/:id/preview` — latest in-memory denoise preview, served with
   `Cache-Control: no-store`
 - `GET /api/jobs/:id/events` — SSE; supports `Last-Event-ID` and `?after=`
@@ -41,7 +71,6 @@ paths only.
   completed base-only generation; optional JSON
   `{ "outputId": "...", "upscale": { "scale": 1.5 } }`
 - `POST /api/jobs/:id/cancel`
-- `GET /api/outputs/:id`
 
 Only PNG, JPEG, and WebP reference images are accepted. `GenerationConfig`
 contains the ordered `referenceAssetIds` list.

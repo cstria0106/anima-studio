@@ -140,7 +140,6 @@ export class JobService {
 
   private async submitCreatedJob(input: {
     jobId: string;
-    config: GenerationConfig;
     actualSeed: number;
     assetRows: AssetRow[];
     build: (
@@ -150,7 +149,6 @@ export class JobService {
   }): Promise<JobDto> {
     const {
       jobId,
-      config,
       actualSeed,
       assetRows,
       build,
@@ -364,7 +362,6 @@ export class JobService {
 
     return this.submitCreatedJob({
       jobId,
-      config,
       actualSeed,
       assetRows,
       build: (inputNames) =>
@@ -490,7 +487,6 @@ export class JobService {
 
     return this.submitCreatedJob({
       jobId,
-      config,
       actualSeed: source.actualSeed,
       assetRows,
       build: async (inputNames) => {

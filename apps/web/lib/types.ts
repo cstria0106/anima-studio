@@ -192,33 +192,6 @@ export const EMPTY_OPTIONS: StudioOptions = {
   presets: [],
 };
 
-export type OnboardingStepId =
-  | "welcome"
-  | "runtime"
-  | "models"
-  | "test_generation";
-
-export interface OnboardingStep {
-  id: OnboardingStepId;
-  label: string;
-  complete: boolean;
-  blocking: boolean;
-  message: string;
-  actionHref: string;
-}
-
-export interface OnboardingStatus {
-  version: 1;
-  dismissed: boolean;
-  complete: boolean;
-  steps: OnboardingStep[];
-}
-
-export interface OnboardingUpdate {
-  dismissed?: boolean;
-  completedSteps?: OnboardingStepId[];
-}
-
 export type StorageItemKind =
   | "asset"
   | "output"

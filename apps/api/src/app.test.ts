@@ -45,7 +45,6 @@ import { loadConfig } from "./config";
 import { createDatabase } from "./db/database";
 import { StudioRepository } from "./db/repository";
 import { RUNTIME_STATE_SETTING } from "./runtime/studio";
-import { OnboardingService } from "./services/onboarding";
 import type {
   WorkflowBuildResult,
   WorkflowEngine,
@@ -828,15 +827,6 @@ describe("Anima Studio API", () => {
         .compatible,
     ).toBe(false);
 
-    const onboardingResponse = await api.app.request("/api/onboarding");
-    expect(onboardingResponse.status).toBe(200);
-    expect(await onboardingResponse.json()).toMatchObject({
-      onboarding: {
-        complete: false,
-        steps: expect.any(Array),
-      },
-    });
-
     const externalResponse = await api.app.request(
       "/api/comfy/runtime",
       {
@@ -1574,45 +1564,6 @@ describe("Anima Studio API", () => {
       { method: "DELETE" },
     );
     expect(sourceDelete.status).toBe(409);
-  });
-
-  test("never lets manual onboarding preferences bypass blocking runtime checks", async () => {
-    const { runtime: api } = await runtime();
-    const onboarding = new OnboardingService(api.repository, async () => ({
-      runtimeReady: false,
-      runtimeInstalled: false,
-      modelsAvailable: false,
-      capabilityIssueCount: 2,
-    }));
-    api.repository.setSetting("onboarding-preferences-v1", {
-      dismissed: false,
-      completedSteps: ["welcome", "character"],
-    });
-    const legacyStatus = await onboarding.status();
-    expect(legacyStatus.steps.map((step) => step.id)).not.toContain(
-      "character",
-    );
-    expect(
-      legacyStatus.steps.find((step) => step.id === "welcome")?.complete,
-    ).toBeTrue();
-
-    const status = await onboarding.update({
-      completedSteps: [
-        "welcome",
-        "runtime",
-        "models",
-        "test_generation",
-      ],
-    });
-    expect(status.complete).toBe(false);
-    expect(
-      status.steps.filter(
-        (step) => step.id === "runtime" || step.id === "models",
-      ),
-    ).toEqual([
-      expect.objectContaining({ id: "runtime", complete: false, blocking: true }),
-      expect.objectContaining({ id: "models", complete: false, blocking: true }),
-    ]);
   });
 
   test("removed legacy studio APIs return 404", async () => {

@@ -10,7 +10,6 @@ import type {
   ComfyQueue,
   ComfySocketEvent,
 } from "../comfy/types";
-import type { AppConfig } from "../config";
 import { StudioRepository } from "../db/repository";
 import type { JobRow } from "../db/schema";
 import { FileStorage } from "../files/storage";

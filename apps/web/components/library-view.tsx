@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import * as React from "react";
 import {
   AlertTriangle,
@@ -154,14 +155,16 @@ function CivitaiInstallationThumbnail({
   return (
     <div className="relative aspect-[16/9] overflow-hidden bg-secondary/50">
       {preview?.thumbnailUrl && !failed ? (
-        <img
+        <Image
           src={preview.thumbnailUrl}
           alt={`${name} 미리보기`}
+          fill
+          unoptimized
+          sizes="(min-width: 1280px) 25vw, (min-width: 768px) 50vw, 100vw"
           className={cn(
             "size-full object-cover transition duration-200",
             hidden && "scale-110 blur-2xl",
           )}
-          loading="lazy"
           onError={() => setFailed(true)}
         />
       ) : (

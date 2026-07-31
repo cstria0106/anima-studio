@@ -17,8 +17,8 @@ does not depend on a saved ComfyUI workflow or history entry.
 - Civitai model inspection and verified managed-library downloads
 - Final-prompt inspection with source labels, duplicate detection, and conflicts
 - History-based settings restoration, zoomable results, and side-by-side comparison
-- First-run guidance, dependency remedies, measured hardware status, and
-  completion notifications
+- Startup recovery, generation-readiness guidance, measured hardware status,
+  and completion notifications
 - Dependency-aware storage cleanup
 
 ## Studio workflow
@@ -255,13 +255,14 @@ child job from the preserved base output and actual seed. It runs only
 `LoadImage → VAEEncode → LatentUpscaleBy →` second sampling; the base sampler
 does not run again.
 
-## Setup guidance and storage
+## Generation readiness and storage
 
-The first-run guide tracks four durable steps: studio tour, ComfyUI runtime,
-models and required nodes, and a successful test generation. The
-dismissed/completed state is stored in SQLite, so it follows the local studio
-rather than one browser tab. The dependency panel maps missing ComfyUI class
-types to the pinned custom-node package and installation source.
+The startup gate installs, updates, starts, or repairs the managed runtime as
+needed before opening the Studio. In Create, generation remains disabled while
+ComfyUI is unavailable, required node contracts are missing, references are
+still uploading, or selected model files are unavailable. Selecting a reported
+model or input issue moves focus to the field that can resolve it. Runtime
+hardware status and searchable logs remain available under Settings > Engine.
 
 Storage settings show counts and disk usage for uploaded assets, copied
 outputs, and managed model installations. Managed models are installed and

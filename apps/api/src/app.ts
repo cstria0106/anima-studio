@@ -65,7 +65,6 @@ import { JobEventService } from "./services/job-events";
 import { JobService, JobSubmissionError } from "./services/jobs";
 import { ModelDownloadCoordinator } from "./services/model-downloads";
 import { OperationService } from "./services/operations";
-import { OnboardingService } from "./services/onboarding";
 import { StorageInventoryService } from "./services/storage-inventory";
 import {
   initializeDanbooruTagIndex,
@@ -96,7 +95,6 @@ export interface ApiRuntime {
   operations: OperationService;
   jobs: JobService;
   storageInventory: StorageInventoryService;
-  onboarding: OnboardingService;
   tracker: JobTracker;
   runtimeController: ManagedComfyRuntimeController;
   modelLibrary: ModelLibraryService;
@@ -672,28 +670,6 @@ export async function createRuntime(
     modelRoots: [runtimePaths.models],
     loraRoot: join(runtimePaths.models, "loras"),
   });
-  const onboarding = new OnboardingService(repository, async () => {
-    const [status, report, ready] = await Promise.all([
-      runtimeController.status(),
-      capabilities.report(),
-      gateway.health().catch(() => false),
-    ]);
-    const options = await capabilities.options().catch(() => null);
-    return {
-      runtimeReady: gateway.available && ready,
-      runtimeInstalled:
-        status.state.mode === "external" || status.managed.installed,
-      modelsAvailable: Boolean(
-        options &&
-          options.diffusionModels.length > 0 &&
-          options.clips.length > 0 &&
-          options.vaes.length > 0,
-      ),
-      capabilityIssueCount: report.missing.filter(
-        (issue) => issue.kind === "node" || issue.kind === "endpoint",
-      ).length,
-    };
-  });
   await modelDownloads.reconcileInstallations();
   for (const orphan of repository.listActiveSystemOperations()) {
     operations.fail(
@@ -758,7 +734,6 @@ export async function createRuntime(
     operations,
     jobs,
     storageInventory,
-    onboarding,
     tracker,
     runtimeController,
     runtimeLogs: logs,
@@ -791,7 +766,6 @@ export async function createRuntime(
     operations,
     jobs,
     storageInventory,
-    onboarding,
     tracker,
     runtimeController,
     modelLibrary,
@@ -823,7 +797,6 @@ interface AppServices {
   operations: OperationService;
   jobs: JobService;
   storageInventory: StorageInventoryService;
-  onboarding: OnboardingService;
   tracker: JobTracker;
   runtimeController: ManagedComfyRuntimeController;
   runtimeLogs: RuntimeLogService;
@@ -1654,22 +1627,6 @@ export function createApp(services: AppServices): Hono {
   app.post("/api/storage/cleanup", async (c) =>
     c.json({
       cleanup: await services.storageInventory.cleanup(
-        await parseJson(c.req.raw),
-      ),
-    }),
-  );
-
-  app.get("/api/onboarding", async (c) =>
-    c.json({ onboarding: await services.onboarding.status() }),
-  );
-
-  app.get("/api/onboarding/status", async (c) =>
-    c.json({ onboarding: await services.onboarding.status() }),
-  );
-
-  app.put("/api/onboarding", async (c) =>
-    c.json({
-      onboarding: await services.onboarding.update(
         await parseJson(c.req.raw),
       ),
     }),

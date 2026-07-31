@@ -4,6 +4,12 @@ const nextConfig: NextConfig = {
   devIndicators: false,
   reactStrictMode: true,
   poweredByHeader: false,
+  images: {
+    remotePatterns: [
+      { protocol: "https", hostname: "image.civitai.com" },
+      { protocol: "https", hostname: "image.civitai.red" },
+    ],
+  },
   async rewrites() {
     return [
       {
