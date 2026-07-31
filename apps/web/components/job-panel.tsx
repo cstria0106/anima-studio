@@ -399,6 +399,8 @@ export function JobPanel({
               className="w-full"
               disabled={!canGenerate || submitting}
               onClick={onGenerate}
+              aria-keyshortcuts="Control+Enter"
+              title="생성 (Ctrl+Enter)"
             >
               {submitting ? (
                 <LoaderCircle className="animate-spin" />

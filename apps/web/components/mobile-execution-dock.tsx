@@ -241,6 +241,8 @@ export function MobileExecutionDock({
                   className="h-11 min-w-[7.25rem]"
                   disabled={!canGenerate || submitting}
                   onClick={onGenerate}
+                  aria-keyshortcuts="Control+Enter"
+                  title="생성 (Ctrl+Enter)"
                 >
                   {submitting ? (
                     <LoaderCircle className="animate-spin" />
@@ -510,6 +512,8 @@ export function MobileExecutionDock({
                   setSheetOpen(false);
                   onGenerate();
                 }}
+                aria-keyshortcuts="Control+Enter"
+                title="생성 (Ctrl+Enter)"
               >
                 {submitting ? (
                   <LoaderCircle className="animate-spin" />

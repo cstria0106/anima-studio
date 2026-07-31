@@ -177,6 +177,30 @@ function CreateWorkspace({
     );
   const canGenerate = preflightIssues.length === 0;
 
+  React.useEffect(() => {
+    function generateFromShortcut(event: KeyboardEvent) {
+      if (
+        event.key !== "Enter" ||
+        !event.ctrlKey ||
+        event.altKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        event.repeat ||
+        event.isComposing
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      if (canGenerate && !submitting) onGenerate();
+    }
+
+    window.addEventListener("keydown", generateFromShortcut, true);
+    return () =>
+      window.removeEventListener("keydown", generateFromShortcut, true);
+  }, [canGenerate, onGenerate, submitting]);
+
   const resolveIssue = React.useCallback((issue: PreflightIssue) => {
     const section = document.getElementById(
       "create-section-" + issue.stepId,
