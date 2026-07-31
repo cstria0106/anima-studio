@@ -40,6 +40,9 @@ import type { RuntimeStateRepository } from "./repository";
 
 export const RUNTIME_MARKER_FILENAME = ".anima-runtime.json";
 export const MODEL_PATHS_FILENAME = "extra_model_paths.yaml";
+const STAGING_DIRECTORY_NAME = ".s";
+const STAGING_TOKEN_LENGTH = 16;
+const MAX_RELIABLE_WINDOWS_TOOL_PATH = 240;
 
 export interface RuntimeInstallResult {
   operationId: string;
@@ -141,17 +144,59 @@ async function readMarker(
   }
 }
 
-function assertSafeStagingPath(path: string, releases: string): void {
-  const relativePath = relative(resolve(releases), resolve(path));
+function stagingDirectory(paths: RuntimePaths): string {
+  return join(paths.root, STAGING_DIRECTORY_NAME);
+}
+
+function createStagingPath(paths: RuntimePaths): string {
+  const token = crypto.randomUUID().replaceAll("-", "").slice(0, STAGING_TOKEN_LENGTH);
+  return join(stagingDirectory(paths), token);
+}
+
+function assertSafeStagingPath(path: string, parent: string): void {
+  const relativePath = relative(resolve(parent), resolve(path));
   if (
-    !basename(path).startsWith(".staging-") ||
+    !new RegExp(`^[a-f0-9]{${STAGING_TOKEN_LENGTH}}$`).test(basename(path)) ||
     relativePath === ".." ||
     relativePath.startsWith(`..${sep}`) ||
-    relativePath.includes(`${sep}${sep}`) ||
-    resolve(path) === resolve(releases)
+    relativePath.includes(sep) ||
+    resolve(path) === resolve(parent)
   ) {
     throw new Error("Refusing to clean an untrusted runtime staging path.");
   }
+}
+
+function runtimePathIssue(
+  paths: RuntimePaths,
+  manifest: EngineManifest,
+): RuntimePreflight["issues"][number] | null {
+  const releaseRoot = join(paths.releases, manifest.bundleId);
+  const stagingRoot = join(
+    stagingDirectory(paths),
+    "f".repeat(STAGING_TOKEN_LENGTH),
+  );
+  const longestPath = manifest.artifacts.reduce(
+    (longest, artifact) => {
+      const candidates = [
+        join(releaseRoot, artifact.destination),
+        join(stagingRoot, artifact.destination),
+      ];
+      return candidates.reduce(
+        (current, candidate) =>
+          candidate.length > current.length ? candidate : current,
+        longest,
+      );
+    },
+    releaseRoot,
+  );
+  if (longestPath.length <= MAX_RELIABLE_WINDOWS_TOOL_PATH) return null;
+  return {
+    code: "runtime_path_too_long",
+    message:
+      "현재 폴더 경로가 너무 길어 엔진을 설치할 수 없습니다. " +
+      "AnimaStudio.exe와 data 폴더를 C:\\AnimaStudio로 옮긴 후 다시 시도해 주세요.",
+    blocking: true,
+  };
 }
 
 export class ManagedRuntimeInstaller {
@@ -181,10 +226,17 @@ export class ManagedRuntimeInstaller {
 
   async preflight(): Promise<RuntimePreflight> {
     await mkdir(this.paths.root, { recursive: true });
-    return evaluateRuntimePreflight(
+    const result = evaluateRuntimePreflight(
       await this.platformProbe.inspect(this.paths.root),
       this.manifest,
     );
+    const pathIssue = runtimePathIssue(this.paths, this.manifest);
+    if (!pathIssue) return result;
+    return {
+      ...result,
+      compatible: false,
+      issues: [...result.issues, pathIssue],
+    };
   }
 
   private async emit(value: RuntimeEvent): Promise<void> {
@@ -208,10 +260,8 @@ export class ManagedRuntimeInstaller {
     }
     this.active = true;
     const releaseRoot = join(this.paths.releases, this.manifest.bundleId);
-    const stagingRoot = join(
-      this.paths.releases,
-      `.staging-${this.manifest.bundleId}-${operationId}`,
-    );
+    const stagingParent = stagingDirectory(this.paths);
+    const stagingRoot = createStagingPath(this.paths);
     const now = this.now;
     const operation = options.operation ?? "install";
     let preflight: RuntimePreflight | null = null;
@@ -279,6 +329,7 @@ export class ManagedRuntimeInstaller {
 
       await mkdir(this.paths.downloads, { recursive: true });
       await mkdir(this.paths.releases, { recursive: true });
+      await mkdir(stagingParent, { recursive: true });
       await mkdir(this.paths.shared, { recursive: true });
       for (const directory of this.manifest.sharedDirectories) {
         await mkdir(join(this.paths.shared, directory), { recursive: true });
@@ -485,7 +536,7 @@ export class ManagedRuntimeInstaller {
         }),
       );
       try {
-        assertSafeStagingPath(stagingRoot, this.paths.releases);
+        assertSafeStagingPath(stagingRoot, stagingParent);
         await rm(stagingRoot, { recursive: true, force: true });
       } catch {
         // Installation failure remains primary; staging cleanup is best effort.

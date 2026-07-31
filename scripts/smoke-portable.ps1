@@ -5,8 +5,8 @@ param(
 
 $smokeRoot = Join-Path ([IO.Path]::GetTempPath()) ("Anima Studio 한글 " + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $smokeRoot | Out-Null
-Copy-Item -LiteralPath (Resolve-Path $Executable) -Destination $smokeRoot
 $exe = Join-Path $smokeRoot "AnimaStudio.exe"
+Copy-Item -LiteralPath (Resolve-Path $Executable) -Destination $exe
 $stdout = Join-Path $smokeRoot "stdout.log"
 $stderr = Join-Path $smokeRoot "stderr.log"
 $process = Start-Process -FilePath $exe -ArgumentList "--no-browser" -WorkingDirectory $smokeRoot -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -WindowStyle Hidden

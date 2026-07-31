@@ -9,7 +9,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import {
   resolveRuntimePaths,
@@ -152,6 +152,82 @@ function compatiblePlatform() {
 }
 
 describe("managed runtime installer", () => {
+  test("uses a short staging path that does not include bundle or operation IDs", async () => {
+    const root = await temporaryDirectory();
+    const archive = join(root, "archive.zip");
+    await writeFile(archive, Uint8Array.of(1, 2, 3));
+    const paths = resolveRuntimePaths(root);
+    let observedStagingRoot = "";
+    const extractor: ArchiveExtractor = {
+      async extract(artifact, _archivePath, releaseRoot) {
+        observedStagingRoot = releaseRoot;
+        await mkdir(join(releaseRoot, "payload"), { recursive: true });
+        await writeFile(join(releaseRoot, "payload", artifact.id), "installed");
+      },
+    };
+    const installer = new ManagedRuntimeInstaller({
+      paths,
+      repository: new MemoryRuntimeStateRepository(),
+      manifest: tinyManifest(),
+      platformProbe: compatiblePlatform(),
+      downloader: new FakeDownloader(archive),
+      extractor,
+      provisioner: new NoopRuntimeProvisioner(),
+    });
+
+    await installer.install({
+      operationId: `operation-${"x".repeat(100)}`,
+    });
+
+    expect(dirname(observedStagingRoot)).toBe(join(paths.root, ".s"));
+    expect(basename(observedStagingRoot)).toMatch(/^[a-f0-9]{16}$/);
+    expect(observedStagingRoot).not.toContain("tiny-runtime-r1");
+    expect(observedStagingRoot).not.toContain("operation-");
+  });
+
+  test("rejects an excessively long engine path before downloading", async () => {
+    const root = await temporaryDirectory();
+    const manifest = validateEngineManifest({
+      ...tinyManifest(),
+      artifacts: [
+        {
+          ...tinyManifest().artifacts[0]!,
+          destination: `payload/${"x".repeat(180)}`,
+        },
+      ],
+    });
+    let downloads = 0;
+    const downloader: ArtifactDownloader = {
+      download() {
+        downloads += 1;
+        return Promise.reject(new Error("download should not start"));
+      },
+    };
+    const installer = new ManagedRuntimeInstaller({
+      paths: resolveRuntimePaths(root),
+      repository: new MemoryRuntimeStateRepository(),
+      manifest,
+      platformProbe: compatiblePlatform(),
+      downloader,
+      extractor: new FakeExtractor(),
+      provisioner: new NoopRuntimeProvisioner(),
+    });
+
+    const preflight = await installer.preflight();
+    expect(preflight.compatible).toBeFalse();
+    expect(preflight.issues).toContainEqual({
+      code: "runtime_path_too_long",
+      message:
+        "현재 폴더 경로가 너무 길어 엔진을 설치할 수 없습니다. " +
+        "AnimaStudio.exe와 data 폴더를 C:\\AnimaStudio로 옮긴 후 다시 시도해 주세요.",
+      blocking: true,
+    });
+    await expect(installer.install()).rejects.toThrow(
+      /C:\\AnimaStudio/,
+    );
+    expect(downloads).toBe(0);
+  });
+
   test("activates only a fully extracted staging release", async () => {
     const root = await temporaryDirectory();
     const archive = join(root, "archive.zip");
@@ -208,6 +284,7 @@ describe("managed runtime installer", () => {
     expect(
       await readdir(paths.releases).catch(() => []),
     ).toEqual([]);
+    expect(await readdir(join(paths.root, ".s"))).toEqual([]);
     expect((await repository.getState()).status).toBe("failed");
   });
 

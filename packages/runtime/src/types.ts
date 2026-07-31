@@ -105,7 +105,8 @@ export interface RuntimePreflight {
       | "unsupported_architecture"
       | "insufficient_disk"
       | "nvidia_unavailable"
-      | "low_vram";
+      | "low_vram"
+      | "runtime_path_too_long";
     message: string;
     blocking: boolean;
   }>;
