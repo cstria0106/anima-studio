@@ -4,6 +4,7 @@ import * as React from "react";
 import {
   AlertTriangle,
   CheckCircle2,
+  Github,
   History,
   LibraryBig,
   RefreshCw,
@@ -764,6 +765,17 @@ export function StudioShell() {
               title="Settings"
             >
               <Settings />
+            </Button>
+            <Button asChild size="icon" variant="ghost">
+              <a
+                href="https://github.com/cstria0106/anima-studio"
+                target="_blank"
+                rel="noreferrer"
+                aria-label="GitHub 저장소 열기"
+                title="GitHub"
+              >
+                <Github />
+              </a>
             </Button>
         </div>
 
