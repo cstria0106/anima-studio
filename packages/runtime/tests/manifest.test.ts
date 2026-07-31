@@ -12,7 +12,7 @@ describe("managed engine manifest", () => {
     const manifest = validateEngineManifest(MANAGED_ENGINE_MANIFEST);
 
     expect(manifest.bundleId).toBe(
-      "anima-comfy-0.29.0-win-nvidia-r4",
+      "anima-comfy-0.29.0-win-nvidia-r5",
     );
     expect(manifest.artifacts).toHaveLength(10);
     expect(

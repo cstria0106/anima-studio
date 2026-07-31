@@ -9,7 +9,7 @@ const GiB = 1024 ** 3;
  */
 export const MANAGED_ENGINE_MANIFEST = validateEngineManifest({
   schemaVersion: 1,
-  bundleId: "anima-comfy-0.29.0-win-nvidia-r4",
+  bundleId: "anima-comfy-0.29.0-win-nvidia-r5",
   displayName: "Anima ComfyUI 0.29.0 (Windows NVIDIA)",
   platform: {
     os: "win32",
@@ -185,15 +185,15 @@ export const MANAGED_ENGINE_MANIFEST = validateEngineManifest({
       id: "sd-scripts",
       kind: "training-runtime",
       name: "kohya sd-scripts",
-      version: "2026-02-25",
-      revision: "1a3ec9ea745fe9883551dfca5c947ea3d6aa68c7",
+      version: "2026-07-23",
+      revision: "37a1cbbc5725ed2a3575506e7bd2001c9908ac92",
       downloadUrl:
-        "https://codeload.github.com/kohya-ss/sd-scripts/zip/1a3ec9ea745fe9883551dfca5c947ea3d6aa68c7",
+        "https://codeload.github.com/kohya-ss/sd-scripts/zip/37a1cbbc5725ed2a3575506e7bd2001c9908ac92",
       sourceUrl:
-        "https://github.com/kohya-ss/sd-scripts/tree/1a3ec9ea745fe9883551dfca5c947ea3d6aa68c7",
-      bytes: 12_425_974,
+        "https://github.com/kohya-ss/sd-scripts/tree/37a1cbbc5725ed2a3575506e7bd2001c9908ac92",
+      bytes: 6_494_388,
       sha256:
-        "310a774a3d17600ead75f3c324fd8f1685996a139d1ccfed86e645e3533cacc1",
+        "10673b1526b0b2854848fc9146439fc16ab77e6efcd74fddd867c08d2f0a511c",
       license: "Apache-2.0",
       archive: { format: "zip", stripComponents: 1 },
       destination:
