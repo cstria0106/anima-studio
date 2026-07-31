@@ -149,6 +149,8 @@ export class JobTracker {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.pollTimer = null;
     this.reconnectTimer = null;
+    this.storage.clearPreviews();
+    this.previewRevisions.clear();
   }
 
   async reconnect(): Promise<void> {
@@ -493,6 +495,8 @@ export class JobTracker {
       error: message,
       completedAt: new Date().toISOString(),
     });
+    this.storage.deletePreview(row.id);
+    this.previewRevisions.delete(row.id);
     this.events.append({
       jobId: row.id,
       phase: "failed",
@@ -624,6 +628,8 @@ export class JobTracker {
         error: null,
         completedAt,
       });
+      this.storage.deletePreview(jobId);
+      this.previewRevisions.delete(jobId);
       this.events.append({
         jobId,
         phase: "completed",

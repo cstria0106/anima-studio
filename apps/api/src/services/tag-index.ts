@@ -4,7 +4,9 @@ import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import {
+  ANIMA_CURATED_TAGS,
   OFFLINE_TAGS,
+  normalizeDanbooruTag,
   parseCsvRow,
   parseDanbooruCooccurrenceRow,
   parseDanbooruTagRow,
@@ -17,11 +19,12 @@ import type {
   TagIndexStats,
 } from "../db/repository";
 
-const importFormatVersion = 1;
+const importFormatVersion = 2;
 const fallbackFingerprint = "fallback-tags-v1";
 
 export interface TagDataSource {
   tagsCsvPath: string;
+  descriptionsCsvPath: string;
   cooccurrenceCsvPath: string;
   manifestPath: string;
   minimumCooccurrenceCount: number;
@@ -34,8 +37,9 @@ export interface TagIndexInitialization {
 }
 
 async function sourceFingerprint(source: TagDataSource): Promise<string> {
-  const [tagsStat, cooccurrenceStat, manifest] = await Promise.all([
+  const [tagsStat, descriptionsStat, cooccurrenceStat, manifest] = await Promise.all([
     stat(source.tagsCsvPath),
+    stat(source.descriptionsCsvPath),
     stat(source.cooccurrenceCsvPath),
     readFile(source.manifestPath, "utf8").catch(() => ""),
   ]);
@@ -45,6 +49,11 @@ async function sourceFingerprint(source: TagDataSource): Promise<string> {
       path: source.tagsCsvPath,
       bytes: tagsStat.size,
       modified: tagsStat.mtimeMs,
+    },
+    descriptions: {
+      path: source.descriptionsCsvPath,
+      bytes: descriptionsStat.size,
+      modified: descriptionsStat.mtimeMs,
     },
     cooccurrences: {
       path: source.cooccurrenceCsvPath,
@@ -101,15 +110,43 @@ export async function readDanbooruTagData(source: TagDataSource): Promise<{
   tags: OfflineTag[];
   cooccurrences: OfflineTagCooccurrence[];
 }> {
+  const descriptions = new Map<string, string>();
+  await readRows(
+    source.descriptionsCsvPath,
+    ["tag", "description"],
+    (fields) => {
+      const tag = normalizeDanbooruTag(fields[0] ?? "").toLowerCase();
+      const description = fields[1]?.trim() ?? "";
+      if (tag && description) descriptions.set(tag, description);
+    },
+  );
+
   const tags: OfflineTag[] = [];
   await readRows(
     source.tagsCsvPath,
     ["tag", "category", "count", "alias"],
     (fields) => {
       const value = parseDanbooruTagRow(fields);
-      if (value) tags.push(value);
+      if (value) {
+        tags.push({
+          ...value,
+          description:
+            descriptions.get(value.tag.toLowerCase()) ?? value.description,
+        });
+      }
     },
   );
+
+  const tagsByName = new Map(tags.map((tag) => [tag.tag, tag]));
+  for (const curated of ANIMA_CURATED_TAGS) {
+    const existing = tagsByName.get(curated.tag);
+    if (!existing) {
+      tags.push(curated);
+      tagsByName.set(curated.tag, curated);
+    } else if (!existing.description && curated.description) {
+      existing.description = curated.description;
+    }
+  }
 
   const cooccurrences: OfflineTagCooccurrence[] = [];
   await readRows(

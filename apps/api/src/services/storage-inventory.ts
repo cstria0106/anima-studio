@@ -18,6 +18,7 @@ import {
   type StorageInventoryDto,
   type StorageItemDto,
 } from "@anima/shared";
+import { INSTANT_REFERENCE_GENERATED_LORA_DIRECTORY } from "../comfy/instant-reference";
 import { StudioRepository } from "../db/repository";
 import { JobSubmissionError } from "./jobs";
 
@@ -34,16 +35,21 @@ function pathInside(root: string, candidate: string): boolean {
 
 export class StorageInventoryService {
   private readonly dataRoot: string;
-  private readonly previewRoot: string;
   private readonly modelRoots: string[];
+  private readonly loraRoot: string;
+  private readonly instantLoraRoot: string;
 
   constructor(
     private readonly repository: StudioRepository,
-    options: { dataDir: string; modelRoots: string[] },
+    options: { dataDir: string; modelRoots: string[]; loraRoot: string },
   ) {
     this.dataRoot = resolve(options.dataDir);
-    this.previewRoot = resolve(this.dataRoot, "previews");
     this.modelRoots = options.modelRoots.map((root) => resolve(root));
+    this.loraRoot = resolve(options.loraRoot);
+    this.instantLoraRoot = resolve(
+      this.loraRoot,
+      INSTANT_REFERENCE_GENERATED_LORA_DIRECTORY,
+    );
   }
 
   private async regularFileSize(path: string): Promise<number | null> {
@@ -55,59 +61,66 @@ export class StorageInventoryService {
     }
   }
 
-  private async previewItems(): Promise<StorageItemDto[]> {
-    let names: string[];
-    try {
-      names = await readdir(this.previewRoot);
-    } catch (error) {
-      const code =
-        error && typeof error === "object" && "code" in error
-          ? String(error.code)
-          : "";
-      if (code === "ENOENT") return [];
-      throw error;
-    }
-    const items: StorageItemDto[] = [];
-    for (const name of names) {
-      if (!name.endsWith(".preview")) continue;
-      const id = name.slice(0, -".preview".length);
-      const path = resolve(this.previewRoot, name);
-      if (!pathInside(this.previewRoot, path)) continue;
-      const size = await this.regularFileSize(path);
-      if (size === null) continue;
-      const job = this.repository.findJobRow(id);
-      const active = job ? !this.repository.isTerminal(job) : false;
-      const stats = await lstat(path);
-      items.push({
-        kind: "preview",
-        id,
-        name: `${id}.preview`,
-        byteSize: size,
-        createdAt: stats.mtime.toISOString(),
-        dependencies:
-          active && job
-            ? [
-                {
-                  kind: "job",
-                  id: job.id,
-                  label: "Active generation preview",
-                },
-              ]
-            : [],
-        cleanupEligible: !active,
-        cleanupReason: active
-          ? "A running generation is still writing this preview."
-          : null,
-      });
-    }
-    return items;
-  }
-
   private modelPath(row: { storagePath: string }): string | null {
     const candidate = resolve(row.storagePath);
     return this.modelRoots.some((root) => pathInside(root, candidate))
       ? candidate
       : null;
+  }
+
+  private async instantLoraItems(): Promise<StorageItemDto[]> {
+    const rootStats = await lstat(this.instantLoraRoot).catch(() => null);
+    if (
+      !rootStats?.isDirectory() ||
+      rootStats.isSymbolicLink() ||
+      !pathInside(this.loraRoot, this.instantLoraRoot)
+    ) {
+      return [];
+    }
+
+    const items: StorageItemDto[] = [];
+    const visit = async (directory: string): Promise<void> => {
+      let entries;
+      try {
+        entries = await readdir(directory, { withFileTypes: true });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+        throw error;
+      }
+      for (const entry of entries) {
+        const path = resolve(directory, entry.name);
+        if (!pathInside(this.instantLoraRoot, path)) continue;
+        if (entry.isDirectory() && !entry.isSymbolicLink()) {
+          await visit(path);
+          continue;
+        }
+        if (
+          !entry.isFile() ||
+          entry.isSymbolicLink() ||
+          !entry.name.toLowerCase().endsWith(".safetensors")
+        ) {
+          continue;
+        }
+        const stats = await lstat(path).catch(() => null);
+        if (!stats?.isFile() || stats.isSymbolicLink()) continue;
+        const id = relative(this.loraRoot, path).split(sep).join("/");
+        items.push({
+          kind: "instant_lora",
+          id,
+          name: id,
+          byteSize: stats.size,
+          createdAt: (stats.birthtimeMs > 0
+            ? stats.birthtime
+            : stats.mtime
+          ).toISOString(),
+          dependencies: [],
+          cleanupEligible: true,
+          cleanupReason: null,
+        });
+      }
+    };
+    await visit(this.instantLoraRoot);
+    return items;
   }
 
   async inventory(): Promise<StorageInventoryDto> {
@@ -164,10 +177,11 @@ export class StorageInventoryService {
           "Remove managed models from the model library.",
       });
     }
+    const instantLoraItems = await this.instantLoraItems();
     const items = [
       ...assetItems,
       ...outputItems,
-      ...(await this.previewItems()),
+      ...instantLoraItems,
       ...modelItems,
     ];
     const categories = storageItemKinds.map((kind) => {
@@ -207,10 +221,13 @@ export class StorageInventoryService {
       }
       return path;
     }
-    if (item.kind === "preview") {
-      const path = resolve(this.previewRoot, `${item.id}.preview`);
-      if (!pathInside(this.previewRoot, path)) {
-        throw new JobSubmissionError("Stored preview path is invalid.", 409);
+    if (item.kind === "instant_lora") {
+      const path = resolve(this.loraRoot, item.id);
+      if (!pathInside(this.instantLoraRoot, path)) {
+        throw new JobSubmissionError(
+          "Instant LoRA path is invalid.",
+          409,
+        );
       }
       return path;
     }
@@ -247,6 +264,8 @@ export class StorageInventoryService {
         if (!this.repository.deleteOutputRecord(item.id)) {
           throw new Error("Output record disappeared during cleanup.");
         }
+      } else if (item.kind === "instant_lora") {
+        // Instant Reference writes these files directly and has no studio DB row.
       } else if (item.kind === "model_download") {
         throw new Error("Remove managed models from the model library.");
       }
@@ -254,9 +273,9 @@ export class StorageInventoryService {
       await rename(staged, source).catch(() => undefined);
       throw error;
     }
-    // The managed record has already been removed at this point. A failure to
-    // unlink the staged file must not turn a completed deletion into an
-    // ambiguous API failure; the bounded trash directory remains recoverable.
+    // The source is no longer visible at this point. A failure to unlink the
+    // staged file must not turn a completed deletion into an ambiguous API
+    // failure; the bounded trash directory remains recoverable.
     await unlink(staged).catch(() => undefined);
   }
 

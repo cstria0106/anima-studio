@@ -32,14 +32,52 @@ export function formatDate(value?: string | number | Date | null) {
   }).format(date);
 }
 
-export function getLastTag(value: string) {
-  return value.split(",").at(-1)?.trim() ?? "";
+export function getTagAtCursor(value: string, cursor: number) {
+  const position = clamp(cursor, 0, value.length);
+  const previousSeparator =
+    position === 0
+      ? -1
+      : Math.max(
+          value.lastIndexOf(",", position - 1),
+          value.lastIndexOf("\n", position - 1),
+          value.lastIndexOf("\r", position - 1),
+        );
+  const nextSeparators = [",", "\n", "\r"]
+    .map((separator) => value.indexOf(separator, position))
+    .filter((index) => index >= 0);
+  const start = previousSeparator + 1;
+  const end = nextSeparators.length ? Math.min(...nextSeparators) : value.length;
+
+  return {
+    start,
+    end,
+    tag: value.slice(start, end).trim(),
+    query: value.slice(start, position).trim(),
+  };
 }
 
-export function replaceLastTag(value: string, replacement: string) {
-  const parts = value.split(",");
-  parts[parts.length - 1] = ` ${replacement}`;
-  return `${parts.join(",").trimStart()}, `;
+export function replaceTagAtCursor(
+  value: string,
+  cursor: number,
+  replacement: string,
+) {
+  const tag = getTagAtCursor(value, cursor);
+  const before = value.slice(0, tag.start);
+  const after = value.slice(tag.end);
+  const leadingSpace = before && !/\s$/.test(before) ? " " : "";
+  const completed = `${before}${leadingSpace}${replacement}${after}`;
+
+  if (tag.end < value.length) {
+    return {
+      value: completed,
+      cursor: before.length + leadingSpace.length + replacement.length,
+    };
+  }
+
+  return {
+    value: `${completed}, `,
+    cursor: completed.length + 2,
+  };
 }
 
 export function extractTags(value: string) {
@@ -47,6 +85,16 @@ export function extractTags(value: string) {
     .split(/[,\n]+/)
     .map((tag) => tag.trim())
     .filter(Boolean);
+}
+
+export function tagComparisonKey(value: string) {
+  const unescaped = value
+    .replaceAll("\\(", "(")
+    .replaceAll("\\)", ")")
+    .trim()
+    .toLowerCase();
+  if (/^score_[1-9]$/.test(unescaped)) return unescaped;
+  return unescaped.replaceAll("_", " ").replace(/\s+/g, " ").trim();
 }
 
 export function uniqueId(prefix = "id") {

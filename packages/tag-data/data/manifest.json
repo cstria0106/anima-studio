@@ -13,5 +13,17 @@
     "minimumCount": 5000,
     "sha256": "1e480b022b0bb45e816828340c966c83552409e68baa57b31205142924e9ae69",
     "sourceSha256": "29bf95d3dd2f4b1038ac26b3fee371ebbe67d9b622b32d274c9486dbde56077a"
+  },
+  "descriptions": {
+    "file": "danbooru_tags_ko.csv",
+    "rows": 87828,
+    "sha256": "91cac395e1e897ba1e4b7b313635653595437bae37ed4ca969672538fd0ae384",
+    "sourceRows": 205000,
+    "matchedRows": 87877,
+    "canonical": 71193,
+    "artist": 16433,
+    "alias": 251,
+    "unmatched": 6740,
+    "empty": 110383
   }
 }

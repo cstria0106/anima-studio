@@ -470,7 +470,6 @@ export class ManagedRuntimeSupervisor {
   private startedSession: string | null = null;
   private exitHandling: Promise<void> | null = null;
   private changing = false;
-  private readonly logSecretReleases = new Map<string, () => void>();
 
   constructor(options: RuntimeSupervisorOptions) {
     this.paths = options.paths;
@@ -628,26 +627,12 @@ export class ManagedRuntimeSupervisor {
             sessionId,
           })
         : baseEnvironment;
-      const civitaiSecret = environment.CIVITAI_API_KEY;
-      if (civitaiSecret) {
-        this.logSecretReleases.set(
-          sessionId,
-          this.logs.addSecret(civitaiSecret),
-        );
-      }
-      let child: RuntimeChildProcess;
-      try {
-        child = this.processRunner.spawn({
-          executable,
-          args,
-          cwd: releaseRoot,
-          env: environment,
-        });
-      } finally {
-        // Bun.spawn copies the environment synchronously. Do not retain the
-        // decrypted credential in the provider-returned object afterwards.
-        delete environment.CIVITAI_API_KEY;
-      }
+      const child = this.processRunner.spawn({
+        executable,
+        args,
+        cwd: releaseRoot,
+        env: environment,
+      });
       const processRecord: OwnedRuntimeProcess = {
         pid: child.pid,
         executable,
@@ -748,11 +733,7 @@ export class ManagedRuntimeSupervisor {
           `Startup failed: ${message}`,
         );
         await this.logs.flush();
-        this.logSecretReleases.get(spawned.record.sessionId)?.();
-        this.logSecretReleases.delete(spawned.record.sessionId);
       }
-      this.logSecretReleases.get(sessionId)?.();
-      this.logSecretReleases.delete(sessionId);
       this.child = null;
       await this.repository.patchState({
         status: "failed",
@@ -788,8 +769,6 @@ export class ManagedRuntimeSupervisor {
       "supervisor",
       `Managed ComfyUI exited with code ${exitCode}.`,
     );
-    this.logSecretReleases.get(expected.sessionId)?.();
-    this.logSecretReleases.delete(expected.sessionId);
     if (state.status === "stopping") {
       await this.repository.patchState({
         status: "stopped",

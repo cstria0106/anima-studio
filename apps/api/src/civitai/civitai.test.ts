@@ -21,21 +21,8 @@ import {
   type CurrentUserDataProtector,
 } from "./dpapi-secrets";
 import { CivitaiError } from "./errors";
-import {
-  ANIMA_LORA_MANAGER_CONTRACT,
-  PinnedLoraManagerClient,
-  type LoraManagerDownloadPayload,
-  type LoraManagerTransport,
-} from "./lora-manager";
-import {
-  CivitaiTokenService,
-  ManagedLoraManagerCredentialLease,
-  SAFE_LORA_MANAGER_SECRET_CONTRACT,
-} from "./secrets";
-import type {
-  CivitaiFileInspection,
-  SecretStore,
-} from "./types";
+import { CivitaiTokenService } from "./secrets";
+import type { SecretStore } from "./types";
 import { parseCivitaiModelUrl } from "./url";
 
 const validSha = "a".repeat(64);
@@ -114,6 +101,8 @@ function modelResponse(): Record<string, unknown> {
               fp: "fp16",
             },
             hashes: { SHA256: validSha },
+            downloadUrl:
+              "https://civitai.com/api/download/models/456?type=Model&format=SafeTensor",
             pickleScanResult: "Success",
             virusScanResult: "Success",
           },
@@ -374,19 +363,6 @@ describe("DPAPI secret boundary", () => {
         reflectedSecret,
       );
 
-      const lease = new ManagedLoraManagerCredentialLease(store);
-      let observed = "";
-      await lease.withEnvironment(
-        SAFE_LORA_MANAGER_SECRET_CONTRACT,
-        {},
-        (environment) => {
-          observed = environment.CIVITAI_API_KEY ?? "";
-        },
-      );
-      expect(observed).toBe(reflectedSecret);
-      await expect(
-        lease.withEnvironment("unpatched", {}, () => undefined),
-      ).rejects.toThrow("cannot receive a token");
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -420,253 +396,5 @@ describe("managed destinations", () => {
         resolve(root, "../outside/model.safetensors"),
       ),
     ).toThrow(CivitaiError);
-  });
-});
-
-class RecordingManagerTransport implements LoraManagerTransport {
-  payload: LoraManagerDownloadPayload | null = null;
-  controls: string[] = [];
-  response: CivitaiHttpResponse = {
-    status: 200,
-    body: {
-      success: true,
-      download_id: "download_1",
-      contract_version: ANIMA_LORA_MANAGER_CONTRACT,
-      path:
-        "C:/managed/models/loras/character.safetensors",
-    },
-  };
-
-  async download(
-    payload: LoraManagerDownloadPayload,
-  ): Promise<CivitaiHttpResponse> {
-    this.payload = payload;
-    return this.response;
-  }
-
-  async progress(): Promise<CivitaiHttpResponse> {
-    return {
-      status: 200,
-      body: {
-        success: true,
-        status: "progress",
-        progress: 32.5,
-        bytes_downloaded: 100,
-        total_bytes: 200,
-        bytes_per_second: 25,
-      },
-    };
-  }
-
-  async pause(): Promise<CivitaiHttpResponse> {
-    this.controls.push("pause");
-    return { status: 200, body: { success: true } };
-  }
-
-  async resume(): Promise<CivitaiHttpResponse> {
-    this.controls.push("resume");
-    return { status: 200, body: { success: true } };
-  }
-
-  async cancel(): Promise<CivitaiHttpResponse> {
-    this.controls.push("cancel");
-    return { status: 200, body: { success: true } };
-  }
-}
-
-describe("pinned LoRA Manager facade", () => {
-  test("serializes only the managed download contract and exposes safe progress", async () => {
-    const transport = new RecordingManagerTransport();
-    const client = new PinnedLoraManagerClient(transport);
-    const file: CivitaiFileInspection = {
-      id: 10,
-      name: "character.safetensors",
-      sizeBytes: 2_048,
-      remoteType: "Model",
-      format: "SafeTensor",
-      precision: "fp16",
-      sizeVariant: "full",
-      primary: true,
-      sha256: validSha,
-      eligible: true,
-      blockReason: null,
-    };
-    const destination = {
-      rootId: "loras",
-      kind: "loras" as const,
-      absoluteRoot: resolve("C:/managed/models/loras"),
-      absoluteDirectory: resolve("C:/managed/models/loras"),
-      relativeDirectory: "",
-    };
-    expect(
-      await client.download({
-        downloadId: "download_1",
-        modelId: 123,
-        versionId: 456,
-        modelKind: "lora",
-        file,
-        destination,
-      }),
-    ).toEqual({
-      downloadId: "download_1",
-      finalPath: "C:/managed/models/loras/character.safetensors",
-      expectedSha256: null,
-      actualSha256: null,
-    });
-    expect(transport.payload).toEqual({
-      contract_version: ANIMA_LORA_MANAGER_CONTRACT,
-      model_id: 123,
-      model_version_id: 456,
-      model_root: destination.absoluteDirectory,
-      relative_path: "",
-      use_default_paths: false,
-      download_id: "download_1",
-      source: "civitai",
-      expected_sha256: validSha,
-      allowed_extension: ".safetensors",
-      destination_root_id: "loras",
-      file_params: {
-        id: 10,
-        name: "character.safetensors",
-        type: "Model",
-        format: "SafeTensor",
-        size: "full",
-        fp: "fp16",
-        isPrimary: true,
-      },
-    });
-    expect(await client.getProgress("download_1")).toEqual({
-      downloadId: "download_1",
-      state: "downloading",
-      percent: 32.5,
-      bytesDownloaded: 100,
-      totalBytes: 200,
-      bytesPerSecond: 25,
-    });
-    await client.pause("download_1");
-    await client.resume("download_1");
-    await client.cancel("download_1");
-    expect(transport.controls).toEqual(["pause", "resume", "cancel"]);
-  });
-
-  test("requires a matching terminal download ID and never reflects LoRA Manager errors", async () => {
-    const transport = new RecordingManagerTransport();
-    transport.response = {
-      status: 500,
-      body: { error: reflectedSecret },
-    };
-    const client = new PinnedLoraManagerClient(transport);
-    const error = await client
-      .download({
-        downloadId: "download_1",
-        modelId: 123,
-        versionId: 456,
-        modelKind: "lora",
-        file: {
-          id: 10,
-          name: "character.safetensors",
-          sizeBytes: 2_048,
-          remoteType: "Model",
-          format: "SafeTensor",
-          precision: null,
-          sizeVariant: null,
-          primary: true,
-          sha256: validSha,
-          eligible: true,
-          blockReason: null,
-        },
-        destination: {
-          rootId: "loras",
-          kind: "loras",
-          absoluteRoot: resolve("C:/managed/models/loras"),
-          absoluteDirectory: resolve("C:/managed/models/loras"),
-          relativeDirectory: "",
-        },
-      })
-      .catch((caught: unknown) => caught);
-    expect(error).toBeInstanceOf(CivitaiError);
-    expect(String(error)).not.toContain(reflectedSecret);
-
-    transport.response = {
-      status: 200,
-      body: {
-        success: true,
-        download_id: "different_download",
-        contract_version: ANIMA_LORA_MANAGER_CONTRACT,
-        path: "C:/managed/models/loras/character.safetensors",
-      },
-    };
-    const mismatch = await client
-      .download({
-        downloadId: "download_1",
-        modelId: 123,
-        versionId: 456,
-        modelKind: "lora",
-        file: {
-          id: 10,
-          name: "character.safetensors",
-          sizeBytes: 2_048,
-          remoteType: "Model",
-          format: "SafeTensor",
-          precision: null,
-          sizeVariant: null,
-          primary: true,
-          sha256: validSha,
-          eligible: true,
-          blockReason: null,
-        },
-        destination: {
-          rootId: "loras",
-          kind: "loras",
-          absoluteRoot: resolve("C:/managed/models/loras"),
-          absoluteDirectory: resolve("C:/managed/models/loras"),
-          relativeDirectory: "",
-        },
-      })
-      .catch((caught: unknown) => caught);
-    expect(mismatch).toBeInstanceOf(CivitaiError);
-    expect((mismatch as CivitaiError).code).toBe(
-      "INCOMPATIBLE_LORA_MANAGER",
-    );
-
-    transport.response = {
-      status: 200,
-      body: {
-        success: true,
-        download_id: "download_1",
-      },
-    };
-    const stockResponse = await client
-      .download({
-        downloadId: "download_1",
-        modelId: 123,
-        versionId: 456,
-        modelKind: "lora",
-        file: {
-          id: 10,
-          name: "character.safetensors",
-          sizeBytes: 2_048,
-          remoteType: "Model",
-          format: "SafeTensor",
-          precision: null,
-          sizeVariant: null,
-          primary: true,
-          sha256: validSha,
-          eligible: true,
-          blockReason: null,
-        },
-        destination: {
-          rootId: "loras",
-          kind: "loras",
-          absoluteRoot: resolve("C:/managed/models/loras"),
-          absoluteDirectory: resolve("C:/managed/models/loras"),
-          relativeDirectory: "",
-        },
-      })
-      .catch((caught: unknown) => caught);
-    expect(stockResponse).toBeInstanceOf(CivitaiError);
-    expect((stockResponse as CivitaiError).code).toBe(
-      "INCOMPATIBLE_LORA_MANAGER",
-    );
   });
 });

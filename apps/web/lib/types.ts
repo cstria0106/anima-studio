@@ -1,3 +1,7 @@
+export type {
+  ManagedModelInstallationDto as ManagedModelInstallation,
+} from "@anima/shared";
+
 export type JobStatus =
   | "draft"
   | "uploading"
@@ -27,6 +31,7 @@ export interface LoraSelection {
   modelStrength: number;
   clipStrength: number;
   triggerWords: string[];
+  useTriggerWords: boolean;
   thumbnailUrl?: string;
 }
 
@@ -92,41 +97,6 @@ export interface GenerationDraft {
   };
 }
 
-export type PromptSourceKind =
-  | "base-positive"
-  | "user-positive"
-  | "natural"
-  | "lora-trigger"
-  | "auto-tag"
-  | "base-negative"
-  | "user-negative";
-
-export interface PromptInspectorSource {
-  id: PromptSourceKind;
-  label: string;
-  tone: "pink" | "violet" | "cyan" | "amber" | "emerald" | "slate" | "red";
-  text: string;
-  tags: string[];
-  runtime?: boolean;
-}
-
-export interface PromptConflict {
-  left: string;
-  right: string;
-  reason: string;
-}
-
-export interface ComparisonItem {
-  id: string;
-  jobId: string;
-  label: string;
-  url: string;
-  width?: number;
-  height?: number;
-  seed?: number;
-  kind?: string;
-}
-
 export const DEFAULT_DRAFT: GenerationDraft = {
   referenceAssets: [],
   prompts: {
@@ -134,10 +104,8 @@ export const DEFAULT_DRAFT: GenerationDraft = {
       "newest, masterpiece, very aesthetic, score_7, best quality",
     positive: "",
     natural: "",
-    baseNegative:
-      "worst quality, low quality, score_1, score_2, score_3, blurry, jpeg artifacts, sepia, signature, deviantart username, deviantart",
-    negative:
-      "3d, koikatsu \\(medium\\)\nthick outlines, black outline\nshort sidetail, twintails, ",
+    baseNegative: "",
+    negative: "",
   },
   models: {
     diffusion: "",
@@ -153,15 +121,15 @@ export const DEFAULT_DRAFT: GenerationDraft = {
     steps: 30,
     cfg: 5,
     denoise: 1,
-    width: 704,
-    height: 1408,
+    width: 1024,
+    height: 1024,
     batchSize: 1,
     cfgStart: 0,
     cfgEnd: 1,
   },
   instantLora: {
-    modelStrength: 0.7,
-    clipStrength: 0.7,
+    modelStrength: 0.8,
+    clipStrength: 0.8,
     trainingSteps: 200,
     learningRate: 0.001,
     dimension: 16,
@@ -188,7 +156,7 @@ export const DEFAULT_DRAFT: GenerationDraft = {
     method: "bilinear",
     scale: 1.5,
     steps: 30,
-    denoise: 0.7,
+    denoise: 0.8,
   },
 };
 
@@ -254,7 +222,7 @@ export interface OnboardingUpdate {
 export type StorageItemKind =
   | "asset"
   | "output"
-  | "preview"
+  | "instant_lora"
   | "model_download";
 
 export interface StorageDependency {
@@ -337,6 +305,7 @@ export interface CapabilitiesResponse {
 
 export interface TagSuggestion {
   tag: string;
+  insertText?: string;
   category?: string;
   count?: number;
   description?: string;
@@ -539,7 +508,6 @@ export interface CivitaiProviderStatus {
     kind: ModelDestination;
   }>;
   reason?: string;
-  restartRequired?: boolean;
 }
 
 export interface CivitaiFile {

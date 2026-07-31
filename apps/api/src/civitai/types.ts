@@ -26,6 +26,8 @@ export type CivitaiFileBlockReason =
   | "not_safetensors"
   | "unsafe_scan_result"
   | "missing_sha256"
+  | "missing_file_size"
+  | "unsafe_download_url"
   | "invalid_file_id";
 
 export interface CivitaiFileInspection {
@@ -38,6 +40,7 @@ export interface CivitaiFileInspection {
   sizeVariant: string | null;
   primary: boolean;
   sha256: string | null;
+  downloadUrl: string | null;
   eligible: boolean;
   blockReason: CivitaiFileBlockReason | null;
 }

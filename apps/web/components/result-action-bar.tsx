@@ -1,32 +1,18 @@
 "use client";
 
 import * as React from "react";
-import {
-  Copy,
-  Dice5,
-  LoaderCircle,
-  Maximize2,
-  PencilLine,
-  RefreshCw,
-} from "lucide-react";
+import { Copy, Dices, LoaderCircle, Maximize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { StudioJob } from "@/lib/types";
 
-type ActionName =
-  | "repeat"
-  | "new-seed"
-  | "edit"
-  | "load"
-  | "upscale";
+type ActionName = "load" | "seed" | "upscale";
 
 interface ResultActionBarProps {
   job: StudioJob;
   canUpscale?: boolean;
   compact?: boolean;
-  onRepeat: (job: StudioJob) => Promise<void> | void;
-  onNewSeed: (job: StudioJob) => Promise<void> | void;
-  onEditPrompt: (job: StudioJob) => Promise<void> | void;
   onLoadSettings: (job: StudioJob) => Promise<void> | void;
+  onLoadSeed: (job: StudioJob) => Promise<void> | void;
   onUpscale?: (job: StudioJob) => Promise<void> | void;
 }
 
@@ -34,10 +20,8 @@ export function ResultActionBar({
   job,
   canUpscale,
   compact,
-  onRepeat,
-  onNewSeed,
-  onEditPrompt,
   onLoadSettings,
+  onLoadSeed,
   onUpscale,
 }: ResultActionBarProps) {
   const [busy, setBusy] = React.useState<ActionName | null>(null);
@@ -72,60 +56,45 @@ export function ResultActionBar({
         aria-label="결과 빠른 작업"
         className={
           compact
-            ? "grid grid-cols-2 gap-2"
+            ? canUpscale && onUpscale
+              ? "grid grid-cols-3 gap-1.5"
+              : "grid grid-cols-2 gap-2"
             : "flex flex-wrap items-center gap-2"
         }
       >
         <Button
           type="button"
           size="sm"
-          variant="secondary"
-          disabled={busy !== null}
-          onClick={() => void run("repeat", onRepeat)}
-        >
-          {icon("repeat", <RefreshCw />)}
-          같은 설정
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={busy !== null}
-          onClick={() => void run("new-seed", onNewSeed)}
-        >
-          {icon("new-seed", <Dice5 />)}
-          시드만 변경
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={busy !== null}
-          onClick={() => void run("edit", onEditPrompt)}
-        >
-          {icon("edit", <PencilLine />)}
-          같은 시드로 수정
-        </Button>
-        <Button
-          type="button"
-          size="sm"
           variant="ghost"
+          className={compact ? "gap-1 px-1.5 text-[10px]" : undefined}
           disabled={busy !== null}
           onClick={() => void run("load", onLoadSettings)}
         >
           {icon("load", <Copy />)}
           설정 불러오기
         </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className={compact ? "gap-1 px-1.5 text-[10px]" : undefined}
+          disabled={busy !== null}
+          onClick={() => void run("seed", onLoadSeed)}
+        >
+          {icon("seed", <Dices />)}
+          시드 불러오기
+        </Button>
         {canUpscale && onUpscale ? (
           <Button
             type="button"
             size="sm"
             variant="soft"
+            className={compact ? "gap-1 px-1.5 text-[10px]" : undefined}
             disabled={busy !== null}
             onClick={() => void run("upscale", onUpscale)}
           >
             {icon("upscale", <Maximize2 />)}
-            동일 시드 업스케일
+            업스케일
           </Button>
         ) : null}
       </div>

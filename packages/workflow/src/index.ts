@@ -1,7 +1,6 @@
 export {
   buildWorkflow,
   buildUpscaleWorkflow,
-  combinePromptSegments,
   createRandomSeed,
   resolveSeed,
 } from "./builder";
@@ -17,6 +16,7 @@ export {
 } from "./sanitize";
 export {
   NODE_IDS,
+  loraLoaderNodeId,
   referenceBatchNodeId,
   referenceLoadNodeId,
   SANITIZED_ANIMA_TEMPLATE,

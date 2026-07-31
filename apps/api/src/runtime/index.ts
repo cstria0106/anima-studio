@@ -8,6 +8,7 @@ export {
 } from "./controller";
 export {
   ArtifactIntegrityError,
+  FileDownloadHttpError,
   ResumableArtifactDownloader,
   VerifiedResumableFileDownloader,
   sha256File,
@@ -47,14 +48,9 @@ export {
   type RuntimePlatformProbe,
 } from "./preflight";
 export {
-  ANIMA_LORA_MANAGER_DOWNLOAD_PATCH_ID,
   EmbeddedTrainingRuntimeProvisioner,
   NoopRuntimeProvisioner,
-  LORA_MANAGER_SECRET_PATCH_ID,
   patchInstantReferenceRuntimeSource,
-  patchLoraManagerCredentialSource,
-  patchLoraManagerDownloadHandlerSource,
-  patchLoraManagerDownloadManagerSource,
   validateManagedCustomNodeAllowlist,
   type RuntimeProvisionContext,
   type RuntimeProvisioner,

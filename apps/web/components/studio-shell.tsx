@@ -4,23 +4,23 @@ import * as React from "react";
 import {
   AlertTriangle,
   CheckCircle2,
-  Clock3,
   History,
   LibraryBig,
   RefreshCw,
   Server,
   Settings,
-  Sparkles,
   X,
 } from "lucide-react";
 import { GenerationControls } from "@/components/generation-controls";
 import { HistoryView } from "@/components/history-view";
+import { InstantReferenceControls } from "@/components/instant-reference-controls";
 import { JobPanel } from "@/components/job-panel";
 import { LibraryView } from "@/components/library-view";
 import { MobileExecutionDock } from "@/components/mobile-execution-dock";
 import { ModelLoraControls } from "@/components/model-lora-controls";
 import { PromptEditor } from "@/components/prompt-editor";
 import { ReferenceUploader } from "@/components/reference-uploader";
+import { RuntimeStartupGate } from "@/components/runtime-startup-gate";
 import { SettingsView } from "@/components/settings-view";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,10 +47,8 @@ import {
   createJob,
   getCapabilities,
   getHealth,
-  getOnboarding,
   getOptions,
   getStorage,
-  updateOnboarding,
 } from "@/lib/api";
 import {
   type CapabilitiesResponse,
@@ -58,8 +56,6 @@ import {
   EMPTY_OPTIONS,
   type GenerationDraft,
   type HealthResponse,
-  type OnboardingStatus,
-  type OnboardingUpdate,
   type StudioJob,
   type StudioOptions,
   type StorageCleanupResult,
@@ -71,6 +67,7 @@ import { useCompletionNotifications } from "@/components/completion-notification
 import {
   buildPreflightIssues,
   clearModelAndLoraSelections,
+  loadSeedIntoDraft,
   type PreflightIssue,
 } from "@/lib/studio-ux";
 
@@ -118,7 +115,11 @@ function restoreDraft(): GenerationDraft {
       },
       tagging: { ...DEFAULT_DRAFT.tagging, ...saved.tagging },
       upscale: { ...DEFAULT_DRAFT.upscale, ...saved.upscale },
-      loras: saved.loras ?? [],
+      loras: (saved.loras ?? []).map((lora) => ({
+        ...lora,
+        triggerWords: lora.triggerWords ?? [],
+        useTriggerWords: lora.useTriggerWords !== false,
+      })),
     });
   } catch {
     return finish(structuredClone(DEFAULT_DRAFT));
@@ -136,9 +137,8 @@ function CreateWorkspace({
   onJobUpdate,
   onGenerate,
   onLoadJobSettings,
-  onRepeatJob,
-  onNewSeedJob,
-  onEditJobPrompt,
+  onLoadJobSeed,
+  onOpenJobDetail,
   submitting,
 }: {
   draft: GenerationDraft;
@@ -151,14 +151,10 @@ function CreateWorkspace({
   onJobUpdate: (job: StudioJob) => void;
   onGenerate: () => void;
   onLoadJobSettings: (job: StudioJob) => void;
-  onRepeatJob: (job: StudioJob) => Promise<void>;
-  onNewSeedJob: (job: StudioJob) => Promise<void>;
-  onEditJobPrompt: (job: StudioJob) => void;
+  onLoadJobSeed: (job: StudioJob) => void;
+  onOpenJobDetail: (job: StudioJob, outputId?: string) => void;
   submitting: boolean;
 }) {
-  const readyAssets = draft.referenceAssets.filter(
-    (asset) => asset.status === "ready",
-  );
   const preflightIssues = React.useMemo(
     () =>
       buildPreflightIssues({
@@ -200,31 +196,7 @@ function CreateWorkspace({
   return (
     <div className="animate-fade-in">
       <div className="grid items-start gap-4 2xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="grid items-start gap-4 lg:grid-cols-2">
-          <Card id="create-section-reference">
-            <CardHeader className="pb-3">
-              <SectionHeading
-                title="참조 이미지"
-                action={
-                  readyAssets.length ? (
-                    <span className="inline-flex items-center gap-1.5 text-xs text-success">
-                      <CheckCircle2 className="size-3.5" />
-                      {readyAssets.length}장
-                    </span>
-                  ) : null
-                }
-              />
-            </CardHeader>
-            <CardContent>
-              <ReferenceUploader
-                assets={draft.referenceAssets}
-                onChange={(referenceAssets) =>
-                  onDraftChange({ ...draft, referenceAssets })
-                }
-              />
-            </CardContent>
-          </Card>
-
+        <div className="space-y-4">
           <Card id="create-section-prompt">
             <CardHeader className="pb-3">
               <SectionHeading title="프롬프트" />
@@ -232,56 +204,76 @@ function CreateWorkspace({
             <CardContent>
               <PromptEditor
                 value={draft.prompts}
-                loras={draft.loras}
-                autoTags={activeJob?.autoTags}
                 onChange={(prompts) => onDraftChange({ ...draft, prompts })}
               />
             </CardContent>
           </Card>
 
-          <Card id="create-section-models">
-            <CardHeader className="pb-3">
-              <SectionHeading
-                title="모델과 LoRA"
-                action={
-                  optionsLoading ? (
-                    <RefreshCw className="size-4 animate-spin text-muted-foreground" />
-                  ) : null
-                }
-              />
-            </CardHeader>
-            <CardContent>
-              <ModelLoraControls
-                models={draft.models}
-                loras={draft.loras}
-                options={options}
-                loading={optionsLoading}
-                validationWarning={selectionIssue?.message}
-                validationFieldId={selectionIssue?.fieldId}
-                onModelsChange={(models) =>
-                  onDraftChange({ ...draft, models })
-                }
-                onLorasChange={(loras) =>
-                  onDraftChange({ ...draft, loras })
-                }
-                onInsertTriggers={(words) =>
-                  onDraftChange({
-                    ...draft,
-                    prompts: {
-                      ...draft.prompts,
-                      positive: [
-                        draft.prompts.positive.replace(/,\s*$/, ""),
-                        ...words,
-                      ]
-                        .filter(Boolean)
-                        .join(", ")
-                        .concat(", "),
-                    },
-                  })
-                }
-              />
-            </CardContent>
-          </Card>
+          <div className="grid items-start gap-4 lg:grid-cols-2">
+            <Card id="create-section-reference">
+              <CardHeader className="pb-3">
+                <SectionHeading title="참조 이미지" />
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <ReferenceUploader
+                  assets={draft.referenceAssets}
+                  onChange={(referenceAssets) =>
+                    onDraftChange({ ...draft, referenceAssets })
+                  }
+                />
+                <InstantReferenceControls
+                  value={draft}
+                  onChange={onDraftChange}
+                />
+              </CardContent>
+            </Card>
+
+            <Card id="create-section-models">
+              <CardHeader className="pb-3">
+                <SectionHeading
+                  title="모델"
+                  action={
+                    optionsLoading ? (
+                      <RefreshCw className="size-4 animate-spin text-muted-foreground" />
+                    ) : null
+                  }
+                />
+              </CardHeader>
+              <CardContent>
+                <ModelLoraControls
+                  models={draft.models}
+                  loras={draft.loras}
+                  options={options}
+                  loading={optionsLoading}
+                  validationWarning={selectionIssue?.message}
+                  validationFieldId={selectionIssue?.fieldId}
+                  onModelsChange={(models) =>
+                    onDraftChange({ ...draft, models })
+                  }
+                  onLorasChange={(loras) =>
+                    onDraftChange({ ...draft, loras })
+                  }
+                />
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <JobPanel
+            job={activeJob}
+            capabilities={capabilities}
+            submitting={submitting}
+            canGenerate={canGenerate}
+            validationMessage={validationMessage}
+            preflightIssues={preflightIssues}
+            onResolveIssue={resolveIssue}
+            onGenerate={onGenerate}
+            onJobUpdate={onJobUpdate}
+            onLoadSettings={onLoadJobSettings}
+            onLoadSeed={onLoadJobSeed}
+            onOpenDetail={onOpenJobDetail}
+          />
 
           <Card id="create-section-generation">
             <CardHeader className="pb-3">
@@ -296,23 +288,6 @@ function CreateWorkspace({
             </CardContent>
           </Card>
         </div>
-
-        <JobPanel
-          job={activeJob}
-          health={health}
-          capabilities={capabilities}
-          submitting={submitting}
-          canGenerate={canGenerate}
-          validationMessage={validationMessage}
-          preflightIssues={preflightIssues}
-          onResolveIssue={resolveIssue}
-          onGenerate={onGenerate}
-          onJobUpdate={onJobUpdate}
-          onLoadSettings={onLoadJobSettings}
-          onRepeat={onRepeatJob}
-          onNewSeed={onNewSeedJob}
-          onEditPrompt={onEditJobPrompt}
-        />
         <MobileExecutionDock
           job={activeJob}
           health={health}
@@ -333,9 +308,11 @@ export function StudioShell() {
   const libraryTriggerRef = React.useRef<HTMLButtonElement>(null);
   const settingsTriggerRef = React.useRef<HTMLButtonElement>(null);
   const [historyOpen, setHistoryOpen] = React.useState(false);
+  const [historyCollapsed, setHistoryCollapsed] = React.useState(false);
   const [libraryOpen, setLibraryOpen] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [systemStatusOpen, setSystemStatusOpen] = React.useState(false);
+  const [startupGateOpen, setStartupGateOpen] = React.useState(true);
   const [draft, setDraft] = React.useState<GenerationDraft>(DEFAULT_DRAFT);
   const [hydrated, setHydrated] = React.useState(false);
   const [health, setHealth] = React.useState<HealthResponse | null>(null);
@@ -345,11 +322,14 @@ export function StudioShell() {
   const [storage, setStorage] = React.useState<StorageInventory | null>(null);
   const [storageLoading, setStorageLoading] = React.useState(true);
   const [storageError, setStorageError] = React.useState("");
-  const [onboarding, setOnboarding] =
-    React.useState<OnboardingStatus | null>(null);
   const [loadingSystem, setLoadingSystem] = React.useState(true);
   const [systemError, setSystemError] = React.useState("");
   const [activeJob, setActiveJob] = React.useState<StudioJob | null>(null);
+  const [historyDetailRequest, setHistoryDetailRequest] = React.useState<{
+    id: number;
+    job: StudioJob;
+    outputId?: string;
+  } | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
   const [toast, setToast] = React.useState<{
     type: "success" | "error";
@@ -357,7 +337,6 @@ export function StudioShell() {
   } | null>(null);
   const completionNotifications = useCompletionNotifications();
   const notifyCompletion = completionNotifications.notify;
-  const onboardingCompletionJob = React.useRef("");
 
   React.useEffect(() => {
     if (!activeJob || !["completed", "failed"].includes(activeJob.status)) {
@@ -377,13 +356,6 @@ export function StudioShell() {
           : activeJob.error ?? "작업 상세에서 오류를 확인해주세요.",
       tone: activeJob.status === "completed" ? "success" : "error",
     });
-    if (
-      activeJob.status === "completed" &&
-      onboardingCompletionJob.current !== activeJob.id
-    ) {
-      onboardingCompletionJob.current = activeJob.id;
-      void getOnboarding().then(setOnboarding).catch(() => undefined);
-    }
   }, [activeJob, notifyCompletion]);
 
   React.useEffect(() => {
@@ -431,13 +403,11 @@ export function StudioShell() {
       capabilityResult,
       optionsResult,
       storageResult,
-      onboardingResult,
     ] = await Promise.allSettled([
       getHealth(),
       getCapabilities(),
       getOptions(),
       getStorage(),
-      getOnboarding(),
     ]);
 
     if (healthResult.status === "fulfilled") setHealth(healthResult.value);
@@ -477,17 +447,10 @@ export function StudioShell() {
           : "저장 공간 정보를 불러오지 못했습니다.",
       );
     }
-    setOnboarding(
-      onboardingResult.status === "fulfilled"
-        ? onboardingResult.value
-        : null,
-    );
-
     const failures = [
       healthResult,
       capabilityResult,
       optionsResult,
-      onboardingResult,
     ].filter(
       (result) => result.status === "rejected",
     ) as PromiseRejectedResult[];
@@ -569,42 +532,6 @@ export function StudioShell() {
     );
   }
 
-  async function newSeedJob(job: StudioJob) {
-    await submitJobDraft(
-      {
-        ...structuredClone(job.settings),
-        sampling: {
-          ...job.settings.sampling,
-          seedMode: "random",
-        },
-      },
-      "시드만 바꾼 작업을 추가했습니다.",
-    );
-  }
-
-  function editJobPrompt(job: StudioJob) {
-    setDraft({
-      ...structuredClone(job.settings),
-      sampling: {
-        ...job.settings.sampling,
-        seedMode: "fixed",
-      },
-    });
-    setToast({
-      type: "success",
-      message:
-        "Seed " +
-        job.settings.sampling.seed +
-        "을 고정했습니다. 프롬프트를 수정하세요.",
-    });
-    window.setTimeout(() => {
-      document.getElementById("positive-prompt")?.focus();
-      document
-        .getElementById("positive-prompt")
-        ?.scrollIntoView({ behavior: "smooth", block: "center" });
-    });
-  }
-
   function loadSettings(settings: GenerationDraft) {
     setDraft(structuredClone(settings));
     setToast({
@@ -613,10 +540,12 @@ export function StudioShell() {
     });
   }
 
-  function clearDraft() {
-    window.localStorage.removeItem(DRAFT_KEY);
-    setDraft(structuredClone(DEFAULT_DRAFT));
-    setToast({ type: "success", message: "작성 중인 초안을 초기화했습니다." });
+  function loadSeed(seed: number) {
+    setDraft((current) => loadSeedIntoDraft(current, seed));
+    setToast({
+      type: "success",
+      message: `Seed ${seed}를 생성 설정에 불러왔습니다.`,
+    });
   }
 
   async function handleStorageCleanup(
@@ -628,16 +557,10 @@ export function StudioShell() {
     if (!dryRun) {
       setToast({
         type: "success",
-        message:
-          result.results.filter((item) => item.deleted).length +
-          "개 항목을 정리했습니다.",
+        message: `${result.results.filter((item) => item.deleted).length}개 항목을 정리했습니다.`,
       });
     }
     return result;
-  }
-
-  async function handleOnboardingUpdate(patch: OnboardingUpdate) {
-    setOnboarding(await updateOnboarding(patch));
   }
 
   function openSettingsFromLibrary() {
@@ -647,6 +570,21 @@ export function StudioShell() {
 
   const connected =
     health?.comfyui || (health?.ok && health.comfyui !== false);
+
+  if (startupGateOpen) {
+    return (
+      <RuntimeStartupGate
+        onReady={() => {
+          setStartupGateOpen(false);
+          void refreshSystem();
+        }}
+        onOpenSettings={() => {
+          setStartupGateOpen(false);
+          setSettingsOpen(true);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -660,11 +598,18 @@ export function StudioShell() {
       <HistoryView
         mobileOpen={historyOpen}
         onMobileOpenChange={setHistoryOpen}
+        desktopCollapsed={historyCollapsed}
+        onDesktopCollapsedChange={setHistoryCollapsed}
         activeJob={activeJob}
+        detailRequest={historyDetailRequest}
         onLoadSettings={loadSettings}
+        onLoadSeed={loadSeed}
         onRepeatJob={repeatJob}
-        onNewSeedJob={newSeedJob}
-        onEditJobPrompt={editJobPrompt}
+        onDeleteJob={(jobId) => {
+          setActiveJob((current) =>
+            current?.id === jobId ? null : current,
+          );
+        }}
         onTrackJob={(job) => {
           setActiveJob(job);
           setToast({
@@ -677,44 +622,27 @@ export function StudioShell() {
         }}
       />
 
-      <div className="xl:pl-80">
-        <header className="glass-surface sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border px-3 sm:px-4 lg:px-6">
-          <div className="flex min-w-0 items-center gap-2">
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              className="xl:hidden"
-              onClick={() => setHistoryOpen(true)}
-              aria-label="히스토리 열기"
-              title="History"
-            >
-              <History />
-            </Button>
-            <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground xl:hidden">
-              <Sparkles className="size-4" />
-            </span>
-            <span className="truncate text-sm font-semibold">Anima Studio</span>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            {activeJob &&
-            ["uploading", "queued", "running"].includes(activeJob.status) ? (
-              <button
-                type="button"
-                onClick={() =>
-                  document
-                    .getElementById("execution-dock")
-                    ?.scrollIntoView({ behavior: "smooth", block: "start" })
-                }
-                className="hidden min-h-9 items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-2.5 text-xs text-primary outline-none transition-colors hover:bg-primary/15 focus-visible:ring-2 focus-visible:ring-ring 2xl:inline-flex"
-              >
-                <Clock3 className="size-3.5" />
-                <span className="hidden sm:inline">
-                  {activeJob.stage ?? "생성 중"}
-                </span>
-              </button>
-            ) : null}
+      <div
+        className={cn(
+          "transition-[padding] duration-200",
+          historyCollapsed ? "xl:pl-0" : "xl:pl-80",
+        )}
+      >
+        <div
+          className="glass-surface sticky top-3 z-40 ml-auto mr-3 flex w-fit items-center gap-1.5 rounded-xl border border-border p-1.5 shadow-lg sm:mr-4 lg:mr-6"
+          aria-label="스튜디오 도구"
+        >
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="xl:hidden"
+            onClick={() => setHistoryOpen(true)}
+            aria-label="히스토리 열기"
+            title="History"
+          >
+            <History />
+          </Button>
 
             <Popover
               open={systemStatusOpen}
@@ -724,7 +652,7 @@ export function StudioShell() {
                 <Button
                   type="button"
                   size="icon"
-                  variant="outline"
+                  variant="ghost"
                   aria-label={
                     "시스템 상태: " +
                     (connected ? "ComfyUI 연결됨" : "연결 끊김")
@@ -732,12 +660,6 @@ export function StudioShell() {
                   title="시스템 상태"
                 >
                   <Server className="text-muted-foreground" />
-                  <span
-                    className={cn(
-                      "absolute right-1.5 top-1.5 size-2 rounded-full ring-2 ring-background",
-                      connected ? "bg-success" : "bg-danger",
-                    )}
-                  />
                 </Button>
               </PopoverTrigger>
               <PopoverContent align="end" className="w-80">
@@ -819,8 +741,7 @@ export function StudioShell() {
             >
               <Settings />
             </Button>
-          </div>
-        </header>
+        </div>
 
         <main
           id="studio-main"
@@ -838,9 +759,14 @@ export function StudioShell() {
             onJobUpdate={setActiveJob}
             onGenerate={handleGenerate}
             onLoadJobSettings={(job) => loadSettings(job.settings)}
-            onRepeatJob={repeatJob}
-            onNewSeedJob={newSeedJob}
-            onEditJobPrompt={editJobPrompt}
+            onLoadJobSeed={(job) => loadSeed(job.settings.sampling.seed)}
+            onOpenJobDetail={(job, outputId) =>
+              setHistoryDetailRequest((current) => ({
+                id: (current?.id ?? 0) + 1,
+                job,
+                outputId,
+              }))
+            }
             submitting={submitting}
           />
         </main>
@@ -863,6 +789,7 @@ export function StudioShell() {
           <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-6">
             <LibraryView
               onOpenManagedRuntime={openSettingsFromLibrary}
+              onOptionsChanged={() => void refreshSystem()}
             />
           </div>
         </DialogContent>
@@ -879,21 +806,13 @@ export function StudioShell() {
           <DialogHeader className="shrink-0 border-b border-border px-4 py-4 pr-14 sm:px-6">
             <DialogTitle>Settings</DialogTitle>
             <DialogDescription className="sr-only">
-              엔진, 모델, 저장공간 설정을 관리합니다.
+              엔진, 알림, 저장공간 설정을 관리합니다.
             </DialogDescription>
           </DialogHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-6">
+          <div className="min-h-0 flex-1 overflow-hidden p-3 sm:p-6">
             <SettingsView
-              health={health}
-              capabilities={capabilities}
-              options={options}
-              loading={loadingSystem}
               error={systemError}
               onRefresh={() => void refreshSystem()}
-              onClearDraft={clearDraft}
-              onboarding={onboarding}
-              onOnboardingUpdate={handleOnboardingUpdate}
-              onNavigateToCreate={() => setSettingsOpen(false)}
               notificationController={completionNotifications}
               storage={storage}
               storageLoading={storageLoading}

@@ -20,6 +20,7 @@ import type {
 } from "@anima/shared";
 import { generationConfigSchema } from "@anima/shared";
 import {
+  escapeDanbooruTagForPrompt,
   normalizeDanbooruTag,
   type OfflineTag,
   type OfflineTagCooccurrence,
@@ -234,6 +235,7 @@ export function managedModelInstallationToDto(
   return {
     id: row.id,
     provider: row.provider as ManagedModelInstallationDto["provider"],
+    sourceUrl: row.sourceUrl,
     providerModelId: row.providerModelId,
     providerVersionId: row.providerVersionId,
     providerFileId: row.providerFileId,
@@ -420,6 +422,7 @@ export interface ModelDownloadPatch {
 export interface NewManagedModelInstallation {
   id: string;
   provider: ManagedModelInstallationDto["provider"];
+  sourceUrl?: string | null;
   providerModelId: string;
   providerVersionId: string;
   providerFileId: string | null;
@@ -918,6 +921,7 @@ export class StudioRepository {
           .values({
             id: input.id,
             provider: input.provider,
+            sourceUrl: input.sourceUrl,
             providerModelId: input.providerModelId,
             providerVersionId: input.providerVersionId,
             providerFileId: input.providerFileId,
@@ -940,6 +944,7 @@ export class StudioRepository {
             ],
             set: {
               id: input.id,
+              sourceUrl: input.sourceUrl,
               modelName: input.modelName,
               versionName: input.versionName,
               filename: input.filename,
@@ -1422,6 +1427,19 @@ export class StudioRepository {
     return jobReferences;
   }
 
+  jobDependencies(jobId: string): RepositoryDependency[] {
+    return this.db
+      .select({ id: jobs.id, createdAt: jobs.createdAt })
+      .from(jobs)
+      .where(eq(jobs.parentJobId, jobId))
+      .all()
+      .map((row) => ({
+        kind: "job" as const,
+        id: row.id,
+        label: `Upscale from ${toIso(row.createdAt) ?? row.createdAt}`,
+      }));
+  }
+
   modelDependencies(filename: string): RepositoryDependency[] {
     const normalized = filename.replaceAll("\\", "/").toLowerCase();
     const basename = normalized.split("/").at(-1);
@@ -1483,6 +1501,16 @@ export class StudioRepository {
         .delete(outputs)
         .where(eq(outputs.id, id))
         .returning({ id: outputs.id })
+        .get(),
+    );
+  }
+
+  deleteJobRecord(id: string): boolean {
+    return Boolean(
+      this.db
+        .delete(jobs)
+        .where(eq(jobs.id, id))
+        .returning({ id: jobs.id })
         .get(),
     );
   }
@@ -1680,6 +1708,7 @@ export class StudioRepository {
       .filter(Boolean);
     return {
       tag: row.tag,
+      insertText: escapeDanbooruTagForPrompt(row.tag),
       category: row.category,
       count: row.count,
       description: row.description,
@@ -1768,6 +1797,7 @@ export class StudioRepository {
         .where(
           or(
             sql`instr(lower(${tags.tag}), ${trimmed}) > 0`,
+            sql`instr(lower(${tags.category}), ${trimmed}) > 0`,
             sql`instr(lower(${tags.aliases}), ${trimmed}) > 0`,
             sql`instr(lower(${tags.description}), ${trimmed}) > 0`,
           ),
@@ -1812,14 +1842,21 @@ export class StudioRepository {
     const idPlaceholders = contextIds.map(() => "?").join(", ");
     const trimmedQuery = normalizeDanbooruTag(query).toLowerCase();
     const queryClause = trimmedQuery
-      ? "AND (instr(lower(t.tag), ?) > 0 OR instr(lower(t.aliases), ?) > 0)"
+      ? `AND (
+          instr(lower(t.tag), ?) > 0 OR
+          instr(lower(t.category), ?) > 0 OR
+          instr(lower(t.description), ?) > 0 OR
+          instr(lower(t.aliases), ?) > 0
+        )`
       : "";
     const boundedLimit = Math.min(Math.max(limit, 1), 50);
     const parameters: Array<string | number> = [
       ...contextIds,
       ...contextIds,
       ...contextIds,
-      ...(trimmedQuery ? [trimmedQuery, trimmedQuery] : []),
+      ...(trimmedQuery
+        ? [trimmedQuery, trimmedQuery, trimmedQuery, trimmedQuery]
+        : []),
       boundedLimit,
     ];
     const rows = this.database.sqlite
@@ -1884,11 +1921,7 @@ export class StudioRepository {
     for (const entry of relatedMatches) {
       merged.set(entry.tag, { ...merged.get(entry.tag), ...entry });
     }
-    const contextTags = new Set(
-      context.map(normalizeDanbooruTag).map((tag) => tag.toLowerCase()),
-    );
     return [...merged.values()]
-      .filter((entry) => !contextTags.has(entry.tag.toLowerCase()))
       .sort((left, right) => {
         const tierDifference =
           tagLexicalTier(left.tag, normalizedQuery) -

@@ -12,7 +12,6 @@ import {
   ComfyClient,
   type ComfyClientLike,
   type DownloadedOutput,
-  type LoraMetadataOption,
   type QueuePromptResult,
   type SocketHandle,
   type UploadedImage,
@@ -127,22 +126,6 @@ export class SwitchableComfyGateway implements ComfyClientLike {
   free(): Promise<void> {
     this.assertAvailable();
     return this.active.free?.() ?? Promise.resolve();
-  }
-
-  getLoraMetadata(
-    installedLoras: string[],
-  ): Promise<LoraMetadataOption[]> {
-    this.assertAvailable();
-    if (!this.active.getLoraMetadata) {
-      return Promise.resolve(
-        installedLoras.map((value) => ({
-          name: value,
-          value,
-          triggerWords: [],
-        })),
-      );
-    }
-    return this.active.getLoraMetadata(installedLoras);
   }
 
   connect(

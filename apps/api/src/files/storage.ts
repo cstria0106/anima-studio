@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import {
+  lstat,
   mkdir,
   readFile,
   rename,
+  rm,
   stat,
   writeFile,
 } from "node:fs/promises";
@@ -58,6 +60,7 @@ export interface ValidatedAssetUpload {
 
 export class FileStorage {
   private readonly root: string;
+  private readonly previews = new Map<string, StoredFile>();
 
   constructor(
     private readonly config: Pick<
@@ -73,10 +76,10 @@ export class FileStorage {
   }
 
   async initialize(): Promise<void> {
+    await rm(this.absolute("previews"), { recursive: true, force: true });
     await Promise.all([
       mkdir(resolve(this.root, "assets"), { recursive: true }),
       mkdir(resolve(this.root, "outputs"), { recursive: true }),
-      mkdir(resolve(this.root, "previews"), { recursive: true }),
     ]);
   }
 
@@ -196,6 +199,55 @@ export class FileStorage {
     };
   }
 
+  async deleteJobData(jobId: string): Promise<boolean> {
+    const outputRoot = this.absolute(`outputs/${jobId}`);
+    for (const output of this.repository.listOutputs(jobId)) {
+      const outputPath = this.absolute(output.storagePath);
+      if (!pathInside(outputRoot, outputPath)) {
+        throw new Error("A stored output is outside its job directory.");
+      }
+    }
+
+    const outputStats = await lstat(outputRoot).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    });
+    if (
+      outputStats &&
+      (!outputStats.isDirectory() || outputStats.isSymbolicLink())
+    ) {
+      throw new Error("The job output path is not a regular directory.");
+    }
+
+    const trashRoot = this.absolute(".trash/jobs");
+    const staged = this.absolute(
+      `.trash/jobs/${crypto.randomUUID()}.pending`,
+    );
+    if (outputStats) {
+      await mkdir(trashRoot, { recursive: true });
+      await rename(outputRoot, staged);
+    }
+
+    try {
+      const deleted = this.repository.deleteJobRecord(jobId);
+      if (!deleted) {
+        if (outputStats) await rename(staged, outputRoot);
+        return false;
+      }
+    } catch (error) {
+      if (outputStats) await rename(staged, outputRoot).catch(() => undefined);
+      throw error;
+    }
+
+    this.deletePreview(jobId);
+    if (outputStats) {
+      // The database no longer exposes the files. A failed final cleanup leaves
+      // only a bounded, recoverable staging directory.
+      await rm(staged, { recursive: true, force: true }).catch(() => undefined);
+    }
+    return true;
+  }
+
   async uploadAssetToComfy(
     row: AssetRow,
     comfy: ComfyClientLike,
@@ -241,32 +293,31 @@ export class FileStorage {
         "ComfyUI preview frame is not a valid JPEG or PNG image.",
       );
     }
-    const target = this.absolute(`previews/${jobId}.preview`);
-    const temporary = this.absolute(
-      `previews/${jobId}.${crypto.randomUUID()}.tmp`,
-    );
-    await writeFile(temporary, bytes, { flag: "wx" });
-    await rename(temporary, target);
-    return {
-      bytes,
+    const stored = {
+      bytes: bytes.slice(),
       mimeType: metadata.mimeType ?? mimeType,
       filename: `${jobId}.${metadata.extension}`,
     };
+    this.previews.set(jobId, stored);
+    return stored;
   }
 
   async readPreview(jobId: string): Promise<StoredFile> {
-    const bytes = await readFile(
-      this.absolute(`previews/${jobId}.preview`),
-    );
-    const metadata = inspectImage(bytes);
-    if (!metadata) {
-      throw new FileValidationError("Stored preview image is invalid.", 500);
+    const stored = this.previews.get(jobId);
+    if (!stored) {
+      const error = new Error("No denoise preview is available for this job.");
+      Object.assign(error, { code: "ENOENT" });
+      throw error;
     }
-    return {
-      bytes,
-      mimeType: metadata.mimeType,
-      filename: `${jobId}.${metadata.extension}`,
-    };
+    return { ...stored, bytes: stored.bytes.slice() };
+  }
+
+  deletePreview(jobId: string): void {
+    this.previews.delete(jobId);
+  }
+
+  clearPreviews(): void {
+    this.previews.clear();
   }
 
   async storeOutput(input: {

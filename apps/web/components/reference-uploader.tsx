@@ -9,7 +9,6 @@ import {
   Trash2,
   UploadCloud,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { ReferenceAsset } from "@/lib/types";
 import { uploadAsset } from "@/lib/api";
@@ -181,14 +180,10 @@ export function ReferenceUploader({
       </button>
 
       {displayedAssets.length ? (
-        <div>
-          <div className="mb-2 flex items-center justify-end">
-            <Badge variant="secondary">{displayedAssets.length}장</Badge>
-          </div>
-          <div
-            className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4"
-            aria-label="참조 이미지 목록"
-          >
+        <div
+          className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4"
+          aria-label="참조 이미지 목록"
+        >
             {displayedAssets.map((asset, index) => (
               <div
                 key={asset.id}
@@ -249,7 +244,6 @@ export function ReferenceUploader({
                 ) : null}
               </div>
             ))}
-          </div>
         </div>
       ) : null}
     </div>

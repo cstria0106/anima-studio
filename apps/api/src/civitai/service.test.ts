@@ -31,10 +31,10 @@ import {
   RemoveInvalidDownloadHandler,
 } from "./hash";
 import type {
-  LoraManagerClient,
-  LoraManagerDownloadCompletion,
-  LoraManagerDownloadInput,
-} from "./lora-manager";
+  CivitaiDownloadClient,
+  CivitaiDownloadCompletion,
+  CivitaiDownloadInput,
+} from "./download";
 import { CivitaiTokenService } from "./secrets";
 import {
   CivitaiModelLibraryService,
@@ -353,7 +353,7 @@ class StaticMetadata implements CivitaiMetadataClient {
   }
 }
 
-class FileWritingManager implements LoraManagerClient {
+class FileWritingDownloader implements CivitaiDownloadClient {
   readonly controls: string[] = [];
 
   constructor(
@@ -363,8 +363,8 @@ class FileWritingManager implements LoraManagerClient {
   ) {}
 
   async download(
-    input: LoraManagerDownloadInput,
-  ): Promise<LoraManagerDownloadCompletion> {
+    input: CivitaiDownloadInput,
+  ): Promise<CivitaiDownloadCompletion> {
     await mkdir(input.destination.absoluteDirectory, {
       recursive: true,
     });
@@ -405,12 +405,12 @@ class FileWritingManager implements LoraManagerClient {
   }
 }
 
-class ControlledManager implements LoraManagerClient {
+class ControlledDownloader implements CivitaiDownloadClient {
   readonly controls: string[] = [];
 
   async download(
-    input: LoraManagerDownloadInput,
-  ): Promise<LoraManagerDownloadCompletion> {
+    input: CivitaiDownloadInput,
+  ): Promise<CivitaiDownloadCompletion> {
     return new Promise((_, reject) => {
       const abort = () => reject(new Error("request aborted"));
       if (input.signal?.aborted) abort();
@@ -441,6 +441,68 @@ class ControlledManager implements LoraManagerClient {
 
   async cancel(): Promise<void> {
     this.controls.push("cancel");
+  }
+}
+
+class ProgressReportingDownloader implements CivitaiDownloadClient {
+  private release!: () => void;
+  private readonly released = new Promise<void>((resolve) => {
+    this.release = resolve;
+  });
+  readonly started: Promise<void>;
+  private markStarted!: () => void;
+
+  constructor(private readonly bytes: Uint8Array) {
+    this.started = new Promise<void>((resolve) => {
+      this.markStarted = resolve;
+    });
+  }
+
+  async download(
+    input: CivitaiDownloadInput,
+  ): Promise<CivitaiDownloadCompletion> {
+    input.onProgress?.({
+      downloadId: input.downloadId,
+      state: "downloading",
+      percent: 25,
+      bytesDownloaded: 25,
+      totalBytes: 100,
+      bytesPerSecond: 10,
+    });
+    this.markStarted();
+    await this.released;
+    await mkdir(input.destination.absoluteDirectory, { recursive: true });
+    const finalPath = join(
+      input.destination.absoluteDirectory,
+      input.file.name,
+    );
+    await Bun.write(finalPath, this.bytes);
+    return {
+      downloadId: input.downloadId,
+      finalPath,
+      expectedSha256: input.file.sha256,
+      actualSha256: input.file.sha256,
+    };
+  }
+
+  finish(): void {
+    this.release();
+  }
+
+  getProgress(): Promise<ModelDownloadProgress> {
+    throw new Error("Push progress should not be polled.");
+  }
+
+  pause(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  resume(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  cancel(): Promise<void> {
+    return Promise.resolve();
   }
 }
 
@@ -486,6 +548,7 @@ function inspection(expectedSha256: string): CivitaiModelInspection {
             sizeVariant: "full",
             primary: true,
             sha256: expectedSha256,
+            downloadUrl: "https://civitai.com/api/download/models/456?type=Model&format=SafeTensor",
             eligible: true,
             blockReason: null,
           },
@@ -496,7 +559,7 @@ function inspection(expectedSha256: string): CivitaiModelInspection {
 }
 
 async function fixture(
-  manager: LoraManagerClient,
+  downloader: CivitaiDownloadClient,
   expectedSha256: string,
 ) {
   const directory = await mkdtemp(
@@ -510,7 +573,7 @@ async function fixture(
   const service = new CivitaiModelLibraryService(
     metadata,
     tokens,
-    manager,
+    downloader,
     new DestinationRegistry([
       {
         id: "loras",
@@ -542,15 +605,34 @@ const createRequest: ModelDownloadCreate = {
 };
 
 describe("Civitai model library service", () => {
+  test("persists pushed byte progress without waiting for a polling interval", async () => {
+    const bytes = new TextEncoder().encode("model bytes");
+    const expected = sha256(bytes);
+    const downloader = new ProgressReportingDownloader(bytes);
+    const context = await fixture(downloader, expected);
+    const created = await context.service.create(createRequest);
+
+    await downloader.started;
+
+    expect(context.service.get(created.id)).toMatchObject({
+      state: "downloading",
+      bytesCompleted: 25,
+      bytesTotal: 100,
+      bytesPerSecond: 10,
+    });
+    downloader.finish();
+    await context.service.settled(created.id);
+  });
+
   test("returns a durable task, trusts the terminal POST, verifies the file and records completion", async () => {
     const bytes = new TextEncoder().encode("model bytes");
     const expected = sha256(bytes);
-    const manager = new FileWritingManager(
+    const downloader = new FileWritingDownloader(
       bytes,
       expected,
       "actual-character.safetensors",
     );
-    const context = await fixture(manager, expected);
+    const context = await fixture(downloader, expected);
 
     expect(await context.service.providerStatus()).toMatchObject({
       provider: "civitai",
@@ -628,11 +710,11 @@ describe("Civitai model library service", () => {
     const expectedBytes = new TextEncoder().encode("expected bytes");
     const downloadedBytes = new TextEncoder().encode("tampered bytes");
     const expected = sha256(expectedBytes);
-    const manager = new FileWritingManager(
+    const downloader = new FileWritingDownloader(
       downloadedBytes,
       expected,
     );
-    const context = await fixture(manager, expected);
+    const context = await fixture(downloader, expected);
     const created = await context.service.create(createRequest);
     const failed = await context.service.settled(created.id);
     const finalPath = join(
@@ -652,8 +734,8 @@ describe("Civitai model library service", () => {
   test("supports pause, resume, cancel and retry without exposing provider internals", async () => {
     const bytes = new TextEncoder().encode("model bytes");
     const expected = sha256(bytes);
-    const manager = new ControlledManager();
-    const context = await fixture(manager, expected);
+    const downloader = new ControlledDownloader();
+    const context = await fixture(downloader, expected);
     const created = await context.service.create(createRequest);
 
     expect((await context.service.pause(created.id)).state).toBe(
@@ -666,7 +748,7 @@ describe("Civitai model library service", () => {
       "cancelled",
     );
     await context.service.settled(created.id);
-    expect(manager.controls).toEqual([
+    expect(downloader.controls).toEqual([
       "pause",
       "resume",
       "cancel",
@@ -684,7 +766,7 @@ describe("Civitai model library service", () => {
     const bytes = new TextEncoder().encode("model bytes");
     const expected = sha256(bytes);
     const context = await fixture(
-      new FileWritingManager(bytes, expected),
+      new FileWritingDownloader(bytes, expected),
       expected,
     );
 
@@ -702,7 +784,7 @@ describe("Civitai model library service", () => {
     const bytes = new TextEncoder().encode("model bytes");
     const expected = sha256(bytes);
     const context = await fixture(
-      new FileWritingManager(bytes, expected),
+      new FileWritingDownloader(bytes, expected),
       expected,
     );
 
@@ -722,8 +804,8 @@ describe("Civitai model library service", () => {
   test("reconciles every persisted non-terminal state as an interrupted retryable failure", async () => {
     const bytes = new TextEncoder().encode("model bytes");
     const expected = sha256(bytes);
-    const manager = new ControlledManager();
-    const context = await fixture(manager, expected);
+    const downloader = new ControlledDownloader();
+    const context = await fixture(downloader, expected);
     const states = [
       "resolving",
       "queued",
@@ -795,11 +877,11 @@ describe("Civitai model library service", () => {
     await context.service.settled(retried.id);
   });
 
-  test("shutdown aborts and settles active downloads before returning", async () => {
+  test("shutdown interrupts without cancelling resumable downloads", async () => {
     const bytes = new TextEncoder().encode("model bytes");
     const expected = sha256(bytes);
-    const manager = new ControlledManager();
-    const context = await fixture(manager, expected);
+    const downloader = new ControlledDownloader();
+    const context = await fixture(downloader, expected);
     const created = await context.service.create(createRequest);
 
     await context.service.shutdown();
@@ -808,7 +890,7 @@ describe("Civitai model library service", () => {
       state: "failed",
       bytesPerSecond: 0,
     });
-    expect(manager.controls).toEqual(["cancel"]);
+    expect(downloader.controls).toEqual([]);
     const updatedAt = failed.updatedAt;
     await Promise.resolve();
     expect(context.service.get(created.id).updatedAt).toBe(updatedAt);
@@ -821,7 +903,7 @@ describe("Civitai model library service", () => {
     const bytes = new TextEncoder().encode("model bytes");
     const expected = sha256(bytes);
     const context = await fixture(
-      new FileWritingManager(bytes, expected),
+      new FileWritingDownloader(bytes, expected),
       expected,
     );
 

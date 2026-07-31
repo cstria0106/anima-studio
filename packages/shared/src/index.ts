@@ -44,6 +44,8 @@ export const loraSelectionSchema = z.object({
   modelStrength: z.number().min(-10).max(10).default(1),
   clipStrength: z.number().min(-10).max(10).default(1),
   enabled: z.boolean().default(true),
+  triggerWords: z.array(z.string()).default([]),
+  useTriggerWords: z.boolean().default(true),
 });
 
 export const taggingOptionsSchema = z.object({
@@ -77,7 +79,7 @@ export const upscaleSettingsSchema = z.object({
     .default("bilinear"),
   scale: z.number().min(0.01).max(8).default(1.5),
   steps: z.number().int().min(1).max(10000).default(30),
-  denoise: z.number().min(0).max(1).default(0.7),
+  denoise: z.number().min(0).max(1).default(0.8),
 });
 
 export const upscaleJobRequestSchema = z
@@ -99,16 +101,8 @@ export const generationConfigSchema = z.object({
         .default("newest, masterpiece, very aesthetic, score_7, best quality"),
       positive: z.string().default(""),
       natural: z.string().default(""),
-      baseNegative: z
-        .string()
-        .default(
-          "worst quality, low quality, score_1, score_2, score_3, blurry, jpeg artifacts, sepia, signature, deviantart username, deviantart",
-        ),
-      negative: z
-        .string()
-        .default(
-          "3d, koikatsu \\(medium\\)\nthick outlines, black outline\nshort sidetail, twintails, ",
-        ),
+      baseNegative: z.string().default(""),
+      negative: z.string().default(""),
     })
     .default({}),
   model: z.object({
@@ -122,8 +116,8 @@ export const generationConfigSchema = z.object({
   instantLora: z
     .object({
       profile: z.string().default("anima"),
-      modelStrength: z.number().min(-10).max(10).default(0.7),
-      clipStrength: z.number().min(-10).max(10).default(0.7),
+      modelStrength: z.number().min(-10).max(10).default(0.8),
+      clipStrength: z.number().min(-10).max(10).default(0.8),
       tagging: taggingOptionsSchema.default({}),
       training: trainingOptionsSchema.default({}),
     })
@@ -147,10 +141,10 @@ export const generationConfigSchema = z.object({
     .default({}),
   image: z
     .object({
-      width: z.number().int().min(64).max(8192).multipleOf(8).default(704),
-      height: z.number().int().min(64).max(8192).multipleOf(8).default(1408),
+      width: z.number().int().min(64).max(8192).multipleOf(8).default(1024),
+      height: z.number().int().min(64).max(8192).multipleOf(8).default(1024),
       batchSize: z.number().int().min(1).max(64).default(1),
-      preset: z.string().default("1:2 - 704x1408"),
+      preset: z.string().default("1:1 - 1024x1024"),
     })
     .default({}),
   upscale: upscaleSettingsSchema.default({}),
@@ -276,7 +270,7 @@ export interface OnboardingStatusDto {
 export const storageItemKinds = [
   "asset",
   "output",
-  "preview",
+  "instant_lora",
   "model_download",
 ] as const;
 
@@ -382,6 +376,7 @@ export interface ComfyOptions {
 
 export interface TagSuggestion {
   tag: string;
+  insertText: string;
   category: "general" | "artist" | "character" | "copyright" | "meta";
   count: number;
   description: string;
@@ -564,7 +559,6 @@ export interface CivitaiProviderStatusDto {
   managedDownloads: boolean;
   destinations: ModelDestinationOptionDto[];
   reason?: string;
-  restartRequired?: boolean;
 }
 
 export interface CivitaiFileDto {
@@ -705,6 +699,7 @@ export interface HuggingFaceAnimaInstallDto {
 export interface ManagedModelInstallationDto {
   id: string;
   provider: ModelDownloadProvider;
+  sourceUrl: string | null;
   providerModelId: string;
   providerVersionId: string;
   providerFileId: string | null;

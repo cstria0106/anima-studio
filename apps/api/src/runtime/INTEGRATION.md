@@ -12,9 +12,8 @@ controller for the API process from:
 The repository adapter is the persistence/event boundary. `patchState` should
 upsert the singleton runtime row and `appendEvent` should insert the operation
 event and publish it to the existing SSE broker. Its optional `subscribeEvents`
-hook enables direct controller subscribers. Existing databases with
-`COMFY_URL` should be initialized as `external`; new databases default to
-`managed/not_installed`.
+hook enables direct controller subscribers. Persisted runtime configuration is
+authoritative; new databases default to `managed/not_installed`.
 
 `controller.install(id)`, `update(id)`, and `repair(id)` return immediately.
 Create the `OperationService` row first, then pass that exact caller-visible ID
@@ -26,16 +25,6 @@ Provide these production adapters to the supervisor:
 
 - `RuntimeActiveJobProbe` backed by app jobs. Normal stop throws
   `RuntimeBusyError`; force stop performs Comfy interrupt/free first.
-- `RuntimeEnvironmentProvider` backed by
-  `ManagedLoraManagerCredentialLease`. Add `CIVITAI_API_KEY` only to the child
-  environment returned by this hook. The base environment is already reduced
-  to the Windows/Python runtime allowlist; do not merge `process.env` back into
-  it. The supervisor registers the token with log
-  redaction, deletes it from the temporary environment object immediately after
-  `Bun.spawn`, and never persists or logs the environment. A lease adapter
-  should use
-  `lease.withEnvironment(contract, base, env => ({ ...env }))` inside
-  `provide`; do not return or cache the decrypted value outside that callback.
 - `HttpRuntimeReadinessProbe` with `validateObjectInfo` calling the workflow
   package's live node-contract inspection and throwing when incompatible.
 
@@ -55,6 +44,6 @@ Suggested route mapping:
 - `GET /api/comfy/runtime/logs` → `readLogs`
 - log SSE → `tailLogs`
 
-The installer writes `THIRD_PARTY_NOTICES.md`, `runtime.cdx.json`, a validated
-release marker, and the `anima-lora-manager-env-secret-v1` patch marker. Do not
-expose LoRA Manager's raw routes to the browser.
+The installer writes `THIRD_PARTY_NOTICES.md`, `runtime.cdx.json`, and a
+validated release marker. Civitai downloads and credentials are owned by the
+API process and are never delegated to ComfyUI custom nodes.

@@ -2,7 +2,6 @@ import {
   CURATED_IMAGE_PRESETS,
   type ComfyOptions,
 } from "@anima/shared";
-import type { AppConfig } from "../config";
 import type {
   ComfyHistory,
   ComfyImageRef,
@@ -12,6 +11,7 @@ import type {
   ComfyQueue,
   ComfySocketEvent,
 } from "./types";
+import { isInstantReferenceGeneratedLora } from "./instant-reference";
 
 export class ComfyHttpError extends Error {
   constructor(
@@ -53,13 +53,6 @@ export interface SocketHandle {
   close(): void;
 }
 
-export interface LoraMetadataOption {
-  name: string;
-  value: string;
-  triggerWords: string[];
-  thumbnailUrl?: string;
-}
-
 export interface ComfyClientLike {
   readonly baseUrl: string;
   health(): Promise<boolean>;
@@ -77,9 +70,6 @@ export interface ComfyClientLike {
   cancelQueued(promptId: string): Promise<void>;
   interrupt(): Promise<void>;
   free?(): Promise<void>;
-  getLoraMetadata?(
-    installedLoras: string[],
-  ): Promise<LoraMetadataOption[]>;
   connect(
     clientId: string,
     handlers: {
@@ -198,7 +188,7 @@ export class ComfyClient implements ComfyClientLike {
   private readonly timeoutMs: number;
 
   constructor(
-    config: Pick<AppConfig, "comfyUrl" | "requestTimeoutMs">,
+    config: { comfyUrl: string; requestTimeoutMs: number },
     private readonly fetcher: typeof fetch = fetch,
     private readonly WebSocketImpl: typeof WebSocket = WebSocket,
   ) {
@@ -319,7 +309,9 @@ export class ComfyClient implements ComfyClientLike {
       ]),
       clips: uniqueSorted([...clips, ...textEncoders, ...clipNames]),
       vaes: uniqueSorted([...vaes, ...vaeNames]),
-      loras: uniqueSorted([...loras, ...loraNames]),
+      loras: uniqueSorted([...loras, ...loraNames]).filter(
+        (lora) => !isInstantReferenceGeneratedLora(lora),
+      ),
       samplers: uniqueSorted(samplerNames),
       schedulers: uniqueSorted(schedulerNames),
       imagePresets:
@@ -427,85 +419,6 @@ export class ComfyClient implements ComfyClientLike {
         unload_models: true,
         free_memory: true,
       }),
-    });
-  }
-
-  async getLoraMetadata(
-    installedLoras: string[],
-  ): Promise<LoraMetadataOption[]> {
-    const payload = await this.json<{
-      items?: Array<Record<string, unknown>>;
-    }>("/api/lm/loras/list?page_size=100");
-    const items = Array.isArray(payload.items) ? payload.items : [];
-
-    const relativeName = (item: Record<string, unknown>): string => {
-      const filePath =
-        typeof item.file_path === "string"
-          ? item.file_path.replaceAll("\\", "/")
-          : "";
-      const marker = "/models/loras/";
-      const markerIndex = filePath.toLowerCase().lastIndexOf(marker);
-      if (markerIndex >= 0) {
-        return filePath.slice(markerIndex + marker.length).toLowerCase();
-      }
-      const folder = typeof item.folder === "string" ? item.folder : "";
-      const name = typeof item.file_name === "string" ? item.file_name : "";
-      return `${folder}/${name}.safetensors`
-        .replace(/^\/+/, "")
-        .toLowerCase();
-    };
-
-    const exact = new Map(
-      items.map((item) => [relativeName(item), item] as const),
-    );
-    const byBasename = new Map<string, Record<string, unknown>>();
-    for (const item of items) {
-      const key = relativeName(item).split("/").at(-1);
-      if (key && !byBasename.has(key)) byBasename.set(key, item);
-    }
-
-    return installedLoras.map((value) => {
-      const normalized = value.replaceAll("\\", "/").toLowerCase();
-      const item =
-        exact.get(normalized) ??
-        byBasename.get(normalized.split("/").at(-1) ?? "");
-      if (!item) {
-        return { name: value, value, triggerWords: [] };
-      }
-      const civitai =
-        item.civitai && typeof item.civitai === "object"
-          ? (item.civitai as Record<string, unknown>)
-          : {};
-      const rawWords =
-        civitai.trainedWords ??
-        item.trigger_words ??
-        item.trained_words ??
-        [];
-      const triggerWords = Array.isArray(rawWords)
-        ? rawWords.filter(
-            (word): word is string =>
-              typeof word === "string" && word.trim().length > 0,
-          )
-        : typeof rawWords === "string"
-          ? rawWords
-              .split(",")
-              .map((word) => word.trim())
-              .filter(Boolean)
-          : [];
-      const preview =
-        typeof item.preview_url === "string" ? item.preview_url : null;
-      const result: LoraMetadataOption = {
-        name:
-          typeof item.model_name === "string" && item.model_name.trim()
-            ? item.model_name
-            : value,
-        value,
-        triggerWords,
-      };
-      if (preview) {
-        result.thumbnailUrl = new URL(preview, `${this.baseUrl}/`).toString();
-      }
-      return result;
     });
   }
 

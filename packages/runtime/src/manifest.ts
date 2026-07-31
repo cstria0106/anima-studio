@@ -9,7 +9,7 @@ const GiB = 1024 ** 3;
  */
 export const MANAGED_ENGINE_MANIFEST = validateEngineManifest({
   schemaVersion: 1,
-  bundleId: "anima-comfy-0.29.0-win-nvidia-r3",
+  bundleId: "anima-comfy-0.29.0-win-nvidia-r4",
   displayName: "Anima ComfyUI 0.29.0 (Windows NVIDIA)",
   platform: {
     os: "win32",
@@ -47,7 +47,6 @@ export const MANAGED_ENGINE_MANIFEST = validateEngineManifest({
       "--whitelist-custom-nodes",
       "comfyui-instant-reference",
       "ComfyUI-KJNodes",
-      "ComfyUI-Lora-Manager",
       "ComfyUI-LoRA-Optimizer",
     ],
     host: "127.0.0.1",
@@ -164,23 +163,6 @@ export const MANAGED_ENGINE_MANIFEST = validateEngineManifest({
       license: "GPL-3.0",
       archive: { format: "zip", stripComponents: 1 },
       destination: "ComfyUI/custom_nodes/ComfyUI-KJNodes",
-    },
-    {
-      id: "lora-manager",
-      kind: "custom-node",
-      name: "ComfyUI LoRA Manager",
-      version: "1.0.6",
-      revision: "3631c5eb106bc0374a3b36c72ecb4d8b4966d16a",
-      downloadUrl:
-        "https://codeload.github.com/willmiao/ComfyUI-Lora-Manager/zip/3631c5eb106bc0374a3b36c72ecb4d8b4966d16a",
-      sourceUrl:
-        "https://github.com/willmiao/ComfyUI-Lora-Manager/tree/3631c5eb106bc0374a3b36c72ecb4d8b4966d16a",
-      bytes: 16_126_776,
-      sha256:
-        "46bc7112083d70a221e2c70460507922c9d502399c1cf0c665b6a2b00cdb623b",
-      license: "GPL-3.0",
-      archive: { format: "zip", stripComponents: 1 },
-      destination: "ComfyUI/custom_nodes/ComfyUI-Lora-Manager",
     },
     {
       id: "lora-optimizer",

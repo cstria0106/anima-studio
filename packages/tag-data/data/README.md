@@ -5,6 +5,11 @@ The checked-in CSV files in this directory are derived from
 and SQLite size reasonable, the portable cooccurrence file retains source rows
 whose count is at least 5,000.
 
+`danbooru_tags_ko.csv` is a generated enrichment sidecar. It keeps the Anima
+tag, category, count, and aliases authoritative while adding Korean
+descriptions from a compatible external CSV. Artist names and unique aliases
+are resolved back to the Anima canonical tag before the sidecar is written.
+
 `manifest.json` records row counts and SHA-256 checksums. It deliberately does
 not record the source machine's path.
 
@@ -16,6 +21,12 @@ bun run --cwd packages/tag-data data:build -- `
   --cooccurrence C:\path\to\danbooru_tags_cooccurrence.csv
 ```
 
-At runtime, `DANBOORU_TAGS_CSV` and `DANBOORU_COOCCURRENCE_CSV` may point to
-different source files without changing application code. The API applies the
-configured minimum cooccurrence count while importing.
+To rebuild the Korean description sidecar:
+
+```powershell
+bun run --cwd packages/tag-data data:build-ko -- `
+  --descriptions C:\path\to\KR_danbooru_tags_with_description.csv
+```
+
+The API imports these checked-in portable files directly. Rebuild and commit
+them together with `manifest.json` when updating the source data.

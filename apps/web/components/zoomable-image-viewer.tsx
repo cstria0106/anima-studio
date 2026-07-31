@@ -25,6 +25,8 @@ export function ZoomableImageViewer({
   alt,
   className,
 }: ZoomableImageViewerProps) {
+  const viewportRef = React.useRef<HTMLDivElement>(null);
+  const zoomRef = React.useRef(MIN_ZOOM);
   const [zoom, setZoom] = React.useState(MIN_ZOOM);
   const [offset, setOffset] = React.useState({ x: 0, y: 0 });
   const drag = React.useRef<{
@@ -36,6 +38,7 @@ export function ZoomableImageViewer({
   } | null>(null);
 
   const reset = React.useCallback(() => {
+    zoomRef.current = MIN_ZOOM;
     setZoom(MIN_ZOOM);
     setOffset({ x: 0, y: 0 });
   }, []);
@@ -46,9 +49,28 @@ export function ZoomableImageViewer({
 
   const changeZoom = React.useCallback((next: number) => {
     const clamped = clampZoom(next);
+    zoomRef.current = clamped;
     setZoom(clamped);
     if (clamped === MIN_ZOOM) setOffset({ x: 0, y: 0 });
   }, []);
+
+  const changeZoomBy = React.useCallback(
+    (delta: number) => changeZoom(zoomRef.current + delta),
+    [changeZoom],
+  );
+
+  React.useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      changeZoomBy(event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP);
+    };
+
+    viewport.addEventListener("wheel", handleWheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", handleWheel);
+  }, [changeZoomBy]);
 
   return (
     <div
@@ -58,6 +80,7 @@ export function ZoomableImageViewer({
       )}
     >
       <div
+        ref={viewportRef}
         role="application"
         aria-label={`${alt} 확대 보기`}
         tabIndex={0}
@@ -69,10 +92,6 @@ export function ZoomableImageViewer({
         onDoubleClick={() =>
           changeZoom(zoom === MIN_ZOOM ? 200 : MIN_ZOOM)
         }
-        onWheel={(event) => {
-          event.preventDefault();
-          changeZoom(zoom + (event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
-        }}
         onKeyDown={(event) => {
           if (event.target !== event.currentTarget) return;
           if (event.key === "+" || event.key === "=") {

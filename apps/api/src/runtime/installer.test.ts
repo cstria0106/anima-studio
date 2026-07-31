@@ -31,7 +31,6 @@ import {
   managedInstantReferenceRuntimeRoot,
   managedInstantReferenceUvEnvironment,
   patchInstantReferenceRuntimeSource,
-  patchLoraManagerCredentialSource,
   patchSharedRuntimeProjectSource,
 } from "./provision";
 import {
@@ -447,42 +446,4 @@ describe("Instant Reference managed patch", () => {
     ).toBeFalse();
   });
 
-  test("keeps LoRA Manager's environment credential out of settings.json", () => {
-    const source = [
-      "    def _check_environment_variables(self) -> None:",
-      '        """Check for environment variables and update settings if needed"""',
-      '        env_api_key = os.environ.get("CIVITAI_API_KEY")',
-      "        if env_api_key:",
-      '            logger.info("Found CIVITAI_API_KEY environment variable")',
-      '            self.settings["civitai_api_key"] = env_api_key',
-      "            self._save_settings()",
-      "",
-      "    def _default_settings_actions(self):",
-      "        return []",
-      "",
-      "    def get(self, key: str, default: Any = None) -> Any:",
-      '        """Get setting value"""',
-      "        return self.settings.get(key, default)",
-      "",
-      "    def _serialize_settings_for_disk(self) -> Dict[str, Any]:",
-      '        """Return payload."""',
-      "        if self.bootstrap:",
-      "            minimal = dict(self.settings)",
-      "            return minimal",
-      "        minimal = dict(self.settings)",
-      "        return minimal",
-      "",
-      "    def get_libraries(self):",
-      "        return {}",
-    ].join("\n");
-
-    const patched = patchLoraManagerCredentialSource(source);
-
-    expect(patched).toContain("anima-lora-manager-env-secret-v1");
-    expect(patched).toContain('os.environ.get("CIVITAI_API_KEY", "")');
-    expect(patched).toContain('minimal.pop("civitai_api_key", None)');
-    expect(patched).not.toContain(
-      'self.settings["civitai_api_key"] = env_api_key',
-    );
-  });
 });

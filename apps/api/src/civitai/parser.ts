@@ -8,7 +8,7 @@ import type {
   CivitaiModelReference,
   CivitaiVersionInspection,
 } from "./types";
-import { CIVITAI_IMAGE_HOSTS } from "./types";
+import { CIVITAI_IMAGE_HOSTS, CIVITAI_PAGE_HOSTS } from "./types";
 
 type JsonObject = Record<string, unknown>;
 
@@ -116,6 +116,31 @@ function fileSizeBytes(value: unknown): number | null {
   return Number.isSafeInteger(bytes) ? bytes : null;
 }
 
+function safeDownloadUrl(value: unknown, versionId: number): string | null {
+  if (typeof value !== "string") return null;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if (
+    url.protocol !== "https:" ||
+    !CIVITAI_PAGE_HOSTS.includes(
+      url.hostname.toLowerCase() as (typeof CIVITAI_PAGE_HOSTS)[number],
+    ) ||
+    (url.port && url.port !== "443") ||
+    url.username ||
+    url.password ||
+    url.hash ||
+    url.pathname.replace(/\/$/, "") !==
+      `/api/download/models/${versionId}`
+  ) {
+    return null;
+  }
+  return url.toString();
+}
+
 function scanIsUnsafe(file: JsonObject): boolean {
   const results = [
     cleanString(file.pickleScanResult),
@@ -178,6 +203,8 @@ function fileBlockReason(
   id: number | null,
   name: string | null,
   sha256: string | null,
+  sizeBytes: number | null,
+  downloadUrl: string | null,
 ): CivitaiFileBlockReason | null {
   if (id === null) return "invalid_file_id";
   if (name === null) return "unsafe_filename";
@@ -196,12 +223,15 @@ function fileBlockReason(
   }
   if (scanIsUnsafe(file)) return "unsafe_scan_result";
   if (sha256 === null) return "missing_sha256";
+  if (sizeBytes === null || sizeBytes <= 0) return "missing_file_size";
+  if (downloadUrl === null) return "unsafe_download_url";
   return null;
 }
 
 function parseFile(
   kind: CivitaiModelKind,
   value: unknown,
+  versionId: number,
 ): CivitaiFileInspection | null {
   const file = object(value);
   if (!file) return null;
@@ -212,17 +242,28 @@ function parseFile(
   const sha256 = normalizeSha256(
     hashes.SHA256 ?? hashes.sha256 ?? file.sha256,
   );
-  const blockReason = fileBlockReason(kind, file, id, name, sha256);
+  const sizeBytes = fileSizeBytes(file.sizeKB);
+  const downloadUrl = safeDownloadUrl(file.downloadUrl, versionId);
+  const blockReason = fileBlockReason(
+    kind,
+    file,
+    id,
+    name,
+    sha256,
+    sizeBytes,
+    downloadUrl,
+  );
   return {
     id,
     name: name ?? "Unsafe filename",
-    sizeBytes: fileSizeBytes(file.sizeKB),
+    sizeBytes,
     remoteType: cleanString(file.type, 80) ?? "",
     format: cleanString(metadata.format, 80),
     precision: cleanString(metadata.fp, 80),
     sizeVariant: cleanString(metadata.size, 80),
     primary: file.primary === true,
     sha256,
+    downloadUrl,
     eligible: blockReason === null,
     blockReason,
   };
@@ -238,7 +279,7 @@ function parseVersion(
   if (id === null) return null;
   const files = Array.isArray(version.files)
     ? version.files.flatMap((file) => {
-        const parsed = parseFile(kind, file);
+        const parsed = parseFile(kind, file, id);
         return parsed ? [parsed] : [];
       })
     : [];

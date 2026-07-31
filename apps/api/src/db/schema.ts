@@ -324,6 +324,7 @@ export const managedModelInstallations = sqliteTable(
   {
     id: text("id").primaryKey(),
     provider: text("provider").notNull(),
+    sourceUrl: text("source_url"),
     providerModelId: text("provider_model_id").notNull(),
     providerVersionId: text("provider_version_id").notNull(),
     providerFileId: text("provider_file_id"),

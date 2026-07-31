@@ -13,7 +13,6 @@ import {
   LoaderCircle,
   Play,
   RotateCcw,
-  Sparkles,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -281,12 +280,8 @@ export function MobileExecutionDock({
                 </Badge>
               ) : null}
             </div>
-            <SheetDescription>
-              {active
-                ? "디노이즈 진행 상황과 현재 미리보기를 확인할 수 있습니다."
-                : selectedOutput
-                  ? "생성 결과와 실행 설정을 확인할 수 있습니다."
-                  : "생성 전 확인 항목과 실행 준비 상태를 보여줍니다."}
+            <SheetDescription className="sr-only">
+              생성 작업 상태
             </SheetDescription>
           </SheetHeader>
 
@@ -297,27 +292,21 @@ export function MobileExecutionDock({
                   <Image
                     key={`${preview.url}:${preview.revision ?? preview.updatedAt ?? ""}`}
                     src={outputUrl(preview.url)}
-                    alt="현재 디노이즈 과정 미리보기"
+                    alt="현재 이미지 생성 과정"
                     fill
                     unoptimized
                     priority
                     sizes="100vw"
                     className="object-contain"
                   />
-                  <div className="absolute inset-x-3 top-3 flex min-h-11 items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/65 px-3 text-xs text-white/90 backdrop-blur">
-                    <span className="inline-flex items-center gap-1.5">
-                      <Sparkles className="size-3.5 text-primary" />
-                      디노이즈 미리보기
-                    </span>
-                    {typeof preview.step === "number" &&
-                    typeof preview.total === "number" ? (
+                  {typeof preview.step === "number" &&
+                  typeof preview.total === "number" ? (
+                    <div className="absolute right-3 top-3 flex min-h-11 items-center rounded-lg border border-white/10 bg-black/65 px-3 text-xs text-white/90 backdrop-blur">
                       <span className="tabular-nums">
                         {preview.step} / {preview.total}
                       </span>
-                    ) : (
-                      <span>생성 중</span>
-                    )}
-                  </div>
+                    </div>
+                  ) : null}
                 </>
               ) : selectedOutput ? (
                 <Image
@@ -339,11 +328,6 @@ export function MobileExecutionDock({
                     )}
                     <p className="mt-3 text-sm font-medium">
                       {active ? "미리보기 준비 중" : "아직 생성 결과가 없습니다"}
-                    </p>
-                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                      {active
-                        ? "첫 디노이즈 프레임을 기다리고 있습니다."
-                        : "설정을 확인한 뒤 생성을 시작해 주세요."}
                     </p>
                   </div>
                 </div>
@@ -534,7 +518,7 @@ export function MobileExecutionDock({
                 ) : (
                   <Play />
                 )}
-                {job ? "현재 설정으로 다시 생성" : "생성 시작"}
+                생성
               </Button>
             )}
           </div>

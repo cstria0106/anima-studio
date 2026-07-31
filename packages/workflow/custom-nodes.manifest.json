@@ -24,6 +24,17 @@
           "outputs": ["VAE"]
         },
         {
+          "classType": "LoraLoader",
+          "requiredInputs": [
+            "model",
+            "clip",
+            "lora_name",
+            "strength_model",
+            "strength_clip"
+          ],
+          "outputs": ["MODEL", "CLIP"]
+        },
+        {
           "classType": "LoadImage",
           "requiredInputs": ["image"],
           "outputs": ["IMAGE", "MASK"]
@@ -138,20 +149,6 @@
           ],
           "optionalInputs": ["vae", "tagging_options", "train_options"],
           "outputs": ["MODEL", "CLIP", "STRING", "LORA_STACK", "STRING"]
-        }
-      ]
-    },
-    {
-      "id": "lora-manager",
-      "name": "ComfyUI LoRA Manager",
-      "builtIn": false,
-      "installUrl": "https://github.com/willmiao/ComfyUI-Lora-Manager",
-      "nodes": [
-        {
-          "classType": "Lora Stacker (LoraManager)",
-          "requiredInputs": ["text"],
-          "flexibleInputs": ["loras", "lora_stack"],
-          "outputs": ["LORA_STACK", "STRING", "STRING"]
         }
       ]
     },

@@ -12,7 +12,7 @@ does not depend on a saved ComfyUI workflow or history entry.
 - Model, CLIP, VAE, LoRA, seed, sampler, scheduler, size, and upscale controls
 - Live queue phase, exact sampling progress, denoise previews, and cancellation
 - One-click same-seed upscale for a completed base-only generation
-- Offline Danbooru tag completion and optional LoRA Manager metadata
+- Offline Danbooru tag completion and Civitai LoRA metadata
 - Official Hugging Face Anima catalog and verified managed-library downloads
 - Civitai model inspection and verified managed-library downloads
 - Final-prompt inspection with source labels, duplicate detection, and conflicts
@@ -78,10 +78,10 @@ versioned release.
 
 ### External ComfyUI
 
-External mode is for an existing ComfyUI installation. Set `COMFY_URL` before
-the first start or choose the mode and URL in Settings. The app only makes
-ComfyUI HTTP/WebSocket requests: it does not install files, start, stop,
-restart, repair, or otherwise manage the external process.
+External mode is for an existing ComfyUI installation. Choose the mode and URL
+under Settings > Engine. The app only makes ComfyUI HTTP/WebSocket requests: it
+does not install files, start, stop, restart, repair, or otherwise manage the
+external process.
 
 Install these node contracts in the external ComfyUI environment:
 
@@ -89,7 +89,6 @@ Install these node contracts in the external ComfyUI environment:
 | --- | --- | --- |
 | Instant Reference | https://github.com/cstria0106/comfyui-instant-reference | `InstantReferenceLoRA`, `ReferenceTaggingOptions`, `ReferenceTrainOptions` |
 | ComfyUI-KJNodes | https://github.com/kijai/ComfyUI-KJNodes | `ScheduledCFGGuidance` |
-| LoRA Manager | https://github.com/willmiao/ComfyUI-Lora-Manager | `Lora Stacker (LoraManager)` |
 | LoRA Optimizer | https://github.com/ethanfel/ComfyUI-LoRA-Optimizer | `LoRAOptimizerSimple` |
 
 The setup screen inspects the live `/object_info` input/output contract rather
@@ -103,7 +102,6 @@ first.
 
 ```powershell
 bun install
-Copy-Item .env.example .env
 bun run db:migrate
 bun run dev
 ```
@@ -112,15 +110,15 @@ Open `http://127.0.0.1:3000`. The API listens on
 `http://127.0.0.1:8787`. Both services bind to localhost and have no
 authentication, so they are not intended for network exposure.
 
-For an existing ComfyUI, uncomment `COMFY_URL` in `.env` before the first API
-start. Leave it unset for a new managed installation.
+For an existing ComfyUI, select External and enter its URL under Settings >
+Engine. New installations use the managed engine by default.
 
 ## Models and downloads
 
 Managed model directories are under:
 
 ```text
-RUNTIME_DIR/shared/models/
+data/runtime/shared/models/
   checkpoints/
   diffusion_models/
   unet/
@@ -145,9 +143,9 @@ external ComfyUI installation. Files are placed according to their ComfyUI
 model type:
 
 ```text
-RUNTIME_DIR/shared/models/diffusion_models/<Anima model>.safetensors
-RUNTIME_DIR/shared/models/text_encoders/qwen_3_06b_base.safetensors
-RUNTIME_DIR/shared/models/vae/qwen_image_vae.safetensors
+data/runtime/shared/models/diffusion_models/<Anima model>.safetensors
+data/runtime/shared/models/text_encoders/qwen_3_06b_base.safetensors
+data/runtime/shared/models/vae/qwen_image_vae.safetensors
 ```
 
 Selecting an Anima diffusion model also installs the shared Qwen text encoder
@@ -207,17 +205,16 @@ to LoRA or checkpoint model types and regular `.safetensors` files. The server
 restricts destinations to its configured managed model roots, rejects symlinks
 and path escapes, and verifies the final SHA-256 before indexing the file.
 
-Managed installs require managed mode with ComfyUI installed and ready.
-External-mode installs are intentionally disabled; external files and LoRA
-Manager routes are not modified or exposed by the app. The Library shows only
+Managed installs require managed mode. The API downloads directly into the
+app-owned model directory with resumable HTTP transfers, progress controls,
+size checks, and SHA-256 verification; ComfyUI does not need to be running.
+External-mode installs are intentionally disabled. The Library shows only
 install, installing progress, and remove states.
 
 The Civitai token field is write-only. On Windows it is encrypted with DPAPI for
 the current user and is never returned by the API or stored in plaintext in
-SQLite, settings JSON, or logs. Token changes affect direct metadata requests
-immediately, but managed LoRA Manager reads its credential at process startup;
-restart managed ComfyUI after adding, changing, or removing a token before
-starting a managed download. Do not put the token in `.env`.
+SQLite, settings JSON, ComfyUI, or logs. Token changes affect metadata and
+downloads immediately and do not require restarting ComfyUI.
 
 Civitai content and model licenses remain the user's responsibility. Sensitive
 previews can be blurred in the Library.
@@ -230,18 +227,17 @@ start imports them into SQLite FTS; later starts compare the stored source
 fingerprint and skip unchanged data. Danbooru underscores are displayed as
 spaces, while canonical aliases remain searchable.
 
-To replace the data with a compatible `comfyui-autocomplete-plus` release, set
-`DANBOORU_TAGS_CSV`, `DANBOORU_COOCCURRENCE_CSV`, and optionally
-`DANBOORU_TAG_DATA_MANIFEST`. Paths may be absolute or repository-relative.
-Restart the API to fingerprint and import the replacement. The old index is
-kept if an import fails.
+To replace the data with a compatible `comfyui-autocomplete-plus` release,
+rebuild the portable files using the scripts documented in
+`packages/tag-data/data/README.md` and commit them with the updated manifest.
+The old index is kept if an import fails.
 
 ## Data, workflow, and progress
 
-SQLite, encrypted secrets, uploaded references, copied outputs, and previews
-live under `DATA_DIR`. The managed engine, shared model/input/output folders,
-downloads, logs, quarantined releases, and caches live under `RUNTIME_DIR`.
-Neither location is automatically deleted.
+SQLite, encrypted secrets, uploaded references, and copied outputs live under
+`data`. The managed engine, shared model/input/output folders, downloads, logs,
+quarantined releases, and caches live under `data/runtime`. Neither location is
+automatically deleted.
 
 ComfyUI receives generated API prompts and uploaded inputs, while the app keeps
 its own settings snapshot, actual seed, events, and output copy. Deleting a
@@ -249,7 +245,8 @@ ComfyUI workflow JSON, clearing ComfyUI history, or cleaning its output folder
 does not remove the app's workflow definition or saved thumbnails.
 
 Sampling progress uses ComfyUI's exact `value / max` events. Binary denoise
-previews replace one per-job preview file rather than accumulating frames.
+previews keep only the latest frame in process memory and are released when the
+job ends. Preview frames are not written to disk.
 Instant Reference does not expose individual training steps, so that phase
 shows activity and elapsed time rather than a fabricated percentage.
 
@@ -266,12 +263,9 @@ dismissed/completed state is stored in SQLite, so it follows the local studio
 rather than one browser tab. The dependency panel maps missing ComfyUI class
 types to the pinned custom-node package and installation source.
 
-Storage settings list individual uploaded assets, copied outputs, current
-preview files, and managed model installations with their sizes and
-dependencies. Cleanup first performs a dry run. Only explicitly selected,
-dependency-free regular files under the managed data roots can be deleted;
-job references, upscale sources, and active previews remain protected. Managed
-models are installed and removed from Library.
+Storage settings show counts and disk usage for uploaded assets, copied
+outputs, and managed model installations. Managed models are installed and
+removed from Library.
 
 ## Third-party inventory
 
@@ -282,7 +276,7 @@ Every managed release contains:
 - `runtime.cdx.json`, a CycloneDX 1.5 SBOM for the managed runtime artifacts
 
 These files are stored under
-`RUNTIME_DIR/releases/<bundle-id>/`. License files included by each upstream
+`data/runtime/releases/<bundle-id>/`. License files included by each upstream
 archive remain authoritative.
 
 ## Commands

@@ -30,10 +30,11 @@ history payload/file contains the InstantReference tagger result.
 The install sources and exact `/object_info` contracts are versioned in
 `custom-nodes.manifest.json`.
 
-Prompt concatenation is intentionally completed before queue submission:
-`basePositive`, `positive`, and `natural` are joined directly into the
-positive `CLIPTextEncode`; the two negative fields are handled the same way.
-LoRA trigger words selected by the user should therefore be inserted into one
-of those UI prompt fields before calling `buildWorkflow`. InstantReference
-auto-tags are preserved as a separate `SaveText` result for inspection and
-reuse, rather than being joined through a runtime string node.
+Prompt fields are passed to the text encoders without trimming, normalizing,
+or deduplicating user input. `basePositive`, `positive`, enabled LoRA trigger
+words, and `natural` are separated by newlines in the positive
+`CLIPTextEncode`; the two negative fields are handled the same way. LoRA
+trigger words are included only when both the LoRA and its `useTriggerWords`
+option are enabled, so the stored user prompt remains unchanged.
+InstantReference auto-tags are preserved as a separate `SaveText` result for
+inspection and reuse, rather than being joined through a runtime string node.

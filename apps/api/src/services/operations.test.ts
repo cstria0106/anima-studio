@@ -12,8 +12,8 @@ afterEach(() => {
 
 function services() {
   const config = loadConfig({
-    DATABASE_PATH: ":memory:",
-    DATA_DIR: "data",
+    databasePath: ":memory:",
+    dataDir: "data",
   });
   const database = createDatabase(config);
   databases.push(database);

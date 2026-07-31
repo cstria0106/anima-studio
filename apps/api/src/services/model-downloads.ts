@@ -108,8 +108,9 @@ export class ModelDownloadCoordinator {
   }
 
   /**
-   * Downloads cannot be resumed through the simplified API. Clear any rows
-   * left by a previous process before accepting new installation work.
+   * Task handles are process-local. Clear interrupted rows before accepting
+   * new work; provider-owned deterministic .part files remain available for
+   * the next install request to resume.
    */
   discardInterruptedTasks(): void {
     for (const row of this.repository.listModelDownloadRows()) {
@@ -138,6 +139,20 @@ export class ModelDownloadCoordinator {
         this.repository.deleteManagedModelInstallation(installation.id);
       }
     }
+  }
+
+  listInstallations(
+    provider?: ManagedModelInstallationDto["provider"],
+    destinationRootId?: ManagedModelInstallationDto["destinationRootId"],
+  ): ManagedModelInstallationDto[] {
+    return this.repository
+      .listManagedModelInstallations()
+      .filter(
+        (installation) =>
+          (!provider || installation.provider === provider) &&
+          (!destinationRootId ||
+            installation.destinationRootId === destinationRootId),
+      );
   }
 
   track(
@@ -602,6 +617,12 @@ export class ModelDownloadCoordinator {
         completed.map(({ child, download, row }) => ({
           id: child.installationId,
           provider: download!.provider,
+          sourceUrl:
+            typeof download!.metadata.sourceUrl === "string"
+              ? download!.metadata.sourceUrl
+              : download!.provider === "civitai"
+                ? `https://civitai.com/models/${download!.providerModelId}?modelVersionId=${download!.providerVersionId}`
+                : null,
           providerModelId: download!.providerModelId,
           providerVersionId: download!.providerVersionId,
           providerFileId: download!.providerFileId,

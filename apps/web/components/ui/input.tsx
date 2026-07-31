@@ -31,3 +31,68 @@ export const Textarea = React.forwardRef<
   />
 ));
 Textarea.displayName = "Textarea";
+
+type AutoResizeTextareaProps = React.TextareaHTMLAttributes<HTMLTextAreaElement> & {
+  maxRows?: number;
+};
+
+export const AutoResizeTextarea = React.forwardRef<
+  HTMLTextAreaElement,
+  AutoResizeTextareaProps
+>(
+  (
+    {
+      className,
+      maxRows = 10,
+      onInput,
+      rows = 2,
+      value,
+      ...props
+    },
+    ref,
+  ) => {
+    const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+    React.useImperativeHandle(ref, () => textareaRef.current!, []);
+
+    const resize = React.useCallback(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+
+      textarea.style.height = "auto";
+
+      const styles = window.getComputedStyle(textarea);
+      const lineHeight = Number.parseFloat(styles.lineHeight);
+      const verticalPadding =
+        Number.parseFloat(styles.paddingTop) +
+        Number.parseFloat(styles.paddingBottom);
+      const verticalBorder =
+        Number.parseFloat(styles.borderTopWidth) +
+        Number.parseFloat(styles.borderBottomWidth);
+      const maximumHeight =
+        lineHeight * Math.max(rows, maxRows) + verticalPadding + verticalBorder;
+      const contentHeight = textarea.scrollHeight + verticalBorder;
+
+      textarea.style.height = `${Math.min(contentHeight, maximumHeight)}px`;
+      textarea.style.overflowY =
+        contentHeight > maximumHeight ? "auto" : "hidden";
+    }, [maxRows, rows]);
+
+    React.useLayoutEffect(resize, [resize, value]);
+
+    return (
+      <Textarea
+        {...props}
+        ref={textareaRef}
+        rows={rows}
+        value={value}
+        onInput={(event) => {
+          resize();
+          onInput?.(event);
+        }}
+        className={cn("min-h-0 resize-none", className)}
+      />
+    );
+  },
+);
+AutoResizeTextarea.displayName = "AutoResizeTextarea";

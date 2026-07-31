@@ -10,8 +10,8 @@ export const SANITIZED_ANIMA_TEMPLATE = Object.freeze({
   profile: "anima",
   defaults: Object.freeze({
     instantReference: Object.freeze({
-      modelStrength: 0.7,
-      clipStrength: 0.7,
+      modelStrength: 0.8,
+      clipStrength: 0.8,
       trainingSteps: 200,
       learningRate: 0.001,
       networkDimension: 16,
@@ -25,15 +25,15 @@ export const SANITIZED_ANIMA_TEMPLATE = Object.freeze({
       denoise: 1,
     }),
     image: Object.freeze({
-      width: 704,
-      height: 1408,
+      width: 1024,
+      height: 1024,
       batchSize: 1,
     }),
     upscale: Object.freeze({
       method: "bilinear",
       scale: 1.5,
       steps: 30,
-      denoise: 0.7,
+      denoise: 0.8,
     }),
   }),
   classTypes: Object.freeze({
@@ -45,7 +45,7 @@ export const SANITIZED_ANIMA_TEMPLATE = Object.freeze({
     trainOptions: "ReferenceTrainOptions",
     taggingOptions: "ReferenceTaggingOptions",
     instantReference: "InstantReferenceLoRA",
-    loraStacker: "Lora Stacker (LoraManager)",
+    loraLoader: "LoraLoader",
     loraOptimizer: "LoRAOptimizerSimple",
     textEncode: "CLIPTextEncode",
     cfgGuidance: "ScheduledCFGGuidance",
@@ -69,7 +69,6 @@ export const NODE_IDS = Object.freeze({
   trainOptions: "4",
   taggingOptions: "5",
   instantReference: "6",
-  loraStacker: "7",
   loraOptimizer: "8",
   positiveEncode: "9",
   negativeEncode: "10",
@@ -94,6 +93,7 @@ export const NODE_IDS = Object.freeze({
 
 const REFERENCE_LOAD_NODE_START = 1000;
 const REFERENCE_BATCH_NODE_START = 2000;
+const LORA_LOADER_NODE_START = 3000;
 
 export function referenceLoadNodeId(index: number): string {
   return String(REFERENCE_LOAD_NODE_START + index);
@@ -101,4 +101,8 @@ export function referenceLoadNodeId(index: number): string {
 
 export function referenceBatchNodeId(index: number): string {
   return String(REFERENCE_BATCH_NODE_START + index);
+}
+
+export function loraLoaderNodeId(index: number): string {
+  return String(LORA_LOADER_NODE_START + index);
 }

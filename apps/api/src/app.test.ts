@@ -3,6 +3,7 @@ import {
   mkdir,
   mkdtemp,
   rm,
+  stat,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -17,10 +18,11 @@ import {
   type ModelDownloadState,
 } from "@anima/shared";
 import {
-  CIVITAI_RESTART_REQUIRED_SETTING,
   createRuntime,
+  RUNTIME_CONFIG_SETTING,
   type ApiRuntime,
   type HuggingFaceLibraryService,
+  type ModelLibraryService,
 } from "./app";
 import type {
   ComfyClientLike,
@@ -40,11 +42,10 @@ import type {
   ComfySocketEvent,
 } from "./comfy/types";
 import { loadConfig } from "./config";
+import { createDatabase } from "./db/database";
+import { StudioRepository } from "./db/repository";
+import { RUNTIME_STATE_SETTING } from "./runtime/studio";
 import { OnboardingService } from "./services/onboarding";
-import {
-  ANIMA_LORA_MANAGER_DOWNLOAD_PATCH_ID,
-  LORA_MANAGER_SECRET_PATCH_ID,
-} from "./runtime";
 import type {
   WorkflowBuildResult,
   WorkflowEngine,
@@ -391,7 +392,15 @@ async function runtime(
   comfy: FakeComfy;
 }>;
 async function runtime(
+  huggingFaceLibrary: undefined,
+  modelLibrary: ModelLibraryService,
+): Promise<{
+  runtime: ApiRuntime;
+  comfy: FakeComfy;
+}>;
+async function runtime(
   huggingFaceLibrary?: HuggingFaceLibraryService,
+  modelLibrary?: ModelLibraryService,
 ): Promise<{
   runtime: ApiRuntime;
   comfy: FakeComfy;
@@ -399,18 +408,29 @@ async function runtime(
   const dataDir = await mkdtemp(join(tmpdir(), "anima-api-test-"));
   temporaryDirectories.push(dataDir);
   const config = loadConfig({
-    DATABASE_PATH: ":memory:",
-    DATA_DIR: dataDir,
-    COMFY_URL: "http://fake-comfy.test",
+    databasePath: ":memory:",
+    dataDir,
   });
   const comfy = new FakeComfy();
+  const database = createDatabase(config);
+  const repository = new StudioRepository(database);
+  repository.setSetting(RUNTIME_CONFIG_SETTING, {
+    mode: "external",
+    externalUrl: comfy.baseUrl,
+    autoStart: false,
+    stopWithApi: false,
+    port: null,
+  });
   const value = await createRuntime({
     config,
+    database,
+    repository,
     comfy,
     workflow: new FakeWorkflow(),
     startTracker: false,
     tagDataMode: "fallback",
     ...(huggingFaceLibrary ? { huggingFaceLibrary } : {}),
+    ...(modelLibrary ? { modelLibrary } : {}),
     logger: {
       info() {},
       warn() {},
@@ -440,8 +460,8 @@ async function freshManagedRuntime(
   const dataDir = await mkdtemp(join(tmpdir(), "anima-managed-api-test-"));
   temporaryDirectories.push(dataDir);
   const config = loadConfig({
-    DATABASE_PATH: ":memory:",
-    DATA_DIR: dataDir,
+    databasePath: ":memory:",
+    dataDir,
   });
   const comfy = new FakeComfy("http://127.0.0.1:8188");
   const value = await createRuntime({
@@ -559,6 +579,118 @@ async function uploadReference(api: ApiRuntime): Promise<string> {
 }
 
 describe("Anima Studio API", () => {
+  test("keeps a previous managed bundle stopped until it is updated", async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), "anima-managed-upgrade-test-"));
+    temporaryDirectories.push(dataDir);
+    const config = loadConfig({
+      databasePath: ":memory:",
+      dataDir,
+    });
+    const database = createDatabase(config);
+    const repository = new StudioRepository(database);
+    repository.setSetting(RUNTIME_STATE_SETTING, {
+      mode: "managed",
+      status: "stopped",
+      endpoint: "http://127.0.0.1:8188",
+      port: 8188,
+      activeBundleId: "anima-comfy-0.29.0-win-nvidia-r3",
+      operationId: null,
+      process: null,
+      error: null,
+      updatedAt: new Date().toISOString(),
+    });
+
+    const comfy = new FakeComfy("http://127.0.0.1:8188");
+    const api = await createRuntime({
+      config,
+      database,
+      repository,
+      comfy,
+      workflow: new FakeWorkflow(),
+      tagDataMode: "fallback",
+      logger: {
+        info() {},
+        warn() {},
+        error() {},
+      },
+    });
+    runtimes.push({
+      ...api,
+      close: async () => {
+        await api.close();
+        database.close();
+      },
+    });
+
+    const response = await api.app.request("/api/comfy/runtime");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      runtime: {
+        state: "stopped",
+        installed: false,
+        bundleId: "anima-comfy-0.29.0-win-nvidia-r3",
+        error: null,
+      },
+    });
+    expect(comfy.connectedClientIds).toHaveLength(0);
+  });
+
+  test("serves LoRA thumbnails through the same-origin API", async () => {
+    const thumbnail = {
+      bytes: Uint8Array.of(0xff, 0xd8, 0xff, 0xd9),
+      contentType: "image/jpeg",
+    };
+    const modelLibrary = {
+      providerStatus: async () => ({
+        provider: "civitai" as const,
+        available: true,
+        tokenConfigured: false,
+        supportedHosts: ["civitai.com", "civitai.red"] as const,
+        supportedFormats: [".safetensors"] as const,
+        managedDownloads: true,
+        destinations: [],
+      }),
+      setToken: async () => ({ tokenConfigured: true }),
+      deleteToken: async () => ({ tokenConfigured: false }),
+      inspect: async () => {
+        throw new Error("Not used in this test.");
+      },
+      create: async () => {
+        throw new Error("Not used in this test.");
+      },
+      settled: async () => {
+        throw new Error("Not used in this test.");
+      },
+      shutdown: async () => {},
+      getLoraMetadata: async (installedLoras: string[]) =>
+        installedLoras.map((value) => ({
+          name: value,
+          value,
+          triggerWords: [],
+          thumbnailUrl: "https://image.civitai.com/style.jpeg",
+        })),
+      downloadLoraThumbnail: async () => thumbnail,
+    } as ModelLibraryService;
+    const { runtime: api } = await runtime(undefined, modelLibrary);
+
+    const optionsResponse = await api.app.request("/api/options");
+    const options = (await optionsResponse.json()) as {
+      loras: Array<{ value: string; thumbnailUrl?: string }>;
+    };
+    expect(options.loras[0]?.thumbnailUrl).toBe(
+      "/api/lora-thumbnail?lora=style.safetensors",
+    );
+
+    const thumbnailResponse = await api.app.request(
+      options.loras[0]!.thumbnailUrl!,
+    );
+    expect(thumbnailResponse.status).toBe(200);
+    expect(thumbnailResponse.headers.get("content-type")).toBe("image/jpeg");
+    expect([
+      ...new Uint8Array(await thumbnailResponse.arrayBuffer()),
+    ]).toEqual([...thumbnail.bytes]);
+  });
+
   test("saves lifecycle preferences while managed ComfyUI is running", async () => {
     const { runtime: api } = await freshManagedRuntime();
     recordRunningManagedProcess(api);
@@ -856,6 +988,70 @@ describe("Anima Studio API", () => {
     ]);
   });
 
+  test("lists only managed Civitai LoRA installations", async () => {
+    const { runtime: api } = await runtime();
+    const installedAt = "2026-07-31T10:00:00.000Z";
+    for (const installation of [
+      {
+        id: "civitai-lora",
+        provider: "civitai" as const,
+        destinationRootId: "loras" as const,
+        modelName: "Civitai style",
+      },
+      {
+        id: "civitai-checkpoint",
+        provider: "civitai" as const,
+        destinationRootId: "diffusion_models" as const,
+        modelName: "Civitai checkpoint",
+      },
+      {
+        id: "huggingface-lora",
+        provider: "huggingface" as const,
+        destinationRootId: "loras" as const,
+        modelName: "Hugging Face LoRA",
+      },
+    ]) {
+      api.repository.upsertManagedModelInstallation({
+        ...installation,
+        sourceUrl:
+          installation.provider === "civitai"
+            ? `https://civitai.com/models/${installation.id}?modelVersionId=version-1`
+            : null,
+        providerModelId: installation.id,
+        providerVersionId: "version-1",
+        providerFileId: "file-1",
+        versionName: "v1",
+        filename: `${installation.id}.safetensors`,
+        relativeDir: "styles",
+        sha256: "a".repeat(64),
+        storagePath: join(
+          api.config.dataDir,
+          `${installation.id}.safetensors`,
+        ),
+        installedAt,
+      });
+    }
+
+    const response = await api.app.request(
+      "/api/model-installations/civitai/loras",
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      installations: [
+        expect.objectContaining({
+          id: "civitai-lora",
+          provider: "civitai",
+          sourceUrl:
+            "https://civitai.com/models/civitai-lora?modelVersionId=version-1",
+          destinationRootId: "loras",
+          modelName: "Civitai style",
+          relativeDir: "styles",
+        }),
+      ],
+    });
+  });
+
   test("reports Hugging Face installs unavailable and blocks new installs in external mode", async () => {
     const huggingFace = new FakeHuggingFaceLibrary();
     const { runtime: api } = await runtime(huggingFace);
@@ -929,7 +1125,7 @@ describe("Anima Studio API", () => {
       "/api/download-providers/civitai",
     );
     expect(await civitaiResponse.json()).toMatchObject({
-      provider: { available: false, managedDownloads: false },
+      provider: { available: true, managedDownloads: true },
     });
     const huggingFaceResponse = await api.app.request(
       "/api/download-providers/huggingface/anima",
@@ -956,104 +1152,6 @@ describe("Anima Studio API", () => {
     expect(huggingFace.installCalls).toBe(1);
   });
 
-  test("blocks managed downloads until an updated Civitai credential is applied", async () => {
-    const { runtime: api } = await runtime();
-    const releaseRoot = join(api.config.dataDir, "ready-managed-release");
-    const managerRoot = join(
-      releaseRoot,
-      "ComfyUI",
-      "custom_nodes",
-      "ComfyUI-Lora-Manager",
-    );
-    const settingsPath = join(
-      managerRoot,
-      "py",
-      "services",
-      "settings_manager.py",
-    );
-    const handlerPath = join(
-      managerRoot,
-      "py",
-      "routes",
-      "handlers",
-      "model_handlers.py",
-    );
-    const downloadPath = join(
-      managerRoot,
-      "py",
-      "services",
-      "download_manager.py",
-    );
-    await Promise.all([
-      mkdir(join(managerRoot, "py", "routes", "handlers"), {
-        recursive: true,
-      }),
-      mkdir(join(managerRoot, "py", "services"), { recursive: true }),
-    ]);
-    await Promise.all([
-      writeFile(
-        join(managerRoot, `.${LORA_MANAGER_SECRET_PATCH_ID}`),
-        LORA_MANAGER_SECRET_PATCH_ID,
-      ),
-      writeFile(
-        join(
-          managerRoot,
-          `.${ANIMA_LORA_MANAGER_DOWNLOAD_PATCH_ID}`,
-        ),
-        ANIMA_LORA_MANAGER_DOWNLOAD_PATCH_ID,
-      ),
-      writeFile(settingsPath, LORA_MANAGER_SECRET_PATCH_ID),
-      writeFile(handlerPath, ANIMA_LORA_MANAGER_DOWNLOAD_PATCH_ID),
-      writeFile(downloadPath, ANIMA_LORA_MANAGER_DOWNLOAD_PATCH_ID),
-    ]);
-
-    const current = await api.runtimeController.status();
-    api.runtimeController.status = async () => ({
-      ...current,
-      state: {
-        ...current.state,
-        mode: "managed",
-        status: "ready",
-        activeBundleId: api.runtimeController.manifest.bundleId,
-        process: {
-          pid: 123,
-          executable: "C:\\managed\\python.exe",
-          entrypoint: join(releaseRoot, "ComfyUI", "main.py"),
-          releaseRoot,
-          startedAt: new Date().toISOString(),
-          port: 8188,
-          sessionId: "managed-test-session",
-        },
-      },
-    });
-    api.repository.setSetting(
-      CIVITAI_RESTART_REQUIRED_SETTING,
-      true,
-    );
-
-    const providerResponse = await api.app.request(
-      "/api/download-providers/civitai",
-    );
-    expect(providerResponse.status).toBe(200);
-    expect(await providerResponse.json()).toMatchObject({
-      provider: {
-        available: false,
-        managedDownloads: false,
-        restartRequired: true,
-        reason: expect.stringContaining("Restart managed ComfyUI"),
-      },
-    });
-
-    const downloadResponse = await api.app.request(
-      "/api/model-installations/civitai",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: "{}",
-      },
-    );
-    expect(downloadResponse.status).toBe(409);
-  });
 
   test("rejects non-local browser origins before executing API routes", async () => {
     const { runtime: api } = await runtime();
@@ -1267,7 +1365,54 @@ describe("Anima Studio API", () => {
     });
   });
 
-  test("streams and serves only the latest denoise preview frame", async () => {
+  test("deletes a terminal job together with its stored outputs", async () => {
+    const { runtime: api, comfy } = await runtime();
+    const assetId = await uploadReference(api);
+    const config: GenerationConfig = {
+      ...structuredClone(testGenerationConfig),
+      referenceAssetIds: [assetId],
+    };
+    const created = await api.app.request("/api/jobs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ config }),
+    });
+    const body = (await created.json()) as { job: { id: string } };
+
+    const activeDelete = await api.app.request(`/api/jobs/${body.job.id}`, {
+      method: "DELETE",
+    });
+    expect(activeDelete.status).toBe(409);
+
+    comfy.pending = false;
+    comfy.history = {
+      [comfy.queuedPromptId]: {
+        status: { completed: true, status_str: "success", messages: [] },
+        outputs: {
+          "1": {
+            images: [{ filename: "base.png", subfolder: "", type: "output" }],
+          },
+        },
+      },
+    };
+    await api.tracker.start();
+    const output = api.repository.listOutputs(body.job.id)[0]!;
+    await expect(
+      stat(join(api.config.dataDir, output.storagePath)),
+    ).resolves.toBeDefined();
+
+    const deleted = await api.app.request(`/api/jobs/${body.job.id}`, {
+      method: "DELETE",
+    });
+    expect(deleted.status).toBe(204);
+    expect(api.repository.findJob(body.job.id)).toBeNull();
+    await expect(
+      stat(join(api.config.dataDir, output.storagePath)),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    expect(api.repository.findAsset(assetId)).not.toBeNull();
+  });
+
+  test("serves the latest denoise preview from memory without writing it to disk", async () => {
     const { runtime: api, comfy } = await runtime();
     const assetId = await uploadReference(api);
     const config: GenerationConfig = {
@@ -1314,6 +1459,9 @@ describe("Anima Studio API", () => {
     expect(preview.headers.get("content-type")).toBe("image/png");
     expect(preview.headers.get("cache-control")).toContain("no-store");
     expect(new Uint8Array(await preview.arrayBuffer())).toEqual(png);
+    await expect(
+      stat(join(api.config.dataDir, "previews")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
 
     const detail = await api.app.request(`/api/jobs/${body.job.id}`);
     expect(await detail.json()).toMatchObject({
@@ -1421,6 +1569,11 @@ describe("Anima Studio API", () => {
     expect(comfy.queuedPrompts.at(-1)?.["3"]?.class_type).toBe(
       "SaveImage",
     );
+    const sourceDelete = await api.app.request(
+      `/api/jobs/${source.job.id}`,
+      { method: "DELETE" },
+    );
+    expect(sourceDelete.status).toBe(409);
   });
 
   test("never lets manual onboarding preferences bypass blocking runtime checks", async () => {
@@ -1524,6 +1677,63 @@ describe("Anima Studio API", () => {
     expect(missingTarget.status).toBe(422);
   });
 
+  test("lists and removes LoRAs generated by Instant Reference", async () => {
+    const { runtime: api } = await runtime();
+    const loraRoot = join(
+      api.config.runtimeDir,
+      "shared",
+      "models",
+      "loras",
+    );
+    const generatedDirectory = join(
+      loraRoot,
+      "Instant-Reference-Generated",
+      "cache-a",
+    );
+    const generatedLora = join(
+      generatedDirectory,
+      "instant_lora_a.safetensors",
+    );
+    await mkdir(generatedDirectory, { recursive: true });
+    await writeFile(generatedLora, new Uint8Array(128));
+    await writeFile(join(generatedDirectory, "training.json"), "{}");
+    await writeFile(join(loraRoot, "manual.safetensors"), new Uint8Array(64));
+
+    const inventory = await api.storageInventory.inventory();
+    const generatedItems = inventory.items.filter(
+      (item) => item.kind === "instant_lora",
+    );
+    expect(generatedItems).toEqual([
+      expect.objectContaining({
+        id: "Instant-Reference-Generated/cache-a/instant_lora_a.safetensors",
+        name: "Instant-Reference-Generated/cache-a/instant_lora_a.safetensors",
+        byteSize: 128,
+        cleanupEligible: true,
+      }),
+    ]);
+    expect(
+      inventory.categories.find((category) => category.kind === "instant_lora"),
+    ).toEqual({ kind: "instant_lora", byteSize: 128, itemCount: 1 });
+
+    const cleanup = await api.storageInventory.cleanup({
+      targets: [{ kind: "instant_lora", id: generatedItems[0]!.id }],
+      dryRun: false,
+    });
+    expect(cleanup).toMatchObject({
+      reclaimedBytes: 128,
+      results: [
+        {
+          kind: "instant_lora",
+          eligible: true,
+          deleted: true,
+          byteSize: 128,
+        },
+      ],
+    });
+    await expect(stat(generatedLora)).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await stat(join(loraRoot, "manual.safetensors"))).size).toBe(64);
+  });
+
   test("storage cleanup rechecks dependencies between review and deletion", async () => {
     const { runtime: api } = await runtime();
     const assetId = await uploadReference(api);
@@ -1566,7 +1776,7 @@ describe("Anima Studio API", () => {
     const cleanup = await api.storageInventory.cleanup({
       targets: [
         { kind: "asset", id: assetId },
-        { kind: "preview", id: "missing-preview" },
+        { kind: "output", id: "missing-output" },
       ],
       dryRun: false,
     });
@@ -1578,8 +1788,8 @@ describe("Anima Studio API", () => {
         deleted: true,
       }),
       expect.objectContaining({
-        kind: "preview",
-        id: "missing-preview",
+        kind: "output",
+        id: "missing-output",
         eligible: false,
         deleted: false,
       }),

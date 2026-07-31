@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   MANAGED_ENGINE_MANIFEST,
@@ -33,20 +32,15 @@ import { JobEventBroker } from "./events/broker";
 import { FileStorage } from "./files/storage";
 import {
   CivitaiApiClient,
+  DirectCivitaiDownloadClient,
   CivitaiError,
   CivitaiModelLibraryService,
   CivitaiTokenService,
   DestinationRegistry,
   DpapiFileSecretStore,
   FetchCivitaiHttpTransport,
-  FetchLoraManagerTransport,
-  ManagedLoraManagerCredentialLease,
   NodeFileHasher,
-  PinnedLoraManagerClient,
   QuarantineInvalidDownloadHandler,
-  SAFE_LORA_MANAGER_SECRET_CONTRACT,
-  type LoraManagerDownloadPayload,
-  type LoraManagerTransport,
   type SecretStore,
 } from "./civitai";
 import {
@@ -54,9 +48,7 @@ import {
   RuntimeRequestError,
 } from "./http/errors";
 import {
-  ANIMA_LORA_MANAGER_DOWNLOAD_PATCH_ID,
   HttpRuntimeReadinessProbe,
-  LORA_MANAGER_SECRET_PATCH_ID,
   ManagedComfyRuntimeController,
   ManagedRuntimeInstaller,
   ManagedRuntimeSupervisor,
@@ -139,6 +131,8 @@ export type ModelLibraryService = Pick<
   | "create"
   | "settled"
   | "shutdown"
+  | "getLoraMetadata"
+  | "downloadLoraThumbnail"
 >;
 
 export type HuggingFaceLibraryService = Pick<
@@ -151,8 +145,7 @@ export type HuggingFaceLibraryService = Pick<
 >;
 
 export const RUNTIME_CONFIG_SETTING = "runtime-config-v1";
-export const CIVITAI_RESTART_REQUIRED_SETTING =
-  "civitai-runtime-restart-required-v1";
+const DEFAULT_EXTERNAL_COMFY_URL = "http://127.0.0.1:8188";
 
 function configuredRuntimeManifest(config: AppConfig): EngineManifest {
   if (
@@ -207,8 +200,7 @@ function initialRuntimeConfig(
   const state = savedRuntimeState(
     repository.getSetting<unknown>(RUNTIME_STATE_SETTING),
   );
-  const existingInstallation =
-    config.comfyUrlExplicit || repository.hasJobs();
+  const existingInstallation = repository.hasJobs();
   const mode =
     state?.mode ??
     (stored.success ? stored.data.mode : null) ??
@@ -218,8 +210,8 @@ function initialRuntimeConfig(
       ? state?.mode === "external"
         ? state.endpoint
         : stored.success
-          ? stored.data.externalUrl ?? config.comfyUrl
-          : config.comfyUrl
+          ? stored.data.externalUrl ?? DEFAULT_EXTERNAL_COMFY_URL
+          : DEFAULT_EXTERNAL_COMFY_URL
       : null;
   const selectedPort =
     mode === "managed"
@@ -238,84 +230,26 @@ function initialRuntimeConfig(
   });
 }
 
-async function verifiedLoraManagerContract(
-  releaseRoot: string,
-): Promise<boolean> {
-  const managerRoot = join(
-    releaseRoot,
-    "ComfyUI",
-    "custom_nodes",
-    "ComfyUI-Lora-Manager",
-  );
-  try {
-    const [
-      secretMarker,
-      downloadMarker,
-      settingsSource,
-      handlerSource,
-      managerSource,
-    ] = await Promise.all([
-      readFile(
-        join(managerRoot, `.${LORA_MANAGER_SECRET_PATCH_ID}`),
-        "utf8",
-      ),
-      readFile(
-        join(
-          managerRoot,
-          `.${ANIMA_LORA_MANAGER_DOWNLOAD_PATCH_ID}`,
-        ),
-        "utf8",
-      ),
-      readFile(
-        join(managerRoot, "py", "services", "settings_manager.py"),
-        "utf8",
-      ),
-      readFile(
-        join(
-          managerRoot,
-          "py",
-          "routes",
-          "handlers",
-          "model_handlers.py",
-        ),
-        "utf8",
-      ),
-      readFile(
-        join(managerRoot, "py", "services", "download_manager.py"),
-        "utf8",
-      ),
-    ]);
-    return (
-      secretMarker.trim() === LORA_MANAGER_SECRET_PATCH_ID &&
-      downloadMarker.trim() ===
-        ANIMA_LORA_MANAGER_DOWNLOAD_PATCH_ID &&
-      settingsSource.includes(LORA_MANAGER_SECRET_PATCH_ID) &&
-      handlerSource.includes(
-        ANIMA_LORA_MANAGER_DOWNLOAD_PATCH_ID,
-      ) &&
-      managerSource.includes(
-        ANIMA_LORA_MANAGER_DOWNLOAD_PATCH_ID,
-      )
-    );
-  } catch {
-    return false;
-  }
-}
-
 function modelDownloadUnavailableReason(
   state: ManagedRuntimeState,
-  contractValid: boolean,
 ): string | null {
   if (state.mode !== "managed") {
     return "Model downloads require the app-managed ComfyUI runtime.";
   }
-  if (state.status !== "ready" || !state.process) {
-    return "Start the managed ComfyUI runtime before downloading models.";
-  }
-  if (!contractValid) {
-    return "Repair the managed runtime before using model downloads.";
-  }
   return null;
+}
+
+function shouldAutoStartManagedRuntime(
+  state: ManagedRuntimeState,
+  currentBundleId: string,
+  autoStart: boolean,
+): boolean {
+  return (
+    autoStart &&
+    state.mode === "managed" &&
+    state.activeBundleId === currentBundleId &&
+    !state.process
+  );
 }
 
 async function runtimeDto(
@@ -372,44 +306,6 @@ async function runtimeDto(
     hardware,
     activeOperationId: state.operationId,
   };
-}
-
-class RuntimeLoraManagerTransport implements LoraManagerTransport {
-  constructor(
-    private readonly endpoint: () => Promise<string>,
-    private readonly requestTimeoutMs: number,
-  ) {}
-
-  private async active(): Promise<FetchLoraManagerTransport> {
-    return new FetchLoraManagerTransport(
-      await this.endpoint(),
-      fetch,
-      this.requestTimeoutMs,
-    );
-  }
-
-  async download(
-    payload: LoraManagerDownloadPayload,
-    signal?: AbortSignal,
-  ) {
-    return (await this.active()).download(payload, signal);
-  }
-
-  async progress(downloadId: string) {
-    return (await this.active()).progress(downloadId);
-  }
-
-  async pause(downloadId: string) {
-    return (await this.active()).pause(downloadId);
-  }
-
-  async resume(downloadId: string) {
-    return (await this.active()).resume(downloadId);
-  }
-
-  async cancel(downloadId: string) {
-    return (await this.active()).cancel(downloadId);
-  }
 }
 
 function reconcileInterruptedRuntimeOperations(
@@ -495,6 +391,7 @@ export async function createRuntime(
       ? initializeFallbackTagIndex(repository)
       : await initializeDanbooruTagIndex(repository, {
           tagsCsvPath: config.danbooruTagsCsvPath,
+          descriptionsCsvPath: config.danbooruDescriptionsCsvPath,
           cooccurrenceCsvPath: config.danbooruCooccurrenceCsvPath,
           manifestPath: config.danbooruManifestPath,
           minimumCooccurrenceCount:
@@ -530,7 +427,7 @@ export async function createRuntime(
   const runtimePaths = resolveRuntimeRootPaths(config.runtimeDir);
   const initialEndpoint =
     runtimeConfig.mode === "external"
-      ? runtimeConfig.externalUrl ?? config.comfyUrl
+      ? runtimeConfig.externalUrl ?? DEFAULT_EXTERNAL_COMFY_URL
       : `http://${manifest.launch.host}:${
           runtimeConfig.port ?? manifest.launch.portRange.from
         }`;
@@ -599,25 +496,7 @@ export async function createRuntime(
     overrides.secretStore ??
     new DpapiFileSecretStore(join(config.dataDir, "secrets"));
   const tokenService = new CivitaiTokenService(secrets);
-  const credentialLease = new ManagedLoraManagerCredentialLease(secrets);
   const logs = new RuntimeLogService({ directory: runtimePaths.logs });
-  const environmentProvider = {
-    async provide(
-      baseEnvironment: Record<string, string | undefined>,
-      context: { releaseRoot: string },
-    ): Promise<Record<string, string | undefined>> {
-      if (!(await verifiedLoraManagerContract(context.releaseRoot))) {
-        throw new Error(
-          "Managed LoRA Manager credential contract is missing. Repair the runtime.",
-        );
-      }
-      return credentialLease.withEnvironment(
-        SAFE_LORA_MANAGER_SECRET_CONTRACT,
-        baseEnvironment,
-        (environment) => ({ ...environment }),
-      );
-    },
-  };
   const installer = new ManagedRuntimeInstaller({
     paths: runtimePaths,
     repository: runtimeRepository,
@@ -685,7 +564,6 @@ export async function createRuntime(
     manifest,
     readiness,
     jobs: new StudioRuntimeActiveJobs(repository),
-    environmentProvider,
     gracefulStopMs: config.managedRuntimeStopTimeoutMs,
   });
   const runtimeController = new ManagedComfyRuntimeController({
@@ -722,27 +600,6 @@ export async function createRuntime(
   );
   jobs.setSubmissionListener((jobId) => tracker.refreshJob(jobId));
 
-  const loraManagerTransport = new RuntimeLoraManagerTransport(
-    async () => {
-      const state = runtimeRepository.getState();
-      const contractValid =
-        state.process !== null &&
-        (await verifiedLoraManagerContract(state.process.releaseRoot));
-      const reason = modelDownloadUnavailableReason(
-        state,
-        contractValid,
-      );
-      if (reason) {
-        throw new CivitaiError(
-          "INCOMPATIBLE_LORA_MANAGER",
-          reason,
-          409,
-        );
-      }
-      return state.endpoint;
-    },
-    config.requestTimeoutMs,
-  );
   const modelDestinations = new DestinationRegistry([
     {
       id: "loras",
@@ -780,7 +637,7 @@ export async function createRuntime(
     new CivitaiModelLibraryService(
       new CivitaiApiClient(new FetchCivitaiHttpTransport(), secrets),
       tokenService,
-      new PinnedLoraManagerClient(loraManagerTransport),
+      new DirectCivitaiDownloadClient(secrets),
       modelDestinations,
       new NodeFileHasher(),
       new QuarantineInvalidDownloadHandler(
@@ -813,6 +670,7 @@ export async function createRuntime(
   const storageInventory = new StorageInventoryService(repository, {
     dataDir: config.dataDir,
     modelRoots: [runtimePaths.models],
+    loraRoot: join(runtimePaths.models, "loras"),
   });
   const onboarding = new OnboardingService(repository, async () => {
     const [status, report, ready] = await Promise.all([
@@ -871,14 +729,14 @@ export async function createRuntime(
 
   let recoveredState = await runtimeController.recover();
   if (
-    recoveredState.mode === "managed" &&
-    recoveredState.activeBundleId &&
-    !recoveredState.process &&
-    runtimeConfig.autoStart
+    shouldAutoStartManagedRuntime(
+      recoveredState,
+      runtimeController.manifest.bundleId,
+      runtimeConfig.autoStart,
+    )
   ) {
     try {
       recoveredState = await runtimeController.start();
-      repository.setSetting(CIVITAI_RESTART_REQUIRED_SETTING, false);
     } catch (error) {
       (overrides.logger ?? console).warn(
         "Managed ComfyUI auto-start failed.",
@@ -915,7 +773,6 @@ export async function createRuntime(
     modelLibrary,
     huggingFaceLibrary,
     modelDownloads,
-    verifiedLoraManagerContract,
   });
 
   if (trackerEnabled && gateway.available && !tracker.running) {
@@ -978,7 +835,6 @@ interface AppServices {
   modelLibrary: ModelLibraryService;
   huggingFaceLibrary: HuggingFaceLibraryService;
   modelDownloads: ModelDownloadCoordinator;
-  verifiedLoraManagerContract(releaseRoot: string): Promise<boolean>;
 }
 
 export function createApp(services: AppServices): Hono {
@@ -1181,16 +1037,13 @@ export function createApp(services: AppServices): Hono {
           await services.runtimeController.status()
         ).state;
         if (
-          services.runtimeConfig().autoStart &&
-          completed.mode === "managed" &&
-          completed.activeBundleId &&
-          !completed.process
+          shouldAutoStartManagedRuntime(
+            completed,
+            services.runtimeController.manifest.bundleId,
+            services.runtimeConfig().autoStart,
+          )
         ) {
           const started = await services.runtimeController.start();
-          services.repository.setSetting(
-            CIVITAI_RESTART_REQUIRED_SETTING,
-            false,
-          );
           await services.syncGateway(started);
         } else {
           await services.syncGateway(completed);
@@ -1261,10 +1114,6 @@ export function createApp(services: AppServices): Hono {
         409,
       );
     }
-    services.repository.setSetting(
-      CIVITAI_RESTART_REQUIRED_SETTING,
-      false,
-    );
     await services.syncGateway(state);
     return c.json({ runtime: await runtimeResponse() });
   });
@@ -1299,10 +1148,6 @@ export function createApp(services: AppServices): Hono {
     }
     const force = await forceParameter(c.req.raw);
     const state = await services.runtimeController.restart({ force });
-    services.repository.setSetting(
-      CIVITAI_RESTART_REQUIRED_SETTING,
-      false,
-    );
     await services.syncGateway(state);
     return c.json({ runtime: await runtimeResponse() });
   });
@@ -1585,38 +1430,12 @@ export function createApp(services: AppServices): Hono {
   const civitaiProvider = async () => {
     const base = await services.modelLibrary.providerStatus();
     const state = (await services.runtimeController.status()).state;
-    const restartRequired =
-      services.repository.getSetting<boolean>(
-        CIVITAI_RESTART_REQUIRED_SETTING,
-      ) === true;
-    const contractValid =
-      state.process !== null &&
-      (await services.verifiedLoraManagerContract(
-        state.process.releaseRoot,
-      ));
-    let reason = modelDownloadUnavailableReason(
-      state,
-      contractValid,
-    );
-    if (!reason && !services.gateway.available) {
-      reason = "Managed ComfyUI is not ready for model downloads.";
-    }
-    if (
-      !reason &&
-      !(await services.gateway.health().catch(() => false))
-    ) {
-      reason = "Managed ComfyUI is not responding.";
-    }
-    if (!reason && restartRequired) {
-      reason =
-        "Restart managed ComfyUI to apply the updated Civitai credential.";
-    }
+    const reason = modelDownloadUnavailableReason(state);
     return {
       ...base,
       available: reason === null,
       managedDownloads: reason === null,
       ...(reason ? { reason } : {}),
-      restartRequired,
     };
   };
 
@@ -1624,7 +1443,7 @@ export function createApp(services: AppServices): Hono {
     const provider = await civitaiProvider();
     if (!provider.available) {
       throw new CivitaiError(
-        "INCOMPATIBLE_LORA_MANAGER",
+        "DOWNLOAD_FAILED",
         provider.reason ??
           "Managed model downloads are not available.",
         409,
@@ -1685,33 +1504,11 @@ export function createApp(services: AppServices): Hono {
       );
     }
     await services.modelLibrary.setToken(token);
-    const state = (await services.runtimeController.status()).state;
-    if (
-      state.mode === "managed" &&
-      state.status === "ready" &&
-      state.process
-    ) {
-      services.repository.setSetting(
-        CIVITAI_RESTART_REQUIRED_SETTING,
-        true,
-      );
-    }
     return c.json({ provider: await civitaiProvider() });
   });
 
   app.delete("/api/download-providers/civitai/token", async (c) => {
     await services.modelLibrary.deleteToken();
-    const state = (await services.runtimeController.status()).state;
-    if (
-      state.mode === "managed" &&
-      state.status === "ready" &&
-      state.process
-    ) {
-      services.repository.setSetting(
-        CIVITAI_RESTART_REQUIRED_SETTING,
-        true,
-      );
-    }
     return c.json({ provider: await civitaiProvider() });
   });
 
@@ -1810,6 +1607,15 @@ export function createApp(services: AppServices): Hono {
     return c.json(task, 202);
   });
 
+  app.get("/api/model-installations/civitai/loras", (c) =>
+    c.json({
+      installations: services.modelDownloads.listInstallations(
+        "civitai",
+        "loras",
+      ),
+    }),
+  );
+
   app.delete("/api/model-installations/:id", async (c) => {
     const removed = await services.modelDownloads.remove(
       c.req.param("id"),
@@ -1889,14 +1695,23 @@ export function createApp(services: AppServices): Hono {
       });
     }
     const options = await services.capabilities.options();
-    const enrichedLoras = services.comfy.getLoraMetadata
-      ? await services.comfy
-          .getLoraMetadata(options.loras)
-          .catch(() => null)
-      : null;
+    const civitaiLoras = services.modelDownloads.listInstallations(
+      "civitai",
+      "loras",
+    );
+    const enrichedLoras = await services.modelLibrary
+      .getLoraMetadata(options.loras, civitaiLoras)
+      .catch(() => null);
     return c.json({
       ...options,
-      loras: enrichedLoras ?? options.loras,
+      loras: (enrichedLoras ?? options.loras).map((lora) =>
+        typeof lora === "string" || !lora.thumbnailUrl
+          ? lora
+          : {
+              ...lora,
+              thumbnailUrl: `/api/lora-thumbnail?lora=${encodeURIComponent(lora.value)}`,
+            },
+      ),
       upscaleMethods: [
         "nearest-exact",
         "bilinear",
@@ -1904,6 +1719,31 @@ export function createApp(services: AppServices): Hono {
         "bicubic",
         "bislerp",
       ],
+    });
+  });
+
+  app.get("/api/lora-thumbnail", async (c) => {
+    const lora = c.req.query("lora") ?? "";
+    if (!lora || lora.length > 1_024) {
+      throw new JobSubmissionError("LoRA thumbnail request is invalid.", 400);
+    }
+    const installed = (await services.capabilities.options()).loras;
+    if (!installed.includes(lora)) {
+      throw new JobSubmissionError("LoRA thumbnail was not found.", 404);
+    }
+    const thumbnail = await services.modelLibrary.downloadLoraThumbnail(
+      lora,
+      services.modelDownloads.listInstallations("civitai", "loras"),
+    );
+    if (!thumbnail?.contentType?.startsWith("image/")) {
+      throw new JobSubmissionError("LoRA thumbnail was not found.", 404);
+    }
+    return new Response(thumbnail.bytes.slice().buffer, {
+      headers: {
+        "content-type": thumbnail.contentType,
+        "content-length": String(thumbnail.bytes.byteLength),
+        "cache-control": "private, max-age=3600",
+      },
     });
   });
 
@@ -2055,6 +1895,11 @@ export function createApp(services: AppServices): Hono {
 
   app.get("/api/jobs/:id", (c) => {
     return c.json({ job: services.jobs.get(c.req.param("id")) });
+  });
+
+  app.delete("/api/jobs/:id", async (c) => {
+    await services.jobs.delete(c.req.param("id"));
+    return c.body(null, 204);
   });
 
   app.get("/api/jobs/:id/preview", async (c) => {

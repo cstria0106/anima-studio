@@ -5,7 +5,6 @@ import Image from "next/image";
 import {
   AlertTriangle,
   Ban,
-  CheckCircle2,
   Clock3,
   Download,
   ExternalLink,
@@ -24,12 +23,11 @@ import { ResultActionBar } from "@/components/result-action-bar";
 import { cancelJob, upscaleJob } from "@/lib/api";
 import type {
   CapabilitiesResponse,
-  HealthResponse,
   JobStatus,
   StudioJob,
 } from "@/lib/types";
 import type { PreflightIssue } from "@/lib/studio-ux";
-import { cn, formatElapsed, outputUrl } from "@/lib/utils";
+import { formatElapsed, outputUrl } from "@/lib/utils";
 import { useJobTracker } from "@/components/use-job-tracker";
 
 const stageLabels: Record<string, string> = {
@@ -63,7 +61,6 @@ const statusMeta: Record<
 
 interface JobPanelProps {
   job: StudioJob | null;
-  health: HealthResponse | null;
   capabilities: CapabilitiesResponse | null;
   submitting: boolean;
   canGenerate: boolean;
@@ -73,14 +70,12 @@ interface JobPanelProps {
   onGenerate: () => void;
   onJobUpdate: (job: StudioJob) => void;
   onLoadSettings: (job: StudioJob) => void;
-  onRepeat: (job: StudioJob) => Promise<void>;
-  onNewSeed: (job: StudioJob) => Promise<void>;
-  onEditPrompt: (job: StudioJob) => void;
+  onLoadSeed: (job: StudioJob) => void;
+  onOpenDetail: (job: StudioJob, outputId?: string) => void;
 }
 
 export function JobPanel({
   job,
-  health,
   capabilities,
   submitting,
   canGenerate,
@@ -90,9 +85,8 @@ export function JobPanel({
   onGenerate,
   onJobUpdate,
   onLoadSettings,
-  onRepeat,
-  onNewSeed,
-  onEditPrompt,
+  onLoadSeed,
+  onOpenDetail,
 }: JobPanelProps) {
   const latestEvent = useJobTracker(job, onJobUpdate);
   const [selectedOutputId, setSelectedOutputId] = React.useState<string | null>(
@@ -183,72 +177,48 @@ export function JobPanel({
   return (
     <aside
       id="execution-dock"
-      className="hidden 2xl:sticky 2xl:top-28 2xl:block"
+      className="hidden 2xl:block"
     >
       <div className="glass-surface overflow-hidden rounded-xl border border-border shadow-sm">
-        <div className="flex items-center justify-between border-b border-border/70 px-4 py-3">
-          <div className="flex items-center gap-2">
-            <span
-              className={cn(
-                "size-2 rounded-full",
-                health?.comfyui || (health?.ok && health.comfyui !== false)
-                  ? "bg-success"
-                  : "bg-danger",
-              )}
-            />
-            <span className="text-xs font-medium">실행 Dock</span>
-          </div>
-          <Badge
-            variant={
-              health?.comfyui || (health?.ok && health.comfyui !== false)
-                ? "success"
-                : "destructive"
-            }
-          >
-            {health?.comfyui || (health?.ok && health.comfyui !== false)
-              ? "준비됨"
-              : "오프라인"}
-          </Badge>
-        </div>
-
         <div className="relative aspect-[4/5] overflow-hidden bg-[#0b0b0e] panel-grid">
           {preview ? (
             <>
               <Image
                 key={`${preview.url}:${preview.revision ?? preview.updatedAt ?? ""}`}
                 src={outputUrl(preview.url)}
-                alt="현재 디노이즈 과정 미리보기"
+                alt="현재 이미지 생성 과정"
                 fill
                 unoptimized
                 priority
                 sizes="(max-width: 1280px) 100vw, 360px"
                 className="object-contain"
               />
-              <div className="absolute inset-x-3 top-3 flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/65 px-3 py-2 text-[10px] text-white/85 backdrop-blur">
-                <span className="inline-flex items-center gap-1.5">
-                  <Sparkles className="size-3 text-pink-300" />
-                  디노이즈 미리보기
-                </span>
-                {typeof preview.step === "number" &&
-                typeof preview.total === "number" ? (
+              {typeof preview.step === "number" &&
+              typeof preview.total === "number" ? (
+                <div className="absolute right-3 top-3 rounded-lg border border-white/10 bg-black/65 px-3 py-2 text-[10px] text-white/85 backdrop-blur">
                   <span className="tabular-nums" aria-live="polite">
                     {preview.step} / {preview.total}
                   </span>
-                ) : (
-                  <span className="text-white/55">생성 중</span>
-                )}
-              </div>
+                </div>
+              ) : null}
             </>
-          ) : output ? (
-            <Image
-              src={outputUrl(output.url ?? output.id)}
-              alt={`${output.kind} 생성 결과`}
-              fill
-              unoptimized
-              priority
-              sizes="(max-width: 1280px) 100vw, 360px"
-              className="object-contain"
-            />
+          ) : output && job ? (
+            <button
+              type="button"
+              className="absolute inset-0 cursor-zoom-in outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              onClick={() => onOpenDetail(job, output.id)}
+              aria-label="생성 상세 열기"
+            >
+              <Image
+                src={outputUrl(output.url ?? output.id)}
+                alt={`${output.kind} 생성 결과`}
+                fill
+                unoptimized
+                priority
+                sizes="(max-width: 1280px) 100vw, 360px"
+                className="object-contain"
+              />
+            </button>
           ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center px-8 text-center">
               {active ? (
@@ -262,9 +232,6 @@ export function JobPanel({
                   <p className="text-sm font-medium">
                     {stageLabels[job.stage ?? ""] ?? "작업 진행 중"}
                   </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    결과가 준비되면 이곳에 표시됩니다.
-                  </p>
                 </>
               ) : (
                 <>
@@ -273,9 +240,6 @@ export function JobPanel({
                   </span>
                   <p className="text-sm font-medium text-foreground/85">
                     결과 미리보기
-                  </p>
-                  <p className="mt-1 max-w-52 text-xs leading-5 text-muted-foreground">
-                    왼쪽 설정을 마친 뒤 생성하면 진행 상황과 결과를 한곳에서 볼 수 있어요.
                   </p>
                 </>
               )}
@@ -314,26 +278,26 @@ export function JobPanel({
         <div className="space-y-4 border-t border-border/70 p-4">
           {job ? (
             <div className="space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-2">
-                  {active ? (
-                    <LoaderCircle className="size-4 shrink-0 animate-spin text-pink-300" />
-                  ) : job.status === "completed" ? (
-                    <CheckCircle2 className="size-4 shrink-0 text-emerald-300" />
-                  ) : job.status === "cancelled" ? (
-                    <PauseCircle className="size-4 shrink-0 text-muted-foreground" />
-                  ) : (
-                    <AlertTriangle className="size-4 shrink-0 text-red-300" />
-                  )}
-                  <p className="truncate text-xs font-medium">
-                    {stageLabels[job.stage ?? ""] ??
-                      statusMeta[job.status].label}
-                  </p>
+              {job.status !== "completed" ? (
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    {active ? (
+                      <LoaderCircle className="size-4 shrink-0 animate-spin text-pink-300" />
+                    ) : job.status === "cancelled" ? (
+                      <PauseCircle className="size-4 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <AlertTriangle className="size-4 shrink-0 text-red-300" />
+                    )}
+                    <p className="truncate text-xs font-medium">
+                      {stageLabels[job.stage ?? ""] ??
+                        statusMeta[job.status].label}
+                    </p>
+                  </div>
+                  <Badge variant={statusMeta[job.status].variant}>
+                    {statusMeta[job.status].label}
+                  </Badge>
                 </div>
-                <Badge variant={statusMeta[job.status].variant}>
-                  {statusMeta[job.status].label}
-                </Badge>
-              </div>
+              ) : null}
 
               {active ? (
                 <>
@@ -389,10 +353,8 @@ export function JobPanel({
                   job={job}
                   compact
                   canUpscale={canUpscaleResult}
-                  onRepeat={onRepeat}
-                  onNewSeed={onNewSeed}
-                  onEditPrompt={onEditPrompt}
                   onLoadSettings={onLoadSettings}
+                  onLoadSeed={onLoadSeed}
                   onUpscale={async () => handleUpscale()}
                 />
               ) : null}
@@ -406,16 +368,14 @@ export function JobPanel({
                 </p>
               ) : null}
             </div>
-          ) : (
+          ) : !capabilities?.ready ? (
             <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2 text-xs text-muted-foreground">
               <Server className="size-3.5" />
-              {capabilities?.ready
-                ? "필수 노드 확인 완료"
-                : capabilities
-                  ? `${capabilities.missingNodes.length}개 항목 확인 필요`
-                  : "서버 상태 확인 중"}
+              {capabilities
+                ? `${capabilities.missingNodes.length}개 항목 확인 필요`
+                : "서버 상태 확인 중"}
             </div>
-          )}
+          ) : null}
 
           {active ? (
             <Button
@@ -447,7 +407,7 @@ export function JobPanel({
               ) : (
                 <Play />
               )}
-              {job ? "현재 설정으로 다시 생성" : "생성 시작"}
+              생성
             </Button>
           )}
 

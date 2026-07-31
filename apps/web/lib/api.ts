@@ -13,6 +13,7 @@ import {
   type JobListResponse,
   type LongOperation,
   type LoraOption,
+  type ManagedModelInstallation,
   type ModelInstallTask,
   type ModelOption,
   type OnboardingStatus,
@@ -47,6 +48,8 @@ interface ApiGenerationConfig {
     modelStrength: number;
     clipStrength: number;
     enabled: boolean;
+    triggerWords?: string[];
+    useTriggerWords?: boolean;
   }>;
   instantLora: {
     profile: string;
@@ -573,6 +576,8 @@ function draftToConfig(draft: GenerationDraft): ApiGenerationConfig {
       modelStrength: lora.modelStrength,
       clipStrength: lora.clipStrength,
       enabled: lora.enabled,
+      triggerWords: lora.triggerWords,
+      useTriggerWords: lora.useTriggerWords,
     })),
     instantLora: {
       profile: "anima",
@@ -652,7 +657,8 @@ function configToDraft(config: ApiGenerationConfig): GenerationDraft {
             enabled: lora.enabled !== false,
             modelStrength: lora.modelStrength,
             clipStrength: lora.clipStrength,
-            triggerWords: [],
+            triggerWords: lora.triggerWords ?? [],
+            useTriggerWords: lora.useTriggerWords !== false,
           }),
         )
       : [],
@@ -804,6 +810,12 @@ export async function getJob(id: string, signal?: AbortSignal) {
     { signal },
   );
   return normalizeJob(raw);
+}
+
+export async function deleteJob(id: string): Promise<void> {
+  await apiFetch<void>(`/api/jobs/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
 }
 
 export async function getJobs(
@@ -1046,9 +1058,6 @@ export async function getCivitaiProvider(
       ? provider.destinations
       : [],
     ...(provider.reason ? { reason: provider.reason } : {}),
-    ...(provider.restartRequired !== undefined
-      ? { restartRequired: provider.restartRequired }
-      : {}),
   };
 }
 
@@ -1067,9 +1076,6 @@ function normalizeCivitaiProvider(
       ? provider.destinations
       : [],
     ...(provider.reason ? { reason: provider.reason } : {}),
-    ...(provider.restartRequired !== undefined
-      ? { restartRequired: provider.restartRequired }
-      : {}),
   };
 }
 
@@ -1142,6 +1148,17 @@ export async function createCivitaiModelInstallation(
       body: JSON.stringify(input),
     },
   );
+}
+
+export async function getCivitaiLoraInstallations(
+  signal?: AbortSignal,
+): Promise<ManagedModelInstallation[]> {
+  const response = await apiFetch<{
+    installations: ManagedModelInstallation[];
+  }>("/api/model-installations/civitai/loras", { signal });
+  return Array.isArray(response.installations)
+    ? response.installations
+    : [];
 }
 
 export async function removeModelInstallation(id: string): Promise<void> {

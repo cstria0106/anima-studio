@@ -33,6 +33,7 @@ export interface VerifiedFileDownload {
   filename: string;
   bytes: number;
   sha256: string;
+  headers?: Readonly<Record<string, string>>;
 }
 
 export interface VerifiedFileDownloader {
@@ -50,6 +51,16 @@ export class ArtifactIntegrityError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "ArtifactIntegrityError";
+  }
+}
+
+export class FileDownloadHttpError extends Error {
+  constructor(
+    readonly artifactId: string,
+    readonly status: number,
+  ) {
+    super(`Could not download ${artifactId}: HTTP ${status}.`);
+    this.name = "FileDownloadHttpError";
   }
 }
 
@@ -152,7 +163,7 @@ export class VerifiedResumableFileDownloader
       offset = 0;
     }
 
-    const headers = new Headers();
+    const headers = new Headers(artifact.headers);
     if (offset > 0) headers.set("range", `bytes=${offset}-`);
     const request: RequestInit = {
       headers,
@@ -171,9 +182,7 @@ export class VerifiedResumableFileDownloader
       return finalPath;
     }
     if (!response.ok || !response.body) {
-      throw new Error(
-        `Could not download ${artifact.id}: HTTP ${response.status}.`,
-      );
+      throw new FileDownloadHttpError(artifact.id, response.status);
     }
 
     let append = offset > 0 && response.status === 206;

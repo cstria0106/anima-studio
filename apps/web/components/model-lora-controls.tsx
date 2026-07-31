@@ -4,22 +4,15 @@ import * as React from "react";
 import Image from "next/image";
 import {
   AlertTriangle,
-  ArrowDown,
-  ArrowUp,
   Box,
-  Check,
-  ChevronDown,
   ImageIcon,
   Plus,
   Search,
   Sparkle,
-  Tags,
   Trash2,
 } from "lucide-react";
 import { SearchableSelect } from "@/components/searchable-select";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CommittedNumberField } from "@/components/ui/committed-number-field";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -29,7 +22,7 @@ import type {
   LoraSelection,
   StudioOptions,
 } from "@/lib/types";
-import { cn, uniqueId } from "@/lib/utils";
+import { uniqueId } from "@/lib/utils";
 
 interface ModelLoraControlsProps {
   models: GenerationDraft["models"];
@@ -38,9 +31,127 @@ interface ModelLoraControlsProps {
   loading?: boolean;
   onModelsChange: (models: GenerationDraft["models"]) => void;
   onLorasChange: (loras: LoraSelection[]) => void;
-  onInsertTriggers: (words: string[]) => void;
   validationWarning?: string;
   validationFieldId?: string;
+}
+
+function LoraThumbnail({
+  src,
+  size,
+  fallback,
+}: {
+  src?: string;
+  size: number;
+  fallback: React.ReactNode;
+}) {
+  const [failed, setFailed] = React.useState(false);
+
+  React.useEffect(() => setFailed(false), [src]);
+
+  if (!src || failed) return fallback;
+  return (
+    <Image
+      src={src}
+      alt=""
+      fill
+      unoptimized
+      sizes={`${size}px`}
+      className="object-contain"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+function StrengthSlider({
+  id,
+  label,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const [showValue, setShowValue] = React.useState(false);
+  const hideTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const min = -1;
+  const max = 1;
+  const position = ((value - min) / (max - min)) * 100;
+  const tooltipPosition = Math.min(94, Math.max(6, position));
+
+  React.useEffect(
+    () => () => {
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    },
+    [],
+  );
+
+  function showKeyboardValue() {
+    setShowValue(true);
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = setTimeout(() => setShowValue(false), 900);
+  }
+
+  return (
+    <div className="grid grid-cols-[2rem_minmax(0,1fr)_2rem] items-center gap-1.5">
+      <label
+        htmlFor={id}
+        className="text-[9px] font-medium text-muted-foreground"
+      >
+        {label}
+      </label>
+      <div className="relative">
+        {showValue ? (
+          <div
+            role="tooltip"
+            className="pointer-events-none absolute bottom-full z-20 mb-1 -translate-x-1/2 rounded-md border border-white/10 bg-popover/95 px-2 py-1 text-[11px] font-semibold tabular-nums text-popover-foreground shadow-glass backdrop-blur-xl"
+            style={{ left: `${tooltipPosition}%` }}
+          >
+            {value.toFixed(2)}
+          </div>
+        ) : null}
+        <input
+          id={id}
+          type="range"
+          min={min}
+          max={max}
+          step={0.05}
+          value={value}
+          aria-valuetext={value.toFixed(2)}
+          className="h-1 w-full cursor-pointer appearance-none rounded-full bg-muted accent-primary outline-none transition focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed [&::-moz-range-thumb]:size-3 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border [&::-moz-range-thumb]:border-background [&::-moz-range-thumb]:bg-primary [&::-moz-range-thumb]:shadow-md [&::-webkit-slider-thumb]:size-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-background [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-md"
+          onChange={(event) => onChange(Number(event.currentTarget.value))}
+          onPointerDown={() => {
+            if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+            setShowValue(true);
+          }}
+          onPointerUp={() => setShowValue(false)}
+          onPointerCancel={() => setShowValue(false)}
+          onKeyDown={(event) => {
+            if (
+              event.key === "ArrowLeft" ||
+              event.key === "ArrowRight" ||
+              event.key === "ArrowUp" ||
+              event.key === "ArrowDown" ||
+              event.key === "Home" ||
+              event.key === "End" ||
+              event.key === "PageUp" ||
+              event.key === "PageDown"
+            ) {
+              showKeyboardValue();
+            }
+          }}
+          onBlur={() => setShowValue(false)}
+        />
+      </div>
+      <output
+        htmlFor={id}
+        className="number-input text-right text-[9px] font-medium text-foreground"
+      >
+        {value.toFixed(2)}
+      </output>
+    </div>
+  );
 }
 
 function LoraFinder({
@@ -112,18 +223,11 @@ function LoraFinder({
                 }}
               >
                 <div className="relative grid size-10 shrink-0 place-items-center overflow-hidden rounded-md border border-border bg-muted text-muted-foreground">
-                  {option.thumbnailUrl ? (
-                    <Image
-                      src={option.thumbnailUrl}
-                      alt=""
-                      fill
-                      unoptimized
-                      sizes="40px"
-                      className="object-cover"
-                    />
-                  ) : (
-                    <Sparkle className="size-4" />
-                  )}
+                  <LoraThumbnail
+                    src={option.thumbnailUrl}
+                    size={40}
+                    fallback={<Sparkle className="size-4" />}
+                  />
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{option.name}</p>
@@ -156,22 +260,18 @@ export function ModelLoraControls({
   loading,
   onModelsChange,
   onLorasChange,
-  onInsertTriggers,
   validationWarning,
-  validationFieldId,
 }: ModelLoraControlsProps) {
-  const detailsRef = React.useRef<HTMLDetailsElement>(null);
-
-  React.useEffect(() => {
-    if (!validationWarning || !detailsRef.current) return;
-    detailsRef.current.open = true;
-    const frame = window.requestAnimationFrame(() => {
-      document
-        .getElementById(validationFieldId ?? "model-settings-summary")
-        ?.focus();
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [validationFieldId, validationWarning]);
+  const loraOptionsByPath = React.useMemo(
+    () =>
+      new Map(
+        options.loras.map((option) => [
+          option.value.replaceAll("\\", "/").toLowerCase(),
+          option,
+        ]),
+      ),
+    [options.loras],
+  );
 
   function addLora(option: LoraOption) {
     onLorasChange([
@@ -184,6 +284,7 @@ export function ModelLoraControls({
         modelStrength: 1,
         clipStrength: 1,
         triggerWords: option.triggerWords ?? [],
+        useTriggerWords: true,
         thumbnailUrl: option.thumbnailUrl,
       },
     ]);
@@ -195,37 +296,8 @@ export function ModelLoraControls({
     );
   }
 
-  function moveLora(index: number, direction: -1 | 1) {
-    const nextIndex = index + direction;
-    if (nextIndex < 0 || nextIndex >= loras.length) return;
-    const next = [...loras];
-    const [item] = next.splice(index, 1);
-    next.splice(nextIndex, 0, item);
-    onLorasChange(next);
-  }
-
   return (
-    <details
-      ref={detailsRef}
-      className="group rounded-xl border border-border/70 bg-card/45"
-    >
-      <summary
-        id="model-settings-summary"
-        className="flex cursor-pointer list-none items-center gap-3 px-4 py-3"
-      >
-        <span className="inline-flex items-center gap-2 text-sm font-medium">
-          <Box className="size-4 text-pink-300" />
-          모델 · CLIP · VAE · LoRA
-        </span>
-        <span className="ml-auto max-w-[45%] truncate text-[10px] text-muted-foreground">
-          {models.diffusion
-            ? models.diffusion.split(/[\\/]/).at(-1)
-            : "모델 미선택"}
-          {loras.length ? ` · LoRA ${loras.length}` : ""}
-        </span>
-        <ChevronDown className="size-4 text-muted-foreground transition group-open:rotate-180" />
-      </summary>
-      <div className="space-y-6 border-t border-border/60 p-4">
+    <div className="space-y-6">
       {validationWarning ? (
         <div
           role="alert"
@@ -244,7 +316,7 @@ export function ModelLoraControls({
             </span>
           }
           htmlFor="diffusion-model"
-          hint={loading ? "불러오는 중…" : `${options.diffusionModels.length}개`}
+          hint={loading ? "불러오는 중…" : undefined}
         >
           <SearchableSelect
             id="diffusion-model"
@@ -282,15 +354,7 @@ export function ModelLoraControls({
       <div className="h-px bg-border/70" />
 
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-medium">Style LoRA</h3>
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              위에서 아래 순서로 적용됩니다.
-            </p>
-          </div>
-          <Badge variant="secondary">{loras.length}</Badge>
-        </div>
+        <h3 className="text-sm font-medium">LoRA</h3>
 
         <LoraFinder
           options={options.loras}
@@ -299,135 +363,103 @@ export function ModelLoraControls({
         />
 
         {loras.length ? (
-          <div className="space-y-2">
-            {loras.map((lora, index) => (
-              <div
-                key={lora.id}
-                tabIndex={0}
-                onKeyDown={(event) => {
-                  if (event.altKey && event.key === "ArrowUp") {
-                    event.preventDefault();
-                    moveLora(index, -1);
-                  }
-                  if (event.altKey && event.key === "ArrowDown") {
-                    event.preventDefault();
-                    moveLora(index, 1);
-                  }
-                }}
-                className={cn(
-                  "rounded-lg border border-border/75 bg-background/35 p-3 outline-none transition focus-visible:ring-2 focus-visible:ring-primary/30",
-                  !lora.enabled && "opacity-55",
-                )}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="relative grid size-11 shrink-0 place-items-center overflow-hidden rounded-md border border-border bg-muted text-muted-foreground">
-                    {lora.thumbnailUrl ? (
-                      <Image
-                        src={lora.thumbnailUrl}
-                        alt=""
-                        fill
-                        unoptimized
-                        sizes="44px"
-                        className="object-cover"
-                      />
-                    ) : (
-                      <ImageIcon className="size-4" />
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{lora.name}</p>
-                    <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
-                      {lora.path}
-                    </p>
-                  </div>
-                  <Switch
-                    checked={lora.enabled}
-                    onCheckedChange={(enabled) =>
-                      updateLora(lora.id, { enabled })
-                    }
-                    aria-label={`${lora.name} 활성화`}
-                  />
-                </div>
-
-                <div className="mt-3 grid grid-cols-[1fr_1fr_auto] gap-2">
-                  <CommittedNumberField
-                    id={`lora-model-strength-${lora.id}`}
-                    label="Model"
-                    step={0.05}
-                    min={-10}
-                    max={10}
-                    value={lora.modelStrength}
-                    inputClassName="h-9"
-                    onChange={(modelStrength) =>
-                      updateLora(lora.id, { modelStrength })
-                    }
-                  />
-                  <CommittedNumberField
-                    id={`lora-clip-strength-${lora.id}`}
-                    label="CLIP"
-                    step={0.05}
-                    min={-10}
-                    max={10}
-                    value={lora.clipStrength}
-                    inputClassName="h-9"
-                    onChange={(clipStrength) =>
-                      updateLora(lora.id, { clipStrength })
-                    }
-                  />
-                  <div className="flex items-end gap-1">
+          <div className="grid gap-3 sm:grid-cols-2">
+            {loras.map((lora) => {
+              const currentOption = loraOptionsByPath.get(
+                lora.path.replaceAll("\\", "/").toLowerCase(),
+              );
+              const thumbnailUrl =
+                currentOption?.thumbnailUrl ?? lora.thumbnailUrl;
+              return (
+                <div
+                  key={lora.id}
+                  className="overflow-hidden rounded-xl border border-border/75 bg-background/35"
+                >
+                  <div className="relative grid aspect-[4/3] w-full place-items-center overflow-hidden bg-muted text-muted-foreground">
+                    <LoraThumbnail
+                      src={thumbnailUrl}
+                      size={360}
+                      fallback={<ImageIcon className="size-8" />}
+                    />
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/65 to-transparent px-3 pb-3 pt-10 text-white">
+                      <p className="truncate text-sm font-semibold drop-shadow-sm">
+                        {lora.name}
+                      </p>
+                      <p className="mt-0.5 truncate text-[10px] text-white/70">
+                        {lora.path}
+                      </p>
+                      {lora.triggerWords.length ? (
+                        <div
+                          className="mt-1.5 flex max-w-full cursor-pointer items-center gap-1.5 rounded border border-white/10 bg-black/50 px-1.5 py-0.5 text-[9px] text-pink-100 backdrop-blur-sm transition hover:border-white/25 hover:bg-black/70"
+                          title={lora.triggerWords.join(", ")}
+                          onClick={(event) => {
+                            if ((event.target as Element).closest("button")) {
+                              return;
+                            }
+                            updateLora(lora.id, {
+                              useTriggerWords: !lora.useTriggerWords,
+                            });
+                          }}
+                        >
+                          <span className="min-w-0 flex-1 truncate">
+                            {lora.triggerWords.join(", ")}
+                          </span>
+                          <Switch
+                            size="sm"
+                            checked={lora.useTriggerWords}
+                            onCheckedChange={(useTriggerWords) =>
+                              updateLora(lora.id, { useTriggerWords })
+                            }
+                            aria-label={`${lora.name} 키워드 사용`}
+                            title={
+                              lora.useTriggerWords
+                                ? "생성 시 키워드 삽입 끄기"
+                                : "생성 시 키워드 삽입 켜기"
+                            }
+                          />
+                        </div>
+                      ) : null}
+                    </div>
                     <Button
                       type="button"
                       size="icon"
                       variant="ghost"
-                      aria-label={`${lora.name} 위로 이동`}
-                      disabled={index === 0}
-                      onClick={() => moveLora(index, -1)}
-                    >
-                      <ArrowUp />
-                    </Button>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      aria-label={`${lora.name} 아래로 이동`}
-                      disabled={index === loras.length - 1}
-                      onClick={() => moveLora(index, 1)}
-                    >
-                      <ArrowDown />
-                    </Button>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="hover:text-red-300"
+                      className="absolute right-2 top-2 size-8 bg-black/60 text-white/75 backdrop-blur-sm hover:bg-red-500/80 hover:text-white sm:size-8"
                       aria-label={`${lora.name} 제거`}
                       onClick={() =>
-                        onLorasChange(loras.filter((item) => item.id !== lora.id))
+                        onLorasChange(
+                          loras.filter((item) => item.id !== lora.id),
+                        )
                       }
                     >
                       <Trash2 />
                     </Button>
                   </div>
-                </div>
-                {lora.triggerWords.length ? (
-                  <div className="mt-3 flex items-center gap-2">
-                    <Tags className="size-3.5 shrink-0 text-muted-foreground" />
-                    <button
-                      type="button"
-                      className="min-w-0 flex-1 truncate text-left text-[11px] text-pink-200 hover:underline"
-                      onClick={() => onInsertTriggers(lora.triggerWords)}
-                    >
-                      {lora.triggerWords.join(", ")}
-                    </button>
-                    <Check className="size-3 text-muted-foreground" />
+
+                  <div className="space-y-1 px-2.5 py-2">
+                    <StrengthSlider
+                      id={`lora-model-strength-${lora.id}`}
+                      label="Model"
+                      value={lora.modelStrength}
+                      onChange={(modelStrength) =>
+                        updateLora(lora.id, { modelStrength })
+                      }
+                    />
+                    <StrengthSlider
+                      id={`lora-clip-strength-${lora.id}`}
+                      label="CLIP"
+                      value={lora.clipStrength}
+                      onChange={(clipStrength) =>
+                        updateLora(lora.id, { clipStrength })
+                      }
+                    />
                   </div>
-                ) : null}
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </div>
         ) : null}
       </div>
-      </div>
-    </details>
+    </div>
   );
 }

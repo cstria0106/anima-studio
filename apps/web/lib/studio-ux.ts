@@ -6,7 +6,7 @@ import type {
 } from "@/lib/types";
 
 export type CreateStepId = "reference" | "prompt" | "models" | "generation";
-export type SettingsSection = "overview" | "runtime" | "models" | "storage";
+export type SettingsSection = "overview" | "runtime" | "storage";
 
 export const SETTINGS_SECTION_STORAGE_KEY =
   "anima-studio:settings-section:v1";
@@ -67,6 +67,20 @@ export function clearModelAndLoraSelections(
       vae: "",
     },
     loras: [],
+  };
+}
+
+export function loadSeedIntoDraft(
+  draft: GenerationDraft,
+  seed: number,
+): GenerationDraft {
+  return {
+    ...draft,
+    sampling: {
+      ...draft.sampling,
+      seedMode: "fixed",
+      seed,
+    },
   };
 }
 

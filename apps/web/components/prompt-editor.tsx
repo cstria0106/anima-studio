@@ -1,30 +1,22 @@
 "use client";
 
 import * as React from "react";
-import {
-  AlertCircle,
-  ChevronDown,
-  Hash,
-  LoaderCircle,
-  Sparkles,
-  WandSparkles,
-  X,
-} from "lucide-react";
+import { ChevronDown, Hash, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { PromptInspector } from "@/components/prompt-inspector";
 import { Field } from "@/components/ui/field";
-import { Input, Textarea } from "@/components/ui/input";
+import {
+  AutoResizeTextarea,
+  Input,
+  Textarea,
+} from "@/components/ui/input";
 import { searchTags } from "@/lib/api";
-import type {
-  GenerationDraft,
-  LoraSelection,
-  TagSuggestion,
-} from "@/lib/types";
+import type { GenerationDraft, TagSuggestion } from "@/lib/types";
 import {
   cn,
   extractTags,
-  getLastTag,
-  replaceLastTag,
+  getTagAtCursor,
+  replaceTagAtCursor,
+  tagComparisonKey,
 } from "@/lib/utils";
 
 type Prompts = GenerationDraft["prompts"];
@@ -32,8 +24,6 @@ type Prompts = GenerationDraft["prompts"];
 interface PromptEditorProps {
   value: Prompts;
   onChange: (value: Prompts) => void;
-  loras?: LoraSelection[];
-  autoTags?: string[];
 }
 
 function TagTextarea({
@@ -47,41 +37,84 @@ function TagTextarea({
   label: string;
   value: string;
   onChange: (value: string) => void;
-  placeholder: string;
+  placeholder?: string;
 }) {
   const [suggestions, setSuggestions] = React.useState<TagSuggestion[]>([]);
-  const [loading, setLoading] = React.useState(false);
   const [open, setOpen] = React.useState(false);
+  const [autocompleteActive, setAutocompleteActive] = React.useState(false);
   const [activeIndex, setActiveIndex] = React.useState(0);
+  const [cursor, setCursor] = React.useState(value.length);
+  const autocompleteRef = React.useRef<HTMLDivElement>(null);
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const acceptsSuggestions = React.useRef(false);
+  const pendingCursor = React.useRef<number | null>(null);
   const requestSequence = React.useRef(0);
-  const latestTag = getLastTag(value);
-  const tags = React.useMemo(() => extractTags(value), [value]);
-  const contextTags = React.useMemo(
-    () => tags.slice(0, Math.max(0, tags.length - 1)),
-    [tags],
+  const activeTag = React.useMemo(
+    () => getTagAtCursor(value, cursor),
+    [cursor, value],
   );
-  const duplicateTags = React.useMemo(() => {
-    const counts = new Map<string, number>();
-    tags.forEach((tag) =>
-      counts.set(tag.toLowerCase(), (counts.get(tag.toLowerCase()) ?? 0) + 1),
+  const latestTag = activeTag.query;
+  const contextTags = React.useMemo(
+    () =>
+      extractTags(
+        `${value.slice(0, activeTag.start)}${value.slice(activeTag.end)}`,
+      ),
+    [activeTag.end, activeTag.start, value],
+  );
+  const includedTagKeys = React.useMemo(
+    () => new Set(contextTags.map(tagComparisonKey)),
+    [contextTags],
+  );
+
+  function isIncluded(suggestion: TagSuggestion) {
+    return includedTagKeys.has(tagComparisonKey(suggestion.tag));
+  }
+
+  function selectableIndex(start: number, direction: -1 | 1, fallback: number) {
+    for (
+      let index = start;
+      index >= 0 && index < suggestions.length;
+      index += direction
+    ) {
+      if (!isIncluded(suggestions[index]!)) return index;
+    }
+    return fallback;
+  }
+
+  React.useLayoutEffect(() => {
+    if (pendingCursor.current === null) return;
+    textareaRef.current?.setSelectionRange(
+      pendingCursor.current,
+      pendingCursor.current,
     );
-    return [...counts.entries()]
-      .filter(([, count]) => count > 1)
-      .map(([tag]) => tag);
-  }, [tags]);
+    pendingCursor.current = null;
+  }, [value]);
+
+  React.useEffect(() => {
+    function dismissOnOutsidePointerDown(event: PointerEvent) {
+      if (
+        autocompleteRef.current?.contains(event.target as Node)
+      ) {
+        return;
+      }
+      acceptsSuggestions.current = false;
+      setAutocompleteActive(false);
+      setOpen(false);
+    }
+
+    document.addEventListener("pointerdown", dismissOnOutsidePointerDown);
+    return () =>
+      document.removeEventListener("pointerdown", dismissOnOutsidePointerDown);
+  }, []);
 
   React.useEffect(() => {
     const requestId = ++requestSequence.current;
-    if (latestTag.length < 1) {
+    if (!autocompleteActive || latestTag.length < 1) {
       setSuggestions([]);
       setOpen(false);
-      setLoading(false);
       return;
     }
     const controller = new AbortController();
-    setSuggestions([]);
-    setOpen(false);
-    setLoading(true);
     void searchTags(latestTag, {
       context: contextTags,
       limit: 10,
@@ -94,9 +127,14 @@ function TagTextarea({
         ) {
           return;
         }
-        setSuggestions(results.slice(0, 10));
-        setOpen(Boolean(results.length));
-        setActiveIndex(0);
+        const visibleResults = results.slice(0, 10);
+        setSuggestions(visibleResults);
+        setOpen(Boolean(results.length) && acceptsSuggestions.current);
+        const firstSelectable = visibleResults.findIndex(
+          (suggestion) =>
+            !includedTagKeys.has(tagComparisonKey(suggestion.tag)),
+        );
+        setActiveIndex(firstSelectable >= 0 ? firstSelectable : 0);
       })
       .catch((error) => {
         if (
@@ -106,54 +144,55 @@ function TagTextarea({
           setSuggestions([]);
           setOpen(false);
         }
-      })
-      .finally(() => {
-        if (
-          !controller.signal.aborted &&
-          requestSequence.current === requestId
-        ) {
-          setLoading(false);
-        }
       });
     return () => {
       controller.abort();
     };
-  }, [contextTags, latestTag]);
+  }, [autocompleteActive, contextTags, includedTagKeys, latestTag]);
 
   function choose(suggestion: TagSuggestion) {
-    onChange(replaceLastTag(value, suggestion.tag));
+    if (isIncluded(suggestion)) return;
+    const completed = replaceTagAtCursor(
+      value,
+      cursor,
+      suggestion.insertText ?? suggestion.tag,
+    );
+    pendingCursor.current = completed.cursor;
+    setCursor(completed.cursor);
+    onChange(completed.value);
     setOpen(false);
   }
 
-  function removeTag(index: number) {
-    const next = [...tags];
-    next.splice(index, 1);
-    onChange(next.length ? `${next.join(", ")}, ` : "");
-  }
-
   return (
-    <Field
-      label={label}
-      htmlFor={id}
-      hint={`${tags.length} tags`}
-      error={
-        duplicateTags.length
-          ? `중복 태그: ${duplicateTags.slice(0, 4).join(", ")}`
-          : undefined
-      }
-    >
-      <div className="relative">
-        <Textarea
+    <Field label={label} htmlFor={id}>
+      <div ref={autocompleteRef} className="relative">
+        <AutoResizeTextarea
+          ref={textareaRef}
           id={id}
           value={value}
-          onChange={(event) => onChange(event.target.value)}
-          onFocus={() => suggestions.length && setOpen(true)}
+          onChange={(event) => {
+            setCursor(event.target.selectionStart);
+            onChange(event.target.value);
+          }}
+          onSelect={(event) => setCursor(event.currentTarget.selectionStart)}
+          onClick={(event) => {
+            acceptsSuggestions.current = true;
+            setAutocompleteActive(true);
+            setCursor(event.currentTarget.selectionStart);
+          }}
+          onFocus={(event) => {
+            acceptsSuggestions.current = true;
+            setAutocompleteActive(true);
+            setCursor(event.currentTarget.selectionStart);
+          }}
+          onBlur={() => {
+            acceptsSuggestions.current = false;
+            setAutocompleteActive(false);
+            setOpen(false);
+          }}
           placeholder={placeholder}
           spellCheck={false}
-          className={cn(
-            "min-h-32 pr-10 font-mono text-[13px]",
-            duplicateTags.length && "border-amber-400/35",
-          )}
+          className="font-mono text-[13px]"
           aria-autocomplete="list"
           aria-controls={`${id}-suggestions`}
           aria-expanded={open}
@@ -161,174 +200,145 @@ function TagTextarea({
             if (!open) return;
             if (event.key === "ArrowDown") {
               event.preventDefault();
-              setActiveIndex((index) =>
-                Math.min(index + 1, suggestions.length - 1),
-              );
+              setActiveIndex((index) => selectableIndex(index + 1, 1, index));
             }
             if (event.key === "ArrowUp") {
               event.preventDefault();
-              setActiveIndex((index) => Math.max(index - 1, 0));
+              setActiveIndex((index) => selectableIndex(index - 1, -1, index));
             }
-            if (event.key === "Enter" && suggestions[activeIndex]) {
+            if (
+              (event.key === "Enter" || event.key === "Tab") &&
+              suggestions[activeIndex] &&
+              !isIncluded(suggestions[activeIndex])
+            ) {
               event.preventDefault();
               choose(suggestions[activeIndex]);
             }
             if (event.key === "Escape") setOpen(false);
           }}
         />
-        <div className="absolute right-3 top-3 text-muted-foreground">
-          {loading ? (
-            <LoaderCircle className="size-4 animate-spin" />
-          ) : (
-            <WandSparkles className="size-4" />
-          )}
-        </div>
         {open ? (
           <div
             id={`${id}-suggestions`}
             role="listbox"
             className="absolute inset-x-0 top-[calc(100%+8px)] z-40 overflow-hidden rounded-lg border border-border bg-popover/95 p-1.5 shadow-2xl backdrop-blur-xl"
           >
-            {suggestions.map((suggestion, index) => (
-              <button
-                type="button"
-                role="option"
-                aria-selected={index === activeIndex}
-                key={suggestion.tag}
-                onMouseEnter={() => setActiveIndex(index)}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => choose(suggestion)}
-                className={cn(
-                  "flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left outline-none hover:bg-accent",
-                  index === activeIndex && "bg-accent",
-                )}
-              >
-                <Hash className="size-3.5 text-pink-300" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm">{suggestion.tag}</span>
-                    {suggestion.category ? (
-                      <Badge variant="outline" className="px-1.5 py-0.5">
-                        {suggestion.category}
-                      </Badge>
+            {suggestions.map((suggestion, index) => {
+              const included = isIncluded(suggestion);
+              return (
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={!included && index === activeIndex}
+                  aria-disabled={included}
+                  disabled={included}
+                  key={suggestion.tag}
+                  onMouseEnter={() => {
+                    if (!included) setActiveIndex(index);
+                  }}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => choose(suggestion)}
+                  className={cn(
+                    "flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left outline-none hover:bg-accent",
+                    !included && index === activeIndex && "bg-accent",
+                    included &&
+                      "cursor-default bg-muted/20 text-muted-foreground opacity-55 grayscale hover:bg-muted/20",
+                  )}
+                >
+                  <Hash
+                    className={cn(
+                      "size-3.5 text-pink-300",
+                      included && "text-muted-foreground",
+                    )}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm">{suggestion.tag}</span>
+                      {suggestion.category ? (
+                        <Badge variant="outline" className="px-1.5 py-0.5">
+                          {suggestion.category}
+                        </Badge>
+                      ) : null}
+                      {included ? (
+                        <Badge variant="outline" className="px-1.5 py-0.5">
+                          포함됨
+                        </Badge>
+                      ) : null}
+                    </div>
+                    {suggestion.description ? (
+                      <p
+                        className="mt-0.5 truncate text-[11px] text-muted-foreground"
+                        title={suggestion.description}
+                      >
+                        {suggestion.description}
+                      </p>
                     ) : null}
                   </div>
-                  {suggestion.description ? (
-                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                      {suggestion.description}
-                    </p>
+                  {suggestion.cooccurrenceCount ? (
+                    <span
+                      className="shrink-0 text-[10px] tabular-nums text-pink-200/75"
+                      title={`${suggestion.matchedContext?.join(", ") || "입력 태그"}와 함께 사용됨`}
+                    >
+                      연관 {suggestion.cooccurrenceCount.toLocaleString()}
+                    </span>
+                  ) : suggestion.count ? (
+                    <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                      {suggestion.count.toLocaleString()}
+                    </span>
                   ) : null}
-                </div>
-                {suggestion.cooccurrenceCount ? (
-                  <span
-                    className="shrink-0 text-[10px] tabular-nums text-pink-200/75"
-                    title={`${suggestion.matchedContext?.join(", ") || "입력 태그"}와 함께 사용됨`}
-                  >
-                    연관 {suggestion.cooccurrenceCount.toLocaleString()}
-                  </span>
-                ) : suggestion.count ? (
-                  <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
-                    {suggestion.count.toLocaleString()}
-                  </span>
-                ) : null}
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         ) : null}
       </div>
-      {tags.length ? (
-        <div className="flex max-h-20 flex-wrap gap-1.5 overflow-y-auto">
-          {tags.slice(0, 24).map((tag, index) => {
-            const duplicate = duplicateTags.includes(tag.toLowerCase());
-            return (
-              <button
-                key={`${tag}-${index}`}
-                type="button"
-                onClick={() => removeTag(index)}
-                className={cn(
-                  "group inline-flex items-center gap-1 rounded-full border border-border bg-secondary/55 px-2 py-1 text-[10px] text-muted-foreground transition hover:border-red-400/25 hover:text-red-200",
-                  duplicate &&
-                    "border-amber-400/25 bg-amber-400/10 text-amber-200",
-                )}
-                aria-label={`${tag} 태그 제거`}
-              >
-                {tag}
-                <X className="size-2.5 opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100" />
-              </button>
-            );
-          })}
-          {tags.length > 24 ? (
-            <Badge variant="outline">+{tags.length - 24}</Badge>
-          ) : null}
-        </div>
-      ) : null}
     </Field>
   );
 }
 
-export function PromptEditor({
-  value,
-  onChange,
-  loras = [],
-  autoTags = [],
-}: PromptEditorProps) {
-  const negativeTagCount = extractTags(value.negative).length;
-  const baseTagCount =
-    extractTags(value.basePositive).length +
-    extractTags(value.baseNegative).length;
-
+export function PromptEditor({ value, onChange }: PromptEditorProps) {
   return (
     <div className="space-y-5">
-      <TagTextarea
-        id="positive-prompt"
-        label="긍정 프롬프트"
-        value={value.positive}
-        onChange={(positive) => onChange({ ...value, positive })}
-        placeholder="1girl, solo, red eyes, white pupils, ..."
-      />
-
-      <Field
-        label={
-          <span className="inline-flex items-center gap-1.5">
-            <Sparkles className="size-3.5 text-violet-300" />
-            자연어 프롬프트
-          </span>
-        }
-        htmlFor="natural-prompt"
-        hint="선택 입력"
-      >
-        <Textarea
-          id="natural-prompt"
-          value={value.natural}
-          onChange={(event) =>
-            onChange({ ...value, natural: event.target.value })
-          }
-          placeholder="부드러운 햇빛 아래 소파에 앉아 고양이 인형을 안고 있다…"
-          className="min-h-24"
+      <div className="space-y-4">
+        <TagTextarea
+          id="positive-prompt"
+          label="긍정"
+          value={value.positive}
+          onChange={(positive) => onChange({ ...value, positive })}
         />
-      </Field>
+
+        <Field
+          label={
+            <span className="inline-flex items-center gap-1.5">
+              <Sparkles className="size-3.5 text-violet-300" />
+              긍정 자연어
+            </span>
+          }
+          htmlFor="natural-prompt"
+        >
+          <AutoResizeTextarea
+            id="natural-prompt"
+            value={value.natural}
+            onChange={(event) =>
+              onChange({ ...value, natural: event.target.value })
+            }
+          />
+        </Field>
+      </div>
+
+      <TagTextarea
+        id="negative-prompt"
+        label="부정"
+        value={value.negative}
+        onChange={(negative) => onChange({ ...value, negative })}
+      />
 
       <details className="group rounded-lg border border-border/70 bg-background/30">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-xs font-medium text-muted-foreground transition hover:text-foreground">
-          <span className="min-w-0">
-            <span className="inline-flex items-center gap-2 text-foreground">
-              <AlertCircle className="size-3.5" />
-              프롬프트 고급 설정
-            </span>
-            <span className="ml-2 truncate text-[11px] font-normal">
-              부정 {negativeTagCount} · 기본 {baseTagCount}
-            </span>
-          </span>
+          <span className="text-foreground">고급</span>
           <ChevronDown className="size-4 transition group-open:rotate-180" />
         </summary>
         <div className="grid gap-4 border-t border-border/60 p-4">
-          <TagTextarea
-            id="negative-prompt"
-            label="추가 부정 프롬프트"
-            value={value.negative}
-            onChange={(negative) => onChange({ ...value, negative })}
-            placeholder="필요한 경우에만 추가하세요"
-          />
           <Field label="기본 긍정" htmlFor="base-positive">
             <Input
               id="base-positive"
@@ -349,11 +359,6 @@ export function PromptEditor({
               className="min-h-20 font-mono text-xs"
             />
           </Field>
-          <PromptInspector
-            prompts={value}
-            loras={loras}
-            autoTags={autoTags}
-          />
         </div>
       </details>
     </div>

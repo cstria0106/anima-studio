@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { getJob } from "./api";
-import type { GenerationDraft } from "./types";
+import { createJob, getJob } from "./api";
+import { DEFAULT_DRAFT, type GenerationDraft } from "./types";
 
 const originalFetch = globalThis.fetch;
 
@@ -47,12 +47,16 @@ describe("history job restoration", () => {
                   modelStrength: 0.65,
                   clipStrength: 0.45,
                   enabled: true,
+                  triggerWords: ["style one", "soft shading"],
+                  useTriggerWords: true,
                 },
                 {
                   name: "loras/style-two.safetensors",
                   modelStrength: -0.2,
                   clipStrength: 1.1,
                   enabled: false,
+                  triggerWords: ["style two"],
+                  useTriggerWords: false,
                 },
               ],
               instantLora: {
@@ -184,7 +188,8 @@ describe("history job restoration", () => {
           enabled: true,
           modelStrength: 0.65,
           clipStrength: 0.45,
-          triggerWords: [],
+          triggerWords: ["style one", "soft shading"],
+          useTriggerWords: true,
         },
         {
           id: "history_lora_1_loras/style-two.safetensors",
@@ -193,7 +198,8 @@ describe("history job restoration", () => {
           enabled: false,
           modelStrength: -0.2,
           clipStrength: 1.1,
-          triggerWords: [],
+          triggerWords: ["style two"],
+          useTriggerWords: false,
         },
       ],
       instantLora: {
@@ -267,6 +273,52 @@ describe("history job restoration", () => {
         width: undefined,
         height: undefined,
         status: "ready",
+      },
+    ]);
+  });
+});
+
+describe("generation job submission", () => {
+  test("submits LoRA trigger words and their generation-time toggle without editing the positive prompt", async () => {
+    let submittedConfig: Record<string, unknown> | undefined;
+    globalThis.fetch = (async (_input, init) => {
+      submittedConfig = (
+        JSON.parse(String(init?.body)) as {
+          config: Record<string, unknown>;
+        }
+      ).config;
+      return new Response(JSON.stringify({ error: "test stop" }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const draft = structuredClone(DEFAULT_DRAFT);
+    draft.prompts.positive = "user prompt";
+    draft.loras = [
+      {
+        id: "lora-submit",
+        name: "Style LoRA",
+        path: "style.safetensors",
+        enabled: true,
+        modelStrength: 0.8,
+        clipStrength: 0.7,
+        triggerWords: ["style trigger"],
+        useTriggerWords: false,
+      },
+    ];
+
+    await createJob(draft).catch(() => undefined);
+
+    expect(submittedConfig?.prompts).toEqual(draft.prompts);
+    expect(submittedConfig?.loras).toEqual([
+      {
+        name: "style.safetensors",
+        enabled: true,
+        modelStrength: 0.8,
+        clipStrength: 0.7,
+        triggerWords: ["style trigger"],
+        useTriggerWords: false,
       },
     ]);
   });

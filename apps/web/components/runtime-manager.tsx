@@ -19,15 +19,9 @@ import {
   Trash2,
   Wrench,
 } from "lucide-react";
-import { ActionConfirmation } from "@/components/action-confirmation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-} from "@/components/ui/card";
-import { Field, SectionHeading } from "@/components/ui/field";
+import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
@@ -172,9 +166,6 @@ export function RuntimeManager({
   const [logQuery, setLogQuery] = React.useState("");
   const [logPaused, setLogPaused] = React.useState(false);
   const [logLive, setLogLive] = React.useState(false);
-  const [forceAction, setForceAction] = React.useState<
-    "stop" | "restart" | null
-  >(null);
   const logViewportRef = React.useRef<HTMLDivElement>(null);
   const localNotifications = useCompletionNotifications();
   const notifications = notificationController ?? localNotifications;
@@ -400,25 +391,21 @@ export function RuntimeManager({
             : null,
       });
       adoptRuntime(next);
-      setNotice("런타임 연결 설정을 저장했습니다.");
+      setNotice("연결 설정을 저장했습니다.");
       onSystemRefresh();
     } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "설정을 저장하지 못했습니다.",
-      );
+      setError(cause instanceof Error ? cause.message : "설정을 저장하지 못했습니다.");
     } finally {
       setSaving(false);
     }
   }
 
-  async function performAction(action: RuntimeAction, force = false) {
+  async function performAction(action: RuntimeAction) {
     setActiveAction(action);
     setError("");
     setNotice("");
     try {
-      const result = await runComfyRuntimeAction(action, {
-        ...(force ? { force: true } : {}),
-      });
+      const result = await runComfyRuntimeAction(action);
       adoptRuntime(result.runtime);
       if (result.operation) setOperation(result.operation);
       setNotice(
@@ -474,25 +461,17 @@ export function RuntimeManager({
   }
 
   const busy =
-    saving ||
-    Boolean(activeAction) ||
+    saving || Boolean(activeAction) ||
     Boolean(runtime && transitionalStates.has(runtime.state));
   const managed = config.mode === "managed";
+  const updateRequired =
+    managed && Boolean(runtime?.bundleId) && !runtime?.installed;
 
   return (
     <div className="space-y-5">
-      <Card id="runtime-manager">
-      <CardHeader>
+      <section id="runtime-manager" className="space-y-5">
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-          <SectionHeading
-            eyebrow={managed ? "Managed engine" : "External engine"}
-            title={managed ? "ComfyUI 런타임" : "외부 ComfyUI 연결"}
-            description={
-              managed
-                ? "앱 전용 ComfyUI의 설치, 실행과 로그를 이 화면에서 관리합니다."
-                : "외부 ComfyUI의 상태와 로그를 확인합니다. 앱은 외부 프로세스를 설치하거나 종료하지 않습니다."
-            }
-          />
+          <h2 className="text-base font-semibold">ComfyUI</h2>
           <div className="flex items-center gap-2">
             <Badge variant={statusVariant(runtime?.state)}>
               {runtime?.state && transitionalStates.has(runtime.state) ? (
@@ -515,8 +494,7 @@ export function RuntimeManager({
             </Button>
           </div>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-5">
+        <div className="space-y-5">
         {error ? (
           <div
             role="alert"
@@ -533,164 +511,120 @@ export function RuntimeManager({
           </div>
         ) : null}
 
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,.8fr)]">
-          <div className="space-y-4 rounded-xl border border-border/70 bg-background/25 p-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field
-                label="연결 모드"
-                hint={managed ? "앱이 설치·실행" : "기존 서버에 연결"}
-                htmlFor="runtime-mode"
+        <div className="space-y-4 border-y border-border/60 py-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="연결 모드" htmlFor="runtime-mode">
+              <select
+                id="runtime-mode"
+                value={config.mode}
+                onChange={(event) =>
+                  setConfig((current) => ({
+                    ...current,
+                    mode: event.target.value as RuntimeConfigUpdate["mode"],
+                  }))
+                }
+                className="h-10 w-full rounded-md border border-input bg-background/55 px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                disabled={busy}
               >
-                <select
-                  id="runtime-mode"
-                  value={config.mode}
+                <option value="managed">Managed</option>
+                <option value="external">External</option>
+              </select>
+            </Field>
+            {managed ? (
+              <Field label="포트" htmlFor="runtime-port">
+                <Input
+                  id="runtime-port"
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={config.port ?? ""}
                   onChange={(event) =>
                     setConfig((current) => ({
                       ...current,
-                      mode: event.target.value as RuntimeConfigUpdate["mode"],
+                      port: event.target.value ? Number(event.target.value) : null,
                     }))
                   }
-                  className="h-10 w-full rounded-md border border-input bg-background/55 px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                  placeholder="자동"
                   disabled={busy}
-                >
-                  <option value="managed">Managed · 자동 관리</option>
-                  <option value="external">External · 기존 ComfyUI</option>
-                </select>
+                />
               </Field>
-              {managed ? (
-                <Field
-                  label="포트"
-                  hint="비우면 자동 선택"
-                  htmlFor="runtime-port"
-                >
-                  <Input
-                    id="runtime-port"
-                    type="number"
-                    min={1}
-                    max={65535}
-                    value={config.port ?? ""}
-                    onChange={(event) =>
-                      setConfig((current) => ({
-                        ...current,
-                        port: event.target.value
-                          ? Number(event.target.value)
-                          : null,
-                      }))
-                    }
-                    placeholder="8188–8199에서 자동 선택"
-                    disabled={busy}
-                  />
-                </Field>
-              ) : (
-                <Field
-                  label="외부 ComfyUI URL"
-                  htmlFor="runtime-external-url"
-                >
-                  <Input
-                    id="runtime-external-url"
-                    value={config.externalUrl ?? ""}
-                    onChange={(event) =>
-                      setConfig((current) => ({
-                        ...current,
-                        externalUrl: event.target.value,
-                      }))
-                    }
-                    placeholder="http://127.0.0.1:8188"
-                    disabled={busy}
-                  />
-                </Field>
-              )}
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/35 p-3">
-                <span>
-                  <span className="block text-xs font-medium">API 시작 시 실행</span>
-                  <span className="mt-0.5 block text-[10px] text-muted-foreground">
-                    관리형 런타임 자동 시작
-                  </span>
-                </span>
-                <Switch
-                  checked={config.autoStart}
-                  onCheckedChange={(autoStart) =>
-                    setConfig((current) => ({ ...current, autoStart }))
+            ) : (
+              <Field label="외부 ComfyUI URL" htmlFor="runtime-external-url">
+                <Input
+                  id="runtime-external-url"
+                  value={config.externalUrl ?? ""}
+                  onChange={(event) =>
+                    setConfig((current) => ({
+                      ...current,
+                      externalUrl: event.target.value,
+                    }))
                   }
-                  disabled={!managed || busy}
+                  placeholder="http://127.0.0.1:8188"
+                  disabled={busy}
                 />
-              </label>
-              <label className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/35 p-3">
-                <span>
-                  <span className="block text-xs font-medium">API 종료 시 정지</span>
-                  <span className="mt-0.5 block text-[10px] text-muted-foreground">
-                    앱이 시작한 프로세스만 종료
-                  </span>
-                </span>
-                <Switch
-                  checked={config.stopWithApi}
-                  onCheckedChange={(stopWithApi) =>
-                    setConfig((current) => ({ ...current, stopWithApi }))
-                  }
-                  disabled={!managed || busy}
-                />
-              </label>
-            </div>
-
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => void saveConfig()}
-                disabled={saving || Boolean(activeAction)}
-              >
-                {saving ? (
-                  <LoaderCircle className="animate-spin" />
-                ) : (
-                  <Save />
-                )}
-                연결 설정 저장
-              </Button>
-            </div>
+              </Field>
+            )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              {
-                label: "엔진",
-                value: runtime?.bundleId ?? (runtime?.installed ? "설치됨" : "—"),
-              },
-              { label: "ComfyUI", value: runtime?.comfyVersion ?? "—" },
-              {
-                label: "GPU",
-                value: runtime?.hardware?.gpuName ?? "확인되지 않음",
-              },
-              {
-                label: "VRAM",
-                value: formatBytes(runtime?.hardware?.vramBytes),
-              },
-              {
-                label: "주소",
-                value: runtime?.comfyUrl ?? "—",
-              },
-              {
-                label: "PID",
-                value: runtime?.pid ? String(runtime.pid) : "—",
-              },
-            ].map((item) => (
-              <div
-                key={item.label}
-                className="min-w-0 rounded-lg border border-border/65 bg-background/25 p-3"
-              >
-                <p className="text-[10px] text-muted-foreground">{item.label}</p>
-                <p className="mt-1 truncate text-xs font-medium" title={item.value}>
-                  {item.value}
-                </p>
-              </div>
-            ))}
+          <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+            <label className="flex items-center justify-between gap-3 py-1">
+              <span className="text-xs font-medium">API 시작 시 실행</span>
+              <Switch
+                checked={config.autoStart}
+                onCheckedChange={(autoStart) =>
+                  setConfig((current) => ({ ...current, autoStart }))
+                }
+                disabled={!managed || busy}
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3 py-1">
+              <span className="text-xs font-medium">API 종료 시 정지</span>
+              <Switch
+                checked={config.stopWithApi}
+                onCheckedChange={(stopWithApi) =>
+                  setConfig((current) => ({ ...current, stopWithApi }))
+                }
+                disabled={!managed || busy}
+              />
+            </label>
+          </div>
+
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void saveConfig()}
+              disabled={busy}
+            >
+              {saving ? <LoaderCircle className="animate-spin" /> : <Save />}
+              설정 저장
+            </Button>
           </div>
         </div>
 
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {[
+            {
+              label: "엔진",
+              value: runtime?.bundleId ?? (runtime?.installed ? "설치됨" : "—"),
+            },
+            { label: "ComfyUI", value: runtime?.comfyVersion ?? "—" },
+            { label: "GPU", value: runtime?.hardware?.gpuName ?? "확인되지 않음" },
+            { label: "VRAM", value: formatBytes(runtime?.hardware?.vramBytes) },
+            { label: "주소", value: runtime?.comfyUrl ?? "—" },
+            { label: "PID", value: runtime?.pid ? String(runtime.pid) : "—" },
+          ].map((item) => (
+            <div key={item.label} className="min-w-0 border-b border-border/55 pb-3">
+              <p className="text-[10px] text-muted-foreground">{item.label}</p>
+              <p className="mt-1 truncate text-xs font-medium" title={item.value}>
+                {item.value}
+              </p>
+            </div>
+          ))}
+        </div>
+
         {runtime?.hardware?.warnings.length ? (
-          <div className="rounded-lg border border-amber-400/15 bg-amber-400/[0.05] p-3">
+          <div className="border-l-2 border-amber-400/40 pl-3">
             {runtime.hardware.warnings.map((warning) => (
               <p key={warning} className="text-xs leading-5 text-amber-100/80">
                 {warning}
@@ -699,115 +633,69 @@ export function RuntimeManager({
           </div>
         ) : null}
 
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => void performAction("install")}
-            disabled={
-              !managed ||
-              busy ||
-              loading ||
-              Boolean(runtime?.installed)
-            }
-          >
-            {activeAction === "install" ? (
-              <LoaderCircle className="animate-spin" />
-            ) : (
-              <HardDriveDownload />
-            )}
-            엔진 설치
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="soft"
-            onClick={() => void performAction("start")}
-            disabled={
-              !managed ||
-              busy ||
-              !runtime?.installed ||
-              runtime.state === "ready"
-            }
-          >
-            <Play />
-            시작
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => void performAction("stop")}
-            disabled={!managed || busy || runtime?.state !== "ready"}
-          >
-            <CircleStop />
-            정지
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => void performAction("restart")}
-            disabled={!managed || busy || runtime?.state !== "ready"}
-          >
-            <RotateCcw />
-            재시작
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => void performAction("update")}
-            disabled={
-              !managed ||
-              busy ||
-              !runtime?.installed ||
-              runtime.state !== "stopped"
-            }
-          >
-            <Download />
-            업데이트
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => void performAction("repair")}
-            disabled={
-              !managed ||
-              busy ||
-              !runtime?.installed ||
-              runtime.state !== "stopped"
-            }
-          >
-            <Wrench />
-            복구
-          </Button>
-          {managed && runtime?.pid ? (
-            <>
+        {managed ? (
+          <div className="flex flex-wrap gap-2">
+            {!runtime?.installed ? (
               <Button
                 type="button"
                 size="sm"
-                variant="destructive"
-                onClick={() => setForceAction("stop")}
-                disabled={busy || transitionalStates.has(runtime.state)}
+                onClick={() =>
+                  void performAction(updateRequired ? "update" : "install")
+                }
+                disabled={busy || loading}
               >
-                <CircleStop />
-                강제 정지
+                {activeAction === (updateRequired ? "update" : "install") ? (
+                  <LoaderCircle className="animate-spin" />
+                ) : (
+                  <HardDriveDownload />
+                )}
+                {updateRequired ? "엔진 업데이트" : "엔진 설치"}
               </Button>
+            ) : runtime.state === "ready" ? (
+              <>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => void performAction("restart")}
+                  disabled={busy}
+                >
+                  <RotateCcw />
+                  재시작
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void performAction("stop")}
+                  disabled={busy}
+                >
+                  <CircleStop />
+                  정지
+                </Button>
+              </>
+            ) : runtime.state === "failed" ? (
               <Button
                 type="button"
                 size="sm"
-                variant="destructive"
-                onClick={() => setForceAction("restart")}
-                disabled={busy || transitionalStates.has(runtime.state)}
+                onClick={() => void performAction("repair")}
+                disabled={busy}
               >
-                <RotateCcw />
-                강제 재시작
+                <Wrench />
+                복구
               </Button>
-            </>
-          ) : null}
-        </div>
+            ) : runtime.state === "stopped" ? (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void performAction("start")}
+                disabled={busy}
+              >
+                <Play />
+                시작
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
 
         {operation ? (
           <div className="rounded-xl border border-primary/20 bg-primary/[0.05] p-4">
@@ -848,7 +736,11 @@ export function RuntimeManager({
           </div>
         ) : null}
 
-        <div className="overflow-hidden rounded-xl border border-border/75 bg-[#09090f]">
+        <details className="rounded-xl border border-border/65 bg-background/20 p-4">
+          <summary className="cursor-pointer select-none text-sm font-medium">
+            로그
+          </summary>
+          <div className="mt-4 overflow-hidden rounded-xl border border-border/75 bg-[#09090f]">
           <div className="flex flex-col gap-3 border-b border-border/65 p-3 md:flex-row md:items-center">
             <div className="flex items-center gap-2">
               <Terminal className="size-4 text-violet-300" />
@@ -964,31 +856,10 @@ export function RuntimeManager({
               </div>
             )}
           </div>
+          </div>
+        </details>
         </div>
-      </CardContent>
-      </Card>
-      <ActionConfirmation
-        open={forceAction !== null}
-        action={forceAction ?? "stop"}
-        pid={runtime?.pid}
-        busy={Boolean(activeAction)}
-        onCancel={() => setForceAction(null)}
-        onConfirm={() => {
-          const action = forceAction;
-          if (
-            !action ||
-            runtime?.mode !== "managed" ||
-            !runtime.pid
-          ) {
-            setForceAction(null);
-            return;
-          }
-          void (async () => {
-            await performAction(action, true);
-            setForceAction(null);
-          })();
-        }}
-      />
+      </section>
     </div>
   );
 }

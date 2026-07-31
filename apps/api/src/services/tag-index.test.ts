@@ -40,7 +40,16 @@ async function fixture(): Promise<{
     directory,
     "danbooru_tags_cooccurrence.csv",
   );
+  const descriptionsCsvPath = join(directory, "danbooru_tags_ko.csv");
   const manifestPath = join(directory, "manifest.json");
+  await Bun.write(
+    descriptionsCsvPath,
+    [
+      "tag,description",
+      'red eyes,"[눈] 붉은 눈. 키워드: 빨간 눈, 적안"',
+      'wishiwashi (solo),"약어귀 단독 형태"',
+    ].join("\n"),
+  );
   await Bun.write(
     tagsCsvPath,
     [
@@ -62,8 +71,8 @@ async function fixture(): Promise<{
   );
   await Bun.write(manifestPath, '{"version":1,"fixture":true}\n');
   const config = loadConfig({
-    DATABASE_PATH: join(directory, "studio.sqlite"),
-    DATA_DIR: directory,
+    databasePath: join(directory, "studio.sqlite"),
+    dataDir: directory,
   });
   return {
     directory,
@@ -71,6 +80,7 @@ async function fixture(): Promise<{
     migrationsDir: config.migrationsDir,
     source: {
       tagsCsvPath,
+      descriptionsCsvPath,
       cooccurrenceCsvPath,
       manifestPath,
       minimumCooccurrenceCount: 0,
@@ -161,16 +171,19 @@ describe("Danbooru tag index", () => {
       imported: true,
       metadata: {
         source: "danbooru",
-        tagCount: 4,
+        tagCount: 27,
         cooccurrenceCount: 3,
       },
     });
     expect(firstRepository.searchTags("scarlet")).toMatchObject([
       { tag: "red eyes", aliases: ["scarlet eyes"] },
     ]);
-    expect(firstRepository.searchTags("r")).toEqual([
-      expect.objectContaining({ tag: "red eyes" }),
+    expect(firstRepository.searchTags("빨간 눈", 1)).toMatchObject([
+      { tag: "red eyes", description: expect.stringContaining("붉은 눈") },
     ]);
+    expect(firstRepository.searchTags("r")).toContainEqual(
+      expect.objectContaining({ tag: "red eyes" }),
+    );
     expect(firstRepository.relatedTags(["1girl"], "red")).toEqual([
       expect.objectContaining({
         tag: "red eyes",
@@ -189,7 +202,7 @@ describe("Danbooru tag index", () => {
     expect(reopened.imported).toBe(false);
     expect(reopened.metadata.fingerprint).toBe(first.metadata.fingerprint);
     expect(reopenedRepository.tagIndexCounts()).toEqual({
-      tagCount: 4,
+      tagCount: 27,
       cooccurrenceCount: 3,
     });
     reopenedDatabase.close();
@@ -201,7 +214,9 @@ describe("Danbooru tag index", () => {
     const repository = new StudioRepository(database);
     await initializeDanbooruTagIndex(repository, files.source);
 
-    expect(repository.searchTags("", 3, ["1girl", "red eyes"])).toEqual([
+    expect(
+      repository.searchTags("", 3, ["1girl", "red eyes"]).slice(0, 2),
+    ).toEqual([
       expect.objectContaining({
         tag: "solo",
         cooccurrenceCount: 600,
@@ -263,6 +278,44 @@ describe("Danbooru tag index", () => {
     database.close();
   });
 
+  test("searches and combines tag category text with tag names", async () => {
+    const files = await fixture();
+    const database = createDatabase(files);
+    const repository = new StudioRepository(database);
+    replaceAutocompleteRankingFixture(repository);
+
+    expect(repository.searchTags("artist", 20).map(({ tag }) => tag)).toEqual([
+      "@solokitsune",
+    ]);
+    expect(repository.searchTags("artist solok", 1)).toEqual([
+      expect.objectContaining({
+        tag: "@solokitsune",
+        category: "artist",
+      }),
+    ]);
+
+    database.sqlite.exec("DROP TABLE tag_search");
+    expect(repository.searchTags("artist", 1)).toEqual([
+      expect.objectContaining({ tag: "@solokitsune" }),
+    ]);
+    database.close();
+  });
+
+  test("returns escaped prompt text for tags with literal parentheses", async () => {
+    const files = await fixture();
+    const database = createDatabase(files);
+    const repository = new StudioRepository(database);
+    replaceAutocompleteRankingFixture(repository);
+
+    expect(repository.searchTags("wishiwashi", 1)).toEqual([
+      expect.objectContaining({
+        tag: "wishiwashi (solo)",
+        insertText: "wishiwashi \\(solo\\)",
+      }),
+    ]);
+    database.close();
+  });
+
   test("pins an exact tag before stronger contextual prefix matches", async () => {
     const files = await fixture();
     const database = createDatabase(files);
@@ -278,6 +331,18 @@ describe("Danbooru tag index", () => {
       { tag: "solosis", cooccurrenceCount: 2_000 },
       { tag: "solo focus", cooccurrenceCount: 1_000 },
     ]);
+    database.close();
+  });
+
+  test("keeps prompt tags in autocomplete results for the UI to mark", async () => {
+    const files = await fixture();
+    const database = createDatabase(files);
+    const repository = new StudioRepository(database);
+    replaceAutocompleteRankingFixture(repository);
+
+    expect(repository.searchTags("solo", 3, ["solo"])).toContainEqual(
+      expect.objectContaining({ tag: "solo" }),
+    );
     database.close();
   });
 });

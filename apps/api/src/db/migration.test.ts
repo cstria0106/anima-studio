@@ -81,6 +81,14 @@ describe("managed model installation migration", () => {
         FOREIGN KEY (operation_id) REFERENCES system_operations(id)
           ON DELETE cascade
       );
+      CREATE TABLE tags (
+        id integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+        tag text NOT NULL,
+        category text NOT NULL,
+        count integer DEFAULT 0 NOT NULL,
+        description text DEFAULT '' NOT NULL,
+        aliases text DEFAULT '' NOT NULL
+      );
       CREATE TABLE character_profiles (id text PRIMARY KEY NOT NULL);
       CREATE TABLE character_profile_assets (
         profile_id text NOT NULL,
@@ -194,9 +202,22 @@ describe("managed model installation migration", () => {
            )`,
       )
       .all();
+    database.sqlite.exec(`
+      INSERT INTO tags(tag, category, count, description, aliases)
+      VALUES ('@migration-artist', 'artist', 1, '', '')
+    `);
+    const categoryMatch = database.sqlite
+      .query<{ tag: string }, []>(
+        `SELECT t.tag
+         FROM tag_search
+         JOIN tags AS t ON t.id = tag_search.rowid
+         WHERE tag_search MATCH 'artist'`,
+      )
+      .get();
 
     expect(migrated).toMatchObject({
       provider: "civitai",
+      sourceUrl: "https://civitai.com/models/123?modelVersionId=456",
       providerModelId: "123",
       providerVersionId: "456",
       providerFileId: "789",
@@ -221,6 +242,7 @@ describe("managed model installation migration", () => {
         .every((column) => column.notnull === 0),
     ).toBeTrue();
     expect(removedTables).toEqual([]);
+    expect(categoryMatch?.tag).toBe("@migration-artist");
 
     const operation = repository.createSystemOperation({
       id: "hf-operation",

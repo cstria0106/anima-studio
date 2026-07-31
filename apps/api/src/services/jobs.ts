@@ -570,6 +570,7 @@ export class JobService {
       queueNumber: null,
       completedAt: new Date().toISOString(),
     });
+    this.storage.deletePreview(id);
     this.events.append({
       jobId: id,
       phase: "cancelled",
@@ -577,6 +578,30 @@ export class JobService {
       progress: null,
     });
     return this.repository.findJob(id)!;
+  }
+
+  async delete(id: string): Promise<void> {
+    const row = this.repository.findJobRow(id);
+    if (!row) throw new JobSubmissionError("Job not found.", 404);
+    if (!this.repository.isTerminal(row)) {
+      throw new JobSubmissionError(
+        "완료·실패·취소된 기록만 삭제할 수 있습니다.",
+        409,
+      );
+    }
+
+    const dependencies = this.repository.jobDependencies(id);
+    if (dependencies.length > 0) {
+      throw new JobSubmissionError(
+        "이 결과를 사용하는 업스케일 기록을 먼저 삭제해 주세요.",
+        409,
+        { dependencies },
+      );
+    }
+
+    if (!(await this.storage.deleteJobData(id))) {
+      throw new JobSubmissionError("Job not found.", 404);
+    }
   }
 
   statuses(): readonly JobStatus[] {

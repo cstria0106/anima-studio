@@ -19,13 +19,13 @@ export function CommittedNumberField({
   inputClassName,
 }: {
   id?: string;
-  label: string;
+  label: React.ReactNode;
   value: number;
   onChange: (value: number) => void;
   min?: number;
   max?: number;
   step?: number | string;
-  hint?: string;
+  hint?: React.ReactNode;
   disabled?: boolean;
   className?: string;
   inputClassName?: string;

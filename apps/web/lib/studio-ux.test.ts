@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildPreflightIssues,
   clearModelAndLoraSelections,
+  loadSeedIntoDraft,
 } from "./studio-ux";
 import { DEFAULT_DRAFT, EMPTY_OPTIONS } from "./types";
 
@@ -74,6 +75,7 @@ describe("draft model defaults", () => {
         modelStrength: 1,
         clipStrength: 1,
         triggerWords: [],
+        useTriggerWords: true,
       },
     ];
     draft.prompts.positive = "1girl";
@@ -86,5 +88,21 @@ describe("draft model defaults", () => {
     expect(cleared.prompts.positive).toBe("1girl");
     expect(cleared.referenceAssets).toEqual(draft.referenceAssets);
     expect(cleared.sampling.steps).toBe(42);
+  });
+});
+
+describe("seed loading", () => {
+  test("loads only the selected job seed and fixes the seed mode", () => {
+    const draft = structuredClone(readyDraft);
+    draft.sampling.seedMode = "random";
+    draft.sampling.seed = 42;
+
+    const loaded = loadSeedIntoDraft(draft, 9_876_543);
+
+    expect(loaded.sampling.seedMode).toBe("fixed");
+    expect(loaded.sampling.seed).toBe(9_876_543);
+    expect(loaded.prompts).toEqual(draft.prompts);
+    expect(loaded.models).toEqual(draft.models);
+    expect(loaded.referenceAssets).toEqual(draft.referenceAssets);
   });
 });

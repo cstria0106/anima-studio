@@ -12,6 +12,7 @@ import type {
   ModelDownloadCreate,
   ModelDownloadDto,
   ModelDownloadProvider,
+  ManagedModelInstallationDto,
 } from "@anima/shared";
 import type {
   ModelDownloadPatch,
@@ -29,7 +30,7 @@ import type {
   InvalidDownloadHandler,
 } from "./hash";
 import { sha256Matches } from "./hash";
-import type { LoraManagerClient } from "./lora-manager";
+import type { CivitaiDownloadClient } from "./download";
 import type {
   CivitaiFileInspection,
   CivitaiModelInspection,
@@ -80,31 +81,29 @@ export interface CivitaiProviderStatus {
 
 export interface DownloadServiceClock {
   now(): string;
-  sleep(milliseconds: number, signal: AbortSignal): Promise<void>;
 }
 
 const systemClock: DownloadServiceClock = {
   now: () => new Date().toISOString(),
-  sleep(milliseconds, signal) {
-    if (signal.aborted) return Promise.resolve();
-    return new Promise((resolve) => {
-      const timer = setTimeout(done, milliseconds);
-      function done() {
-        signal.removeEventListener("abort", done);
-        clearTimeout(timer);
-        resolve();
-      }
-      signal.addEventListener("abort", done, { once: true });
-    });
-  },
 };
 
 interface ActiveDownload {
   providerDownloadId: string;
   operationId: string;
   controller: AbortController;
-  monitorController: AbortController;
   completion: Promise<void>;
+}
+
+export interface InstalledLoraMetadata {
+  name: string;
+  value: string;
+  triggerWords: string[];
+  thumbnailUrl?: string;
+}
+
+export interface DownloadedLoraThumbnail {
+  bytes: Uint8Array;
+  contentType: string;
 }
 
 interface CreateContext {
@@ -280,27 +279,82 @@ function safeFailure(error: unknown): CivitaiError {
       );
 }
 
+interface InstallationLookup {
+  exact: Map<string, ManagedModelInstallationDto>;
+  basename: Map<string, ManagedModelInstallationDto | null>;
+}
+
+function normalizedModelPath(value: string): string {
+  return value
+    .replaceAll("\\", "/")
+    .replace(/^\/+/, "")
+    .toLowerCase();
+}
+
+function installationLookup(
+  installations: ManagedModelInstallationDto[],
+): InstallationLookup {
+  const exact = new Map<string, ManagedModelInstallationDto>();
+  const byBasename = new Map<string, ManagedModelInstallationDto | null>();
+  for (const installation of installations) {
+    if (
+      installation.provider !== "civitai" ||
+      installation.destinationRootId !== "loras"
+    ) {
+      continue;
+    }
+    const relativePath = normalizedModelPath(
+      [installation.relativeDir, installation.filename]
+        .filter(Boolean)
+        .join("/"),
+    );
+    exact.set(relativePath, installation);
+    const name = relativePath.split("/").at(-1)!;
+    byBasename.set(
+      name,
+      byBasename.has(name) ? null : installation,
+    );
+  }
+  return { exact, basename: byBasename };
+}
+
+function findInstallation(
+  installedLora: string,
+  lookup: InstallationLookup,
+): ManagedModelInstallationDto | null {
+  const normalized = normalizedModelPath(installedLora);
+  return (
+    lookup.exact.get(normalized) ??
+    lookup.basename.get(normalized.split("/").at(-1) ?? "") ??
+    null
+  );
+}
+
 /**
  * High-level Hono-facing service. It persists only allowlisted metadata and
- * deliberately starts the LoRA Manager POST in the background so routes can
- * return a durable task immediately.
+ * starts the verified transfer in the background so routes can return a
+ * durable task immediately.
  */
 export class CivitaiModelLibraryService {
   private readonly active = new Map<string, ActiveDownload>();
   private readonly cancelled = new Set<string>();
+  private readonly installationMetadata = new Map<
+    string,
+    Promise<CivitaiModelInspection>
+  >();
   private shuttingDown = false;
 
   constructor(
     private readonly metadata: CivitaiMetadataClient,
     private readonly tokens: CivitaiTokenService,
-    private readonly manager: LoraManagerClient,
+    private readonly downloader: CivitaiDownloadClient,
     private readonly destinations: DestinationRegistry,
     private readonly hasher: FileHasher,
     private readonly invalidDownloads: InvalidDownloadHandler,
     private readonly persistence: ModelDownloadPersistence,
     private readonly operations: ModelDownloadOperations,
     private readonly clock: DownloadServiceClock = systemClock,
-    private readonly progressPollMilliseconds = 750,
+    private readonly previewFetcher: typeof fetch = fetch,
   ) {}
 
   async providerStatus(): Promise<CivitaiProviderStatus> {
@@ -322,16 +376,96 @@ export class CivitaiModelLibraryService {
     };
   }
 
-  setToken(token: string): Promise<CivitaiTokenStatus> {
-    return this.tokens.configure(token);
+  async setToken(token: string): Promise<CivitaiTokenStatus> {
+    const status = await this.tokens.configure(token);
+    this.installationMetadata.clear();
+    return status;
   }
 
-  deleteToken(): Promise<CivitaiTokenStatus> {
-    return this.tokens.clear();
+  async deleteToken(): Promise<CivitaiTokenStatus> {
+    const status = await this.tokens.clear();
+    this.installationMetadata.clear();
+    return status;
   }
 
   async inspect(url: string): Promise<CivitaiInspectDto> {
     return toCivitaiInspectDto(await this.metadata.inspect(url));
+  }
+
+  async getLoraMetadata(
+    installedLoras: string[],
+    installations: ManagedModelInstallationDto[],
+  ): Promise<InstalledLoraMetadata[]> {
+    const lookup = installationLookup(installations);
+    return Promise.all(
+      installedLoras.map(async (value) => {
+        const installation = findInstallation(value, lookup);
+        if (!installation) {
+          return { name: value, value, triggerWords: [] };
+        }
+        try {
+          const inspection = await this.inspectInstallation(installation);
+          const version = inspection.versions.find(
+            (candidate) =>
+              String(candidate.id) === installation.providerVersionId,
+          );
+          return {
+            name: installation.modelName || value,
+            value,
+            triggerWords: version?.triggerWords ?? [],
+            ...(version?.thumbnailUrl
+              ? { thumbnailUrl: version.thumbnailUrl }
+              : {}),
+          };
+        } catch {
+          return {
+            name: installation.modelName || value,
+            value,
+            triggerWords: [],
+          };
+        }
+      }),
+    );
+  }
+
+  async downloadLoraThumbnail(
+    installedLora: string,
+    installations: ManagedModelInstallationDto[],
+  ): Promise<DownloadedLoraThumbnail | null> {
+    const installation = findInstallation(
+      installedLora,
+      installationLookup(installations),
+    );
+    if (!installation) return null;
+    const inspection = await this.inspectInstallation(installation);
+    const version = inspection.versions.find(
+      (candidate) =>
+        String(candidate.id) === installation.providerVersionId,
+    );
+    if (!version?.thumbnailUrl) return null;
+
+    const response = await this.previewFetcher(version.thumbnailUrl, {
+      headers: {
+        accept: "image/avif,image/webp,image/png,image/jpeg",
+        "user-agent": "Portable-Anima-Studio/1",
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(20_000),
+    });
+    const contentType = response.headers.get("content-type")?.split(";", 1)[0];
+    const declaredBytes = Number(response.headers.get("content-length") ?? "0");
+    if (
+      !response.ok ||
+      !contentType?.startsWith("image/") ||
+      (Number.isFinite(declaredBytes) && declaredBytes > 10 * 1_024 * 1_024)
+    ) {
+      return null;
+    }
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength === 0 || bytes.byteLength > 10 * 1_024 * 1_024) {
+      return null;
+    }
+    return { bytes, contentType };
   }
 
   async create(input: ModelDownloadCreate): Promise<ModelDownloadDto> {
@@ -432,7 +566,7 @@ export class CivitaiModelLibraryService {
         bytesPerSecond: download.bytesPerSecond,
       };
     }
-    return this.manager.getProgress(active.providerDownloadId);
+    return this.downloader.getProgress(active.providerDownloadId);
   }
 
   async pause(id: string): Promise<ModelDownloadDto> {
@@ -451,7 +585,7 @@ export class CivitaiModelLibraryService {
       "The download is not active.",
       409,
     );
-    await this.manager.pause(active.providerDownloadId);
+    await this.downloader.pause(active.providerDownloadId);
     this.persistence.updateModelDownload(id, {
       state: "paused",
       bytesPerSecond: 0,
@@ -482,7 +616,7 @@ export class CivitaiModelLibraryService {
       "The download is not active.",
       409,
     );
-    await this.manager.resume(active.providerDownloadId);
+    await this.downloader.resume(active.providerDownloadId);
     this.persistence.updateModelDownload(id, {
       state: "downloading",
     });
@@ -508,13 +642,12 @@ export class CivitaiModelLibraryService {
     const active = this.active.get(id);
     if (active) {
       try {
-        await this.manager.cancel(active.providerDownloadId);
+        await this.downloader.cancel(active.providerDownloadId);
       } catch (error) {
         this.cancelled.delete(id);
         throw error;
       }
       active.controller.abort();
-      active.monitorController.abort();
     }
     this.persistence.updateModelDownload(id, {
       state: "cancelled",
@@ -575,18 +708,10 @@ export class CivitaiModelLibraryService {
     const active = [...this.active.values()];
     for (const download of active) {
       download.controller.abort();
-      download.monitorController.abort();
     }
-    await Promise.allSettled([
-      ...active.map(async (download) => {
-        try {
-          await this.manager.cancel(download.providerDownloadId);
-        } catch {
-          // Remote cancellation is best-effort during process shutdown.
-        }
-      }),
-      ...active.map((download) => download.completion),
-    ]);
+    await Promise.allSettled(
+      active.map((download) => download.completion),
+    );
   }
 
   private async createFromSource(
@@ -699,7 +824,6 @@ export class CivitaiModelLibraryService {
     );
 
     const controller = new AbortController();
-    const monitorController = new AbortController();
     const completion = this.execute({
       id,
       operationId: operation.id,
@@ -708,14 +832,12 @@ export class CivitaiModelLibraryService {
       file: verifiedFile,
       destination,
       controller,
-      monitorController,
       metadata,
     });
     this.active.set(id, {
       providerDownloadId: id,
       operationId: operation.id,
       controller,
-      monitorController,
       completion,
     });
     void completion.finally(() => {
@@ -733,7 +855,6 @@ export class CivitaiModelLibraryService {
     file: CivitaiFileInspection & { id: number; sha256: string };
     destination: ReturnType<DestinationRegistry["resolve"]>;
     controller: AbortController;
-    monitorController: AbortController;
     metadata: Record<string, unknown>;
   }): Promise<void> {
     try {
@@ -748,15 +869,7 @@ export class CivitaiModelLibraryService {
         bytesCompleted: 0,
         bytesTotal: input.file.sizeBytes,
       });
-      const monitor = this.monitorProgress(
-        input.id,
-        input.operationId,
-        input.monitorController.signal,
-      );
-
-      // This long-lived POST response, rather than a WebSocket progress event,
-      // is the authoritative completion signal.
-      const result = await this.manager.download({
+      const result = await this.downloader.download({
         downloadId: input.id,
         modelId: input.inspection.modelId,
         versionId: input.version.id,
@@ -764,9 +877,9 @@ export class CivitaiModelLibraryService {
         file: input.file,
         destination: input.destination,
         signal: input.controller.signal,
+        onProgress: (progress) =>
+          this.recordProgress(input.id, input.operationId, progress),
       });
-      input.monitorController.abort();
-      await monitor;
 
       const finalPath = await this.destinations.verifyFinalFile(
         input.destination,
@@ -864,7 +977,6 @@ export class CivitaiModelLibraryService {
         },
       );
     } catch (error) {
-      input.monitorController.abort();
       if (this.cancelled.has(input.id)) return;
       const safe = safeFailure(error);
       this.persistence.updateModelDownload(input.id, {
@@ -877,52 +989,71 @@ export class CivitaiModelLibraryService {
     }
   }
 
-  private async monitorProgress(
+  private recordProgress(
     id: string,
     operationId: string,
-    signal: AbortSignal,
-  ): Promise<void> {
-    while (!signal.aborted) {
-      try {
-        const progress = await this.manager.getProgress(id);
-        if (signal.aborted) return;
-        const state =
-          progress.state === "paused"
-            ? "paused"
-            : progress.state === "queued"
-              ? "queued"
-              : "downloading";
-        this.persistence.updateModelDownload(id, {
-          state,
-          bytesCompleted: progress.bytesDownloaded ?? 0,
-          bytesTotal: progress.totalBytes,
-          bytesPerSecond:
-            state === "paused" ? 0 : progress.bytesPerSecond,
-        });
-        const report: OperationProgress = {
-          phase: state,
-          message:
-            state === "paused"
-              ? "Model download paused."
-              : state === "queued"
-                ? "Model download queued."
-                : "Downloading model from Civitai.",
-          status: "running",
-          progress: progress.percent,
-          bytesCompleted: progress.bytesDownloaded,
-          bytesTotal: progress.totalBytes,
-          bytesPerSecond:
-            state === "paused" ? 0 : progress.bytesPerSecond,
-        };
-        this.operations.report(operationId, report);
-      } catch {
-        // Progress is advisory. The long-lived download POST is authoritative
-        // and will provide the terminal failure or completion state.
-      }
-      await this.clock.sleep(
-        this.progressPollMilliseconds,
-        signal,
+    progress: ModelDownloadProgress,
+  ): void {
+    const state =
+      progress.state === "paused"
+        ? "paused"
+        : progress.state === "queued"
+          ? "queued"
+          : "downloading";
+    this.persistence.updateModelDownload(id, {
+      state,
+      bytesCompleted: progress.bytesDownloaded ?? 0,
+      bytesTotal: progress.totalBytes,
+      bytesPerSecond: state === "paused" ? 0 : progress.bytesPerSecond,
+    });
+    const report: OperationProgress = {
+      phase: state,
+      message:
+        state === "paused"
+          ? "Model download paused."
+          : state === "queued"
+            ? "Model download queued."
+            : "Downloading model from Civitai.",
+      status: "running",
+      progress: progress.percent,
+      bytesCompleted: progress.bytesDownloaded,
+      bytesTotal: progress.totalBytes,
+      bytesPerSecond: state === "paused" ? 0 : progress.bytesPerSecond,
+    };
+    this.operations.report(operationId, report);
+  }
+
+  private inspectInstallation(
+    installation: ManagedModelInstallationDto,
+  ): Promise<CivitaiModelInspection> {
+    const modelId = Number(installation.providerModelId);
+    const versionId = Number(installation.providerVersionId);
+    if (
+      !Number.isSafeInteger(modelId) ||
+      modelId <= 0 ||
+      !Number.isSafeInteger(versionId) ||
+      versionId <= 0
+    ) {
+      return Promise.reject(
+        new CivitaiError(
+          "INVALID_MODEL",
+          "The installed Civitai model identity is invalid.",
+          500,
+        ),
       );
     }
+    const key = `${modelId}:${versionId}`;
+    const existing = this.installationMetadata.get(key);
+    if (existing) return existing;
+    const inspection = this.metadata.inspect(
+      `https://civitai.red/models/${modelId}?modelVersionId=${versionId}`,
+    );
+    this.installationMetadata.set(key, inspection);
+    void inspection.catch(() => {
+      if (this.installationMetadata.get(key) === inspection) {
+        this.installationMetadata.delete(key);
+      }
+    });
+    return inspection;
   }
 }

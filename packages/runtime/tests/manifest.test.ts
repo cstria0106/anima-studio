@@ -12,9 +12,9 @@ describe("managed engine manifest", () => {
     const manifest = validateEngineManifest(MANAGED_ENGINE_MANIFEST);
 
     expect(manifest.bundleId).toBe(
-      "anima-comfy-0.29.0-win-nvidia-r3",
+      "anima-comfy-0.29.0-win-nvidia-r4",
     );
-    expect(manifest.artifacts).toHaveLength(11);
+    expect(manifest.artifacts).toHaveLength(10);
     expect(
       manifest.artifacts.every(
         (artifact) =>
@@ -68,7 +68,6 @@ describe("managed engine manifest", () => {
     expect(licenses).toMatchObject({
       "instant-reference": "MIT",
       kjnodes: "GPL-3.0",
-      "lora-manager": "GPL-3.0",
       "lora-optimizer": "MIT",
     });
     expect(sbom.bomFormat).toBe("CycloneDX");

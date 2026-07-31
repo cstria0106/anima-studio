@@ -24,8 +24,6 @@ export type WorkflowNodePhase = Extract<
 export interface BuiltWorkflow {
   prompt: ComfyPrompt;
   actualSeed: number;
-  finalPositive: string;
-  finalNegative: string;
   nodePhases: Record<string, WorkflowNodePhase>;
   nodeLabels: Record<string, string>;
   outputKinds: Record<string, OutputKind>;

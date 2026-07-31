@@ -4,6 +4,7 @@ import type { GenerationConfig } from "@anima/shared";
 import {
   buildUpscaleWorkflow,
   buildWorkflow,
+  loraLoaderNodeId,
   NODE_IDS,
   referenceBatchNodeId,
   referenceLoadNodeId,
@@ -104,15 +105,11 @@ describe("buildWorkflow", () => {
     ]);
 
     expect(result.actualSeed).toBe(123456);
-    expect(result.finalPositive).toBe(
+    expect(result.prompt[NODE_IDS.positiveEncode]?.inputs.text).toBe(
       "quality\ncharacter\nsoft morning light",
     );
-    expect(result.finalNegative).toBe("bad quality\nartifact");
-    expect(result.prompt[NODE_IDS.positiveEncode]?.inputs.text).toBe(
-      result.finalPositive,
-    );
     expect(result.prompt[NODE_IDS.negativeEncode]?.inputs.text).toBe(
-      result.finalNegative,
+      "bad quality\nartifact",
     );
     expect(result.prompt[NODE_IDS.baseNoise]?.inputs.noise_seed).toBe(123456);
     expect(
@@ -133,6 +130,57 @@ describe("buildWorkflow", () => {
         format: "txt",
       },
     });
+  });
+
+  test("preserves prompt field text and duplicate tags exactly", () => {
+    const config = makeConfig({
+      prompts: {
+        basePositive: "  quality, quality  ",
+        positive: "character, character, ",
+        natural: "  soft light  ",
+        baseNegative: "",
+        negative: "artifact, artifact, ",
+      },
+    });
+
+    const result = buildWorkflow(config, [
+      "anima-studio/reference-a.png",
+      "anima-studio/reference-b.png",
+      "anima-studio/reference-c.png",
+    ]);
+
+    expect(result.prompt[NODE_IDS.positiveEncode]?.inputs.text).toBe(
+      "  quality, quality  \ncharacter, character, \n  soft light  ",
+    );
+    expect(result.prompt[NODE_IDS.negativeEncode]?.inputs.text).toBe(
+      "artifact, artifact, ",
+    );
+  });
+
+  test("treats tag prompt line breaks as commas only in the built prompt", () => {
+    const config = makeConfig({
+      prompts: {
+        basePositive: "quality",
+        positive: "character\nred eyes\r\nlong hair",
+        natural: "soft\nmorning light",
+        baseNegative: "bad quality",
+        negative: "artifact\rblurry",
+      },
+    });
+
+    const result = buildWorkflow(config, [
+      "anima-studio/reference-a.png",
+      "anima-studio/reference-b.png",
+      "anima-studio/reference-c.png",
+    ]);
+
+    expect(config.prompts.positive).toBe("character\nred eyes\r\nlong hair");
+    expect(result.prompt[NODE_IDS.positiveEncode]?.inputs.text).toBe(
+      "quality\ncharacter,red eyes,long hair\nsoft\nmorning light",
+    );
+    expect(result.prompt[NODE_IDS.negativeEncode]?.inputs.text).toBe(
+      "bad quality\nartifact,blurry",
+    );
   });
 
   test("uses core LoadImage and ImageBatch nodes in reference order", () => {
@@ -160,7 +208,7 @@ describe("buildWorkflow", () => {
     ]);
   });
 
-  test("connects InstantReference, general LoRAs, and optimizer in order", () => {
+  test("applies InstantReference through the optimizer, then chains enabled LoRAs", () => {
     const config = makeConfig({
       loras: [
         {
@@ -168,18 +216,24 @@ describe("buildWorkflow", () => {
           modelStrength: 0.3,
           clipStrength: 0.3,
           enabled: true,
+          triggerWords: [],
+          useTriggerWords: true,
         },
         {
           name: "style-b",
           modelStrength: 0.8,
           clipStrength: 0.6,
           enabled: true,
+          triggerWords: [],
+          useTriggerWords: true,
         },
         {
           name: "disabled",
           modelStrength: 1,
           clipStrength: 1,
           enabled: false,
+          triggerWords: [],
+          useTriggerWords: true,
         },
       ],
     });
@@ -189,41 +243,83 @@ describe("buildWorkflow", () => {
       "b.png",
       "c.png",
     ]);
-    const stacker = result.prompt[NODE_IDS.loraStacker];
-
-    expect(stacker?.inputs.text).toBe(
-      "<lora:style-a:0.3> <lora:style-b:0.8:0.6>",
-    );
-    expect(stacker?.inputs.lora_stack).toEqual([
+    expect(result.prompt[NODE_IDS.loraOptimizer]?.inputs.lora_stack).toEqual([
       NODE_IDS.instantReference,
       3,
     ]);
-    expect(stacker?.inputs.loras).toEqual({
-      __value__: [
+    expect(result.prompt[loraLoaderNodeId(0)]).toEqual({
+      class_type: "LoraLoader",
+      inputs: {
+        model: [NODE_IDS.loraOptimizer, 0],
+        clip: [NODE_IDS.loraOptimizer, 1],
+        lora_name: "style-a",
+        strength_model: 0.3,
+        strength_clip: 0.3,
+      },
+    });
+    expect(result.prompt[loraLoaderNodeId(1)]).toEqual({
+      class_type: "LoraLoader",
+      inputs: {
+        model: [loraLoaderNodeId(0), 0],
+        clip: [loraLoaderNodeId(0), 1],
+        lora_name: "style-b",
+        strength_model: 0.8,
+        strength_clip: 0.6,
+      },
+    });
+    expect(result.prompt[loraLoaderNodeId(2)]).toBeUndefined();
+    expect(result.prompt[NODE_IDS.positiveEncode]?.inputs.clip).toEqual([
+      loraLoaderNodeId(1),
+      1,
+    ]);
+    expect(result.prompt[NODE_IDS.cfgGuidance]?.inputs.model).toEqual([
+      loraLoaderNodeId(1),
+      0,
+    ]);
+  });
+
+  test("inserts only enabled LoRA trigger words into the generated positive prompt", () => {
+    const config = makeConfig({
+      prompts: {
+        basePositive: "quality",
+        positive: "character",
+        natural: "soft light",
+        baseNegative: "",
+        negative: "",
+      },
+      loras: [
         {
-          name: "style-a",
-          strength: "0.3",
-          active: true,
-          clipStrength: "0.3",
+          name: "keywords-on",
+          modelStrength: 1,
+          clipStrength: 1,
+          enabled: true,
+          triggerWords: ["red dress", "long hair"],
+          useTriggerWords: true,
         },
         {
-          name: "style-b",
-          strength: "0.8",
-          active: true,
-          clipStrength: "0.6",
+          name: "keywords-off",
+          modelStrength: 1,
+          clipStrength: 1,
+          enabled: true,
+          triggerWords: ["not inserted"],
+          useTriggerWords: false,
         },
         {
-          name: "disabled",
-          strength: "1",
-          active: false,
-          clipStrength: "1",
+          name: "lora-off",
+          modelStrength: 1,
+          clipStrength: 1,
+          enabled: false,
+          triggerWords: ["also not inserted"],
+          useTriggerWords: true,
         },
       ],
     });
-    expect(result.prompt[NODE_IDS.loraOptimizer]?.inputs.lora_stack).toEqual([
-      NODE_IDS.loraStacker,
-      0,
-    ]);
+
+    const result = buildWorkflow(config, ["a.png", "b.png", "c.png"]);
+
+    expect(result.prompt[NODE_IDS.positiveEncode]?.inputs.text).toBe(
+      "quality\ncharacter\nred dress, long hair\nsoft light",
+    );
   });
 
   test("maps model, training, tagging, sampling, CFG, and image settings", () => {

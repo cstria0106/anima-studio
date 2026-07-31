@@ -10,7 +10,7 @@ const server = Bun.serve({
 });
 
 console.log(`Anima Studio API: http://${server.hostname}:${server.port}`);
-console.log(`ComfyUI: ${runtime.config.comfyUrl}`);
+console.log(`ComfyUI: ${runtime.comfy.baseUrl}`);
 console.log(`Data: ${runtime.config.dataDir}`);
 
 const shutdown = createShutdownHandler(server, runtime);

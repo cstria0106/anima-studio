@@ -5,7 +5,7 @@ export default defineConfig({
   schema: "./src/db/schema.ts",
   out: "./drizzle",
   dbCredentials: {
-    url: process.env.DATABASE_PATH ?? "./data/anima-studio.sqlite",
+    url: "../../data/anima-studio.sqlite",
   },
   strict: true,
   verbose: true,

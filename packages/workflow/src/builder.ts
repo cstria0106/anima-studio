@@ -2,6 +2,7 @@ import type { GenerationConfig } from "@anima/shared";
 
 import {
   NODE_IDS,
+  loraLoaderNodeId,
   referenceBatchNodeId,
   referenceLoadNodeId,
   SANITIZED_ANIMA_TEMPLATE,
@@ -233,11 +234,12 @@ function validateBuildInput(
   );
 }
 
-export function combinePromptSegments(segments: readonly string[]): string {
-  return segments
-    .map((segment) => segment.trim())
-    .filter((segment) => segment.length > 0)
-    .join("\n");
+function joinPromptFields(fields: readonly string[]): string {
+  return fields.filter((field) => field.length > 0).join("\n");
+}
+
+function normalizeTagPromptForGeneration(value: string): string {
+  return value.replace(/\r\n|\r|\n/g, ",");
 }
 
 export function createRandomSeed(): number {
@@ -299,22 +301,6 @@ function buildReferenceNodes(
   return current;
 }
 
-function formatStrength(value: number): string {
-  return String(value);
-}
-
-function formatLoraSyntax(
-  name: string,
-  modelStrength: number,
-  clipStrength: number,
-): string {
-  const model = formatStrength(modelStrength);
-  if (Math.abs(modelStrength - clipStrength) <= 0.001) {
-    return `<lora:${name}:${model}>`;
-  }
-  return `<lora:${name}:${model}:${formatStrength(clipStrength)}>`;
-}
-
 /**
  * Produces a complete ComfyUI API prompt from validated UI state. It never
  * reads a ComfyUI workflow file or history entry.
@@ -327,14 +313,22 @@ export function buildWorkflow(
   validateBuildInput(config, uploadedInputNames, options);
 
   const actualSeed = resolveSeed(config, options.randomSeed);
-  const finalPositive = combinePromptSegments([
+  const loraTriggerWords = config.loras
+    .filter(
+      (lora) =>
+        lora.enabled && lora.useTriggerWords && lora.triggerWords.length > 0,
+    )
+    .flatMap((lora) => lora.triggerWords)
+    .join(", ");
+  const positivePrompt = joinPromptFields([
     config.prompts.basePositive,
-    config.prompts.positive,
+    normalizeTagPromptForGeneration(config.prompts.positive),
+    loraTriggerWords,
     config.prompts.natural,
   ]);
-  const finalNegative = combinePromptSegments([
+  const negativePrompt = joinPromptFields([
     config.prompts.baseNegative,
-    config.prompts.negative,
+    normalizeTagPromptForGeneration(config.prompts.negative),
   ]);
   const accumulator: NodeAccumulator = {
     prompt: {},
@@ -451,35 +445,6 @@ export function buildWorkflow(
     "자동 태그 저장",
   );
 
-  const loraValues = config.loras.map((lora) => ({
-    name: lora.name,
-    strength: formatStrength(lora.modelStrength),
-    active: lora.enabled,
-    clipStrength: formatStrength(lora.clipStrength),
-  }));
-  const loraText = config.loras
-    .filter((lora) => lora.enabled)
-    .map((lora) =>
-      formatLoraSyntax(
-        lora.name,
-        lora.modelStrength,
-        lora.clipStrength,
-      ),
-    )
-    .join(" ");
-
-  addNode(
-    accumulator,
-    NODE_IDS.loraStacker,
-    classes.loraStacker,
-    {
-      text: loraText,
-      loras: { __value__: loraValues },
-      lora_stack: link(NODE_IDS.instantReference, 3),
-    },
-    "loading_models",
-    "LoRA 스택 구성",
-  );
   addNode(
     accumulator,
     NODE_IDS.loraOptimizer,
@@ -488,20 +453,44 @@ export function buildWorkflow(
       output_strength: 1,
       clip_strength_multiplier: 1,
       model: link(NODE_IDS.modelLoader, 0),
-      lora_stack: link(NODE_IDS.loraStacker, 0),
+      lora_stack: link(NODE_IDS.instantReference, 3),
       clip: link(NODE_IDS.clipLoader, 0),
     },
     "loading_models",
     "LoRA 적용",
   );
 
+  let generatedModel = link(NODE_IDS.loraOptimizer, 0);
+  let generatedClip = link(NODE_IDS.loraOptimizer, 1);
+  config.loras
+    .filter((lora) => lora.enabled)
+    .forEach((lora, index) => {
+      const nodeId = loraLoaderNodeId(index);
+      addNode(
+        accumulator,
+        nodeId,
+        classes.loraLoader,
+        {
+          model: generatedModel,
+          clip: generatedClip,
+          lora_name: lora.name,
+          strength_model: lora.modelStrength,
+          strength_clip: lora.clipStrength,
+        },
+        "loading_models",
+        `LoRA 적용 ${index + 1}`,
+      );
+      generatedModel = link(nodeId, 0);
+      generatedClip = link(nodeId, 1);
+    });
+
   addNode(
     accumulator,
     NODE_IDS.positiveEncode,
     classes.textEncode,
     {
-      text: finalPositive,
-      clip: link(NODE_IDS.loraOptimizer, 1),
+      text: positivePrompt,
+      clip: generatedClip,
     },
     "encoding",
     "긍정 프롬프트 인코딩",
@@ -511,8 +500,8 @@ export function buildWorkflow(
     NODE_IDS.negativeEncode,
     classes.textEncode,
     {
-      text: finalNegative,
-      clip: link(NODE_IDS.loraOptimizer, 1),
+      text: negativePrompt,
+      clip: generatedClip,
     },
     "encoding",
     "부정 프롬프트 인코딩",
@@ -525,7 +514,7 @@ export function buildWorkflow(
       cfg: config.sampling.cfg,
       start_percent: config.sampling.cfgStart,
       end_percent: config.sampling.cfgEnd,
-      model: link(NODE_IDS.loraOptimizer, 0),
+      model: generatedModel,
       positive: link(NODE_IDS.positiveEncode, 0),
       negative: link(NODE_IDS.negativeEncode, 0),
     },
@@ -557,7 +546,7 @@ export function buildWorkflow(
       scheduler: config.sampling.scheduler,
       steps: config.sampling.steps,
       denoise: config.sampling.denoise,
-      model: link(NODE_IDS.loraOptimizer, 0),
+      model: generatedModel,
     },
     "sampling",
     "기본 스케줄러",
@@ -648,7 +637,7 @@ export function buildWorkflow(
         scheduler: config.sampling.scheduler,
         steps: config.upscale.steps,
         denoise: config.upscale.denoise,
-        model: link(NODE_IDS.loraOptimizer, 0),
+        model: generatedModel,
       },
       "upscaling",
       "업스케일 스케줄러",
@@ -697,8 +686,6 @@ export function buildWorkflow(
   return {
     prompt: accumulator.prompt,
     actualSeed,
-    finalPositive,
-    finalNegative,
     nodePhases: accumulator.phases,
     nodeLabels: accumulator.labels,
     outputKinds,

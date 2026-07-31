@@ -93,7 +93,10 @@ async function completedDownload(
     filename: string;
     destinationRootId: "loras" | "text_encoders";
     storagePath: string;
+    provider?: "civitai" | "huggingface";
+    providerModelId?: string;
     providerVersionId?: string;
+    metadata?: Record<string, unknown>;
   },
 ) {
   const bytes = new TextEncoder().encode(input.id);
@@ -109,8 +112,8 @@ async function completedDownload(
     id: input.id,
     operationId: operation.id,
     state: "downloading",
-    provider: "huggingface",
-    providerModelId: "circlestone-labs/Anima",
+    provider: input.provider ?? "huggingface",
+    providerModelId: input.providerModelId ?? "circlestone-labs/Anima",
     providerVersionId: input.providerVersionId ?? "f".repeat(40),
     providerFileId: input.providerFileId,
     modelName: "Anima",
@@ -119,6 +122,7 @@ async function completedDownload(
     destinationRootId: input.destinationRootId,
     expectedSha256: sha256,
     bytesTotal: bytes.byteLength,
+    ...(input.metadata ? { metadata: input.metadata } : {}),
   });
   download =
     context.repository.updateModelDownload(input.id, {
@@ -137,6 +141,31 @@ async function completedDownload(
 }
 
 describe("managed model installations", () => {
+  test("retains the Civitai source URL after the download task is cleaned up", async () => {
+    const context = await fixture();
+    const sourceUrl =
+      "https://civitai.red/models/123?modelVersionId=456";
+    const download = await completedDownload(context, {
+      id: "civitai-download",
+      provider: "civitai",
+      providerModelId: "123",
+      providerVersionId: "456",
+      providerFileId: "789",
+      filename: "character.safetensors",
+      destinationRootId: "loras",
+      storagePath: join(context.loraRoot, "character.safetensors"),
+      metadata: { sourceUrl },
+    });
+
+    const task = context.coordinator.track([download], download.id);
+    await context.coordinator.settledTask(task.installationId);
+
+    expect(
+      context.repository.findManagedModelInstallation(task.installationId)
+        ?.sourceUrl,
+    ).toBe(sourceUrl);
+  });
+
   test("persists current installation state and removes terminal task records", async () => {
     const context = await fixture();
     const filePath = join(context.loraRoot, "character.safetensors");
