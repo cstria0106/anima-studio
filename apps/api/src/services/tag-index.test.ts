@@ -40,16 +40,6 @@ async function fixture(): Promise<{
     directory,
     "danbooru_tags_cooccurrence.csv",
   );
-  const descriptionsCsvPath = join(directory, "danbooru_tags_ko.csv");
-  const manifestPath = join(directory, "manifest.json");
-  await Bun.write(
-    descriptionsCsvPath,
-    [
-      "tag,description",
-      'red eyes,"[눈] 붉은 눈. 키워드: 빨간 눈, 적안"',
-      'wishiwashi (solo),"약어귀 단독 형태"',
-    ].join("\n"),
-  );
   await Bun.write(
     tagsCsvPath,
     [
@@ -69,7 +59,6 @@ async function fixture(): Promise<{
       "red_eyes,white_pupils,450.0",
     ].join("\n"),
   );
-  await Bun.write(manifestPath, '{"version":1,"fixture":true}\n');
   const config = loadConfig({
     databasePath: join(directory, "studio.sqlite"),
     dataDir: directory,
@@ -80,9 +69,7 @@ async function fixture(): Promise<{
     migrationsDir: config.migrationsDir,
     source: {
       tagsCsvPath,
-      descriptionsCsvPath,
       cooccurrenceCsvPath,
-      manifestPath,
       minimumCooccurrenceCount: 0,
     },
   };
@@ -177,9 +164,6 @@ describe("Danbooru tag index", () => {
     });
     expect(firstRepository.searchTags("scarlet")).toMatchObject([
       { tag: "red eyes", aliases: ["scarlet eyes"] },
-    ]);
-    expect(firstRepository.searchTags("빨간 눈", 1)).toMatchObject([
-      { tag: "red eyes", description: expect.stringContaining("붉은 눈") },
     ]);
     expect(firstRepository.searchTags("r")).toContainEqual(
       expect.objectContaining({ tag: "red eyes" }),

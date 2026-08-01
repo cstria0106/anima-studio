@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import {
   escapeDanbooruTagForPrompt,
   normalizeDanbooruTag,
-  parseCsvRecords,
   parseCsvRow,
   parseDanbooruCooccurrenceRow,
   parseDanbooruTagRow,
@@ -56,19 +55,5 @@ describe("Danbooru CSV parsing", () => {
     expect(escapeDanbooruTagForPrompt("phoebe_(wuthering_waves)")).toBe(
       "phoebe \\(wuthering waves\\)",
     );
-  });
-
-  test("parses quoted CSV descriptions containing line breaks", () => {
-    expect(parseCsvRecords('tag,0,1,"첫 줄\n둘째 줄"\r\nsolo,0,2,설명')).toEqual([
-      ["tag", "0", "1", "첫 줄\n둘째 줄"],
-      ["solo", "0", "2", "설명"],
-    ]);
-  });
-
-  test("keeps quotes that appear inside unquoted tag fields", () => {
-    expect(parseCsvRecords('a"quote,0,1,설명\nsolo,0,2,설명')).toEqual([
-      ['a"quote', "0", "1", "설명"],
-      ["solo", "0", "2", "설명"],
-    ]);
   });
 });

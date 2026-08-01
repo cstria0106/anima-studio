@@ -68,60 +68,6 @@ export function parseCsvRow(line: string): string[] {
   return values;
 }
 
-/** Parses RFC 4180 records, including quoted fields containing newlines. */
-export function parseCsvRecords(input: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let value = "";
-  let quoted = false;
-
-  for (let index = 0; index < input.length; index += 1) {
-    const character = input[index]!;
-    if (character === '"') {
-      if (quoted) {
-        if (input[index + 1] === '"') {
-          value += '"';
-          index += 1;
-        } else if (
-          input[index + 1] === "," ||
-          input[index + 1] === "\r" ||
-          input[index + 1] === "\n" ||
-          input[index + 1] === undefined
-        ) {
-          quoted = false;
-        } else {
-          value += '"';
-        }
-      } else if (value.length === 0) {
-        quoted = true;
-      } else {
-        value += '"';
-      }
-      continue;
-    }
-    if (character === "," && !quoted) {
-      row.push(value);
-      value = "";
-      continue;
-    }
-    if ((character === "\n" || character === "\r") && !quoted) {
-      if (character === "\r" && input[index + 1] === "\n") index += 1;
-      row.push(value);
-      if (row.some((field) => field.length > 0)) rows.push(row);
-      row = [];
-      value = "";
-      continue;
-    }
-    value += character;
-  }
-  row.push(value);
-  if (row.some((field) => field.length > 0)) rows.push(row);
-  if (rows[0]?.[0]?.startsWith("\uFEFF")) {
-    rows[0]![0] = rows[0]![0]!.replace(/^\uFEFF/, "");
-  }
-  return rows;
-}
-
 export function parseDanbooruTagRow(
   fields: readonly string[],
 ): OfflineTag | null {
@@ -186,27 +132,23 @@ const meta = (tag: string, count: number, description = ""): OfflineTag => ({
 });
 
 export const ANIMA_CURATED_TAGS: readonly OfflineTag[] = [
-  meta("masterpiece", 4_000_000, "최고 수준의 완성도를 지향하는 품질 태그"),
-  meta("best quality", 3_500_000, "매우 높은 품질을 지향하는 태그"),
-  meta("good quality", 2_000_000, "좋은 품질을 지향하는 태그"),
-  meta("normal quality", 1_000_000, "보통 품질을 지향하는 태그"),
-  meta("low quality", 2_300_000, "낮은 품질을 나타내는 태그"),
-  meta("worst quality", 2_000_000, "매우 낮은 품질을 나타내는 태그"),
+  meta("masterpiece", 4_000_000),
+  meta("best quality", 3_500_000),
+  meta("good quality", 2_000_000),
+  meta("normal quality", 1_000_000),
+  meta("low quality", 2_300_000),
+  meta("worst quality", 2_000_000),
   ...Array.from({ length: 9 }, (_, index) =>
-    meta(
-      `score_${index + 1}`,
-      1_000_000,
-      `Anima 미학 점수 ${index + 1} 태그`,
-    ),
+    meta(`score_${index + 1}`, 1_000_000),
   ),
-  meta("safe", 1_000_000, "안전한 콘텐츠 등급"),
-  meta("sensitive", 900_000, "민감한 콘텐츠 등급"),
-  meta("nsfw", 800_000, "성인 콘텐츠 등급"),
-  meta("explicit", 700_000, "노골적인 성인 콘텐츠 등급"),
-  meta("newest", 2_000_000, "최신 시기의 작품 스타일"),
-  meta("recent", 1_500_000, "비교적 최근 시기의 작품 스타일"),
-  meta("mid", 1_000_000, "중간 시기의 작품 스타일"),
-  meta("early", 800_000, "초기 시기의 작품 스타일"),
+  meta("safe", 1_000_000),
+  meta("sensitive", 900_000),
+  meta("nsfw", 800_000),
+  meta("explicit", 700_000),
+  meta("newest", 2_000_000),
+  meta("recent", 1_500_000),
+  meta("mid", 1_000_000),
+  meta("early", 800_000),
 ];
 
 export const OFFLINE_TAGS: readonly OfflineTag[] = [

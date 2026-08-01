@@ -480,9 +480,7 @@ export async function createRuntime(
       ? initializeFallbackTagIndex(repository)
       : await initializeDanbooruTagIndex(repository, {
           tagsCsvPath: config.danbooruTagsCsvPath,
-          descriptionsCsvPath: config.danbooruDescriptionsCsvPath,
           cooccurrenceCsvPath: config.danbooruCooccurrenceCsvPath,
-          manifestPath: config.danbooruManifestPath,
           minimumCooccurrenceCount:
             config.danbooruMinimumCooccurrenceCount,
         });

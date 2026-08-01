@@ -27,9 +27,7 @@ export interface AppConfig {
   managedRuntimePortStart: number;
   managedRuntimePortEnd: number;
   danbooruTagsCsvPath: string;
-  danbooruDescriptionsCsvPath: string;
   danbooruCooccurrenceCsvPath: string;
-  danbooruManifestPath: string;
   danbooruMinimumCooccurrenceCount: number;
 }
 
@@ -72,15 +70,6 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     danbooruTagsCsvPath: overrides.danbooruTagsCsvPath
       ? resolveFromRepository(overrides.danbooruTagsCsvPath)
       : join(repositoryRoot, "packages", "tag-data", "data", "danbooru_tags.csv"),
-    danbooruDescriptionsCsvPath: overrides.danbooruDescriptionsCsvPath
-      ? resolveFromRepository(overrides.danbooruDescriptionsCsvPath)
-      : join(
-          repositoryRoot,
-          "packages",
-          "tag-data",
-          "data",
-          "danbooru_tags_ko.csv",
-        ),
     danbooruCooccurrenceCsvPath: overrides.danbooruCooccurrenceCsvPath
       ? resolveFromRepository(overrides.danbooruCooccurrenceCsvPath)
       : join(
@@ -90,9 +79,6 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
           "data",
           "danbooru_tags_cooccurrence.csv",
         ),
-    danbooruManifestPath: overrides.danbooruManifestPath
-      ? resolveFromRepository(overrides.danbooruManifestPath)
-      : join(repositoryRoot, "packages", "tag-data", "data", "manifest.json"),
     danbooruMinimumCooccurrenceCount:
       overrides.danbooruMinimumCooccurrenceCount ?? 5_000,
   };

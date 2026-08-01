@@ -1,29 +1,8 @@
-# Personal Engineering Preferences
-
-## Implementation
-
-- Solve problems at their source instead of patching individual symptoms.
-- Keep shared logic and data in one place. Reuse them instead of duplicating them.
-- Remove obsolete code unless backward compatibility is explicitly required.
-- Add validation, fallbacks, retries, or limits only for explicit requirements or observed failures.
-
-## Tests
-
-- Test observable behavior and public contracts rather than implementation details.
-- Each assertion must verify a distinct behavior.
-- Test absence only when absence is part of the contract.
-- Verify internal cleanup with typechecking, linting, code search, and review rather than behavior tests.
+# Anima Studio Project Instructions
 
 ## Toolchain
 
-- Use the toolchain already established by the repository.
 - Use Bun 1.3.14 for this monorepo.
-- For new JavaScript or TypeScript projects, use `bun`.
-- For new Python projects, use `uv`.
-
-## Commits
-
-- When explicitly asked to commit, use a short Conventional Commit message describing the change.
 
 ## Portable Release Invariants
 
@@ -38,9 +17,9 @@
 - Treat `THIRD_PARTY_NOTICES.md` and packaged resource imports as generated build outputs. Change their generator scripts instead of hand-editing generated content.
 - Rebuild the EXE after changing web assets, Drizzle migrations, tag data, dependencies, or the root version so embedded hashes and notices are refreshed.
 
-## Release Verification
+## Pre-release Verification Only
 
-Run the following before handing off a Windows release:
+Run the following checks only immediately before publishing a Windows release, not during routine development or ordinary handoff:
 
 ```powershell
 bun install --frozen-lockfile
