@@ -404,10 +404,9 @@ export function LibraryView({
         if (target !== "anima") void refreshInspection();
       });
       source.onerror = () => {
-        source.close();
-        eventSources.current.delete(source);
-        void loadProviders();
-        if (target !== "anima") void refreshInspection();
+        // EventSource reconnects automatically after transient failures. Keep
+        // this watcher alive so an interrupted stream cannot leave an active
+        // installation frozen at its last rendered progress value.
       };
     },
     [loadProviders, onOptionsChanged, refreshInspection],
