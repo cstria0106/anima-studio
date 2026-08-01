@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, Hash, Sparkles } from "lucide-react";
+import { ChevronDown, Hash } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Field } from "@/components/ui/field";
 import {
@@ -303,32 +303,12 @@ function TagTextarea({
 export function PromptEditor({ value, onChange }: PromptEditorProps) {
   return (
     <div className="space-y-5">
-      <div className="space-y-4">
-        <TagTextarea
-          id="positive-prompt"
-          label="긍정"
-          value={value.positive}
-          onChange={(positive) => onChange({ ...value, positive })}
-        />
-
-        <Field
-          label={
-            <span className="inline-flex items-center gap-1.5">
-              <Sparkles className="size-3.5 text-violet-300" />
-              긍정 자연어
-            </span>
-          }
-          htmlFor="natural-prompt"
-        >
-          <AutoResizeTextarea
-            id="natural-prompt"
-            value={value.natural}
-            onChange={(event) =>
-              onChange({ ...value, natural: event.target.value })
-            }
-          />
-        </Field>
-      </div>
+      <TagTextarea
+        id="positive-prompt"
+        label="긍정"
+        value={value.positive}
+        onChange={(positive) => onChange({ ...value, positive })}
+      />
 
       <TagTextarea
         id="negative-prompt"

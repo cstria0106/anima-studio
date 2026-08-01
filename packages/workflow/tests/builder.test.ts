@@ -19,7 +19,6 @@ function makeConfig(
       basePositive:
         "newest, masterpiece, very aesthetic, score_7, best quality",
       positive: "",
-      natural: "",
       baseNegative:
         "worst quality, low quality, score_1, score_2, score_3",
       negative: "",
@@ -92,7 +91,6 @@ describe("buildWorkflow", () => {
       prompts: {
         basePositive: "quality",
         positive: "character",
-        natural: "soft morning light",
         baseNegative: "bad quality",
         negative: "artifact",
       },
@@ -106,7 +104,7 @@ describe("buildWorkflow", () => {
 
     expect(result.actualSeed).toBe(123456);
     expect(result.prompt[NODE_IDS.positiveEncode]?.inputs.text).toBe(
-      "quality\ncharacter\nsoft morning light",
+      "quality\ncharacter",
     );
     expect(result.prompt[NODE_IDS.negativeEncode]?.inputs.text).toBe(
       "bad quality\nartifact",
@@ -137,7 +135,6 @@ describe("buildWorkflow", () => {
       prompts: {
         basePositive: "  quality, quality  ",
         positive: "character, character, ",
-        natural: "  soft light  ",
         baseNegative: "",
         negative: "artifact, artifact, ",
       },
@@ -150,7 +147,7 @@ describe("buildWorkflow", () => {
     ]);
 
     expect(result.prompt[NODE_IDS.positiveEncode]?.inputs.text).toBe(
-      "  quality, quality  \ncharacter, character, \n  soft light  ",
+      "  quality, quality  \ncharacter, character, ",
     );
     expect(result.prompt[NODE_IDS.negativeEncode]?.inputs.text).toBe(
       "artifact, artifact, ",
@@ -162,7 +159,6 @@ describe("buildWorkflow", () => {
       prompts: {
         basePositive: "quality",
         positive: "character\nred eyes\r\nlong hair",
-        natural: "soft\nmorning light",
         baseNegative: "bad quality",
         negative: "artifact\rblurry",
       },
@@ -176,7 +172,7 @@ describe("buildWorkflow", () => {
 
     expect(config.prompts.positive).toBe("character\nred eyes\r\nlong hair");
     expect(result.prompt[NODE_IDS.positiveEncode]?.inputs.text).toBe(
-      "quality\ncharacter,red eyes,long hair\nsoft\nmorning light",
+      "quality\ncharacter,red eyes,long hair",
     );
     expect(result.prompt[NODE_IDS.negativeEncode]?.inputs.text).toBe(
       "bad quality\nartifact,blurry",
@@ -283,7 +279,6 @@ describe("buildWorkflow", () => {
       prompts: {
         basePositive: "quality",
         positive: "character",
-        natural: "soft light",
         baseNegative: "",
         negative: "",
       },
@@ -318,7 +313,7 @@ describe("buildWorkflow", () => {
     const result = buildWorkflow(config, ["a.png", "b.png", "c.png"]);
 
     expect(result.prompt[NODE_IDS.positiveEncode]?.inputs.text).toBe(
-      "quality\ncharacter\nred dress, long hair\nsoft light",
+      "quality\ncharacter\nred dress, long hair",
     );
   });
 

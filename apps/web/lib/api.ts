@@ -653,8 +653,12 @@ function configToDraft(config: ApiGenerationConfig): GenerationDraft {
     ...DEFAULT_DRAFT,
     referenceAssets: [],
     prompts: {
-      ...DEFAULT_DRAFT.prompts,
-      ...(config.prompts ?? {}),
+      basePositive:
+        config.prompts?.basePositive ?? DEFAULT_DRAFT.prompts.basePositive,
+      positive: config.prompts?.positive ?? DEFAULT_DRAFT.prompts.positive,
+      baseNegative:
+        config.prompts?.baseNegative ?? DEFAULT_DRAFT.prompts.baseNegative,
+      negative: config.prompts?.negative ?? DEFAULT_DRAFT.prompts.negative,
     },
     models: {
       diffusion:

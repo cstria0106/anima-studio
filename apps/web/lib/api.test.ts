@@ -30,7 +30,6 @@ describe("history job restoration", () => {
               prompts: {
                 basePositive: "base positive",
                 positive: "positive, detailed eyes",
-                natural: "soft window light",
                 baseNegative: "base negative",
                 negative: "low quality, artifact",
               },
@@ -171,7 +170,6 @@ describe("history job restoration", () => {
       prompts: {
         basePositive: "base positive",
         positive: "positive, detailed eyes",
-        natural: "soft window light",
         baseNegative: "base negative",
         negative: "low quality, artifact",
       },

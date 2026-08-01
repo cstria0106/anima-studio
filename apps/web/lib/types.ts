@@ -40,7 +40,6 @@ export interface GenerationDraft {
   prompts: {
     basePositive: string;
     positive: string;
-    natural: string;
     baseNegative: string;
     negative: string;
   };
@@ -112,7 +111,6 @@ export const DEFAULT_DRAFT: GenerationDraft = {
     basePositive:
       "newest, masterpiece, very aesthetic, score_7, best quality",
     positive: "",
-    natural: "",
     baseNegative:
       "worst quality, low quality, score_1, score_2, score_3, artist name, blurry, jpeg artifacts, chromatic aberration",
     negative: "",

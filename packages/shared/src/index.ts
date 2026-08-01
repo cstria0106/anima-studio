@@ -100,7 +100,6 @@ export const generationConfigSchema = z.object({
         .string()
         .default("newest, masterpiece, very aesthetic, score_7, best quality"),
       positive: z.string().default(""),
-      natural: z.string().default(""),
       baseNegative: z.string().default(""),
       negative: z.string().default(""),
     })

@@ -324,7 +324,6 @@ export function buildWorkflow(
     config.prompts.basePositive,
     normalizeTagPromptForGeneration(config.prompts.positive),
     loraTriggerWords,
-    config.prompts.natural,
   ]);
   const negativePrompt = joinPromptFields([
     config.prompts.baseNegative,
