@@ -97,6 +97,7 @@ export class ModelDownloadCoordinator {
     private readonly destinations: DestinationRegistry,
     private readonly removalStagingRoot: string,
     private readonly hasher = new NodeFileHasher(),
+    private readonly onInstallationsChanged: () => void = () => undefined,
   ) {
     if (!isAbsolute(removalStagingRoot)) {
       throw new Error("Model removal staging must use an absolute path.");
@@ -439,6 +440,7 @@ export class ModelDownloadCoordinator {
       if (!this.repository.deleteManagedModelInstallation(id)) {
         throw new Error("The managed installation record disappeared.");
       }
+      this.onInstallationsChanged();
     } catch (error) {
       if (!stagedRemoved) {
         try {
@@ -638,6 +640,10 @@ export class ModelDownloadCoordinator {
             : {}),
         })),
       );
+      // Invalidate dependent model-option caches before exposing the terminal
+      // state to SSE consumers. Otherwise the UI can immediately refetch the
+      // still-cached pre-install list and remain stale until a page refresh.
+      this.onInstallationsChanged();
       task.status = "installed";
       task.progress = 100;
     } catch {

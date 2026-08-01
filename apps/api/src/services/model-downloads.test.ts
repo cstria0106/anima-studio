@@ -29,6 +29,7 @@ afterEach(async () => {
 
 async function fixture(
   hasher: Pick<NodeFileHasher, "sha256"> = new NodeFileHasher(),
+  onInstallationsChanged: () => void = () => undefined,
 ) {
   const root = join(tmpdir(), `anima-installations-${crypto.randomUUID()}`);
   directories.push(root);
@@ -74,6 +75,7 @@ async function fixture(
     destinations,
     join(root, "removal-staging"),
     hasher,
+    onInstallationsChanged,
   );
   return {
     root,
@@ -141,6 +143,28 @@ async function completedDownload(
 }
 
 describe("managed model installations", () => {
+  test("publishes installation changes before exposing an installed task", async () => {
+    const notifications: string[] = [];
+    const context = await fixture(undefined, () => {
+      notifications.push("changed");
+    });
+    const download = await completedDownload(context, {
+      id: "notification-download",
+      providerFileId: "split_files/character.safetensors",
+      filename: "character.safetensors",
+      destinationRootId: "loras",
+      storagePath: join(context.loraRoot, "character.safetensors"),
+    });
+
+    const task = context.coordinator.track([download], download.id);
+    const settled = await context.coordinator.settledTask(
+      task.installationId,
+    );
+
+    expect(settled.status).toBe("installed");
+    expect(notifications).toEqual(["changed"]);
+  });
+
   test("retains the Civitai source URL after the download task is cleaned up", async () => {
     const context = await fixture();
     const sourceUrl =

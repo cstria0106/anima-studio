@@ -753,6 +753,8 @@ export async function createRuntime(
     huggingFaceLibrary,
     modelDestinations,
     join(config.dataDir, "quarantine", "model-removals"),
+    new NodeFileHasher(),
+    () => capabilities.invalidate(),
   );
   const storageInventory = new StorageInventoryService(repository, {
     dataDir: config.dataDir,
@@ -1620,17 +1622,6 @@ export function createApp(services: AppServices): Hono {
     }
   };
 
-  const refreshOptionsAfterInstall = (installationId: string) => {
-    void services.modelDownloads
-      .settledTask(installationId)
-      .then((completed) => {
-        if (completed.status === "installed") {
-          services.capabilities.invalidate();
-        }
-      })
-      .catch(() => undefined);
-  };
-
   app.get("/api/download-providers/civitai", async (c) =>
     c.json({ provider: await civitaiProvider() }),
   );
@@ -1721,7 +1712,6 @@ export function createApp(services: AppServices): Hono {
       result.downloads,
       primary.id,
     );
-    refreshOptionsAfterInstall(task.installationId);
     return c.json(task, 202);
   });
 
@@ -1748,7 +1738,6 @@ export function createApp(services: AppServices): Hono {
     if (current) return c.json(current, 200);
     const download = await services.modelLibrary.create(parsed.data);
     const task = services.modelDownloads.track([download], download.id);
-    refreshOptionsAfterInstall(task.installationId);
     return c.json(task, 202);
   });
 
@@ -1765,7 +1754,6 @@ export function createApp(services: AppServices): Hono {
     const removed = await services.modelDownloads.remove(
       c.req.param("id"),
     );
-    services.capabilities.invalidate();
     return c.json({ installationId: removed.id });
   });
 
