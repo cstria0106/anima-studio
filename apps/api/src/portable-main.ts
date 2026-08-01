@@ -83,6 +83,10 @@ async function main(): Promise<void> {
       databasePath: join(dataDir, "anima-studio.sqlite"),
       migrationsDir: resources.migrationsDir,
       danbooruTagsCsvPath: join(resources.tagDataDir, "danbooru_tags.csv"),
+      danbooruDescriptionsCsvPath: join(
+        resources.tagDataDir,
+        "danbooru_tags_ko.csv",
+      ),
       danbooruCooccurrenceCsvPath: join(
         resources.tagDataDir,
         "danbooru_tags_cooccurrence.csv",

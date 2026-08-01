@@ -55,7 +55,7 @@ describe("embedded resources", () => {
     const data = await temporary("anima-resources-");
     const resources = [
       embedded("migrations/0000.sql", "SELECT 1;"),
-      embedded("tag-data/manifest.json", '{"ok":true}'),
+      embedded("tag-data/danbooru_tags_ko.csv", "tag,description"),
     ];
     const hash = createHash("sha256").update("fixture").digest("hex");
     const first = await extractEmbeddedResources(data, hash, resources);

@@ -132,23 +132,27 @@ const meta = (tag: string, count: number, description = ""): OfflineTag => ({
 });
 
 export const ANIMA_CURATED_TAGS: readonly OfflineTag[] = [
-  meta("masterpiece", 4_000_000),
-  meta("best quality", 3_500_000),
-  meta("good quality", 2_000_000),
-  meta("normal quality", 1_000_000),
-  meta("low quality", 2_300_000),
-  meta("worst quality", 2_000_000),
+  meta("masterpiece", 4_000_000, "최고 수준의 완성도를 지향하는 품질 태그"),
+  meta("best quality", 3_500_000, "매우 높은 품질을 지향하는 태그"),
+  meta("good quality", 2_000_000, "좋은 품질을 지향하는 태그"),
+  meta("normal quality", 1_000_000, "보통 품질을 지향하는 태그"),
+  meta("low quality", 2_300_000, "낮은 품질을 나타내는 태그"),
+  meta("worst quality", 2_000_000, "매우 낮은 품질을 나타내는 태그"),
   ...Array.from({ length: 9 }, (_, index) =>
-    meta(`score_${index + 1}`, 1_000_000),
+    meta(
+      `score_${index + 1}`,
+      1_000_000,
+      `Anima 미학 점수 ${index + 1} 태그`,
+    ),
   ),
-  meta("safe", 1_000_000),
-  meta("sensitive", 900_000),
-  meta("nsfw", 800_000),
-  meta("explicit", 700_000),
-  meta("newest", 2_000_000),
-  meta("recent", 1_500_000),
-  meta("mid", 1_000_000),
-  meta("early", 800_000),
+  meta("safe", 1_000_000, "안전한 콘텐츠 등급"),
+  meta("sensitive", 900_000, "민감한 콘텐츠 등급"),
+  meta("nsfw", 800_000, "성인 콘텐츠 등급"),
+  meta("explicit", 700_000, "노골적인 성인 콘텐츠 등급"),
+  meta("newest", 2_000_000, "최신 시기의 작품 스타일"),
+  meta("recent", 1_500_000, "비교적 최근 시기의 작품 스타일"),
+  meta("mid", 1_000_000, "중간 시기의 작품 스타일"),
+  meta("early", 800_000, "초기 시기의 작품 스타일"),
 ];
 
 export const OFFLINE_TAGS: readonly OfflineTag[] = [

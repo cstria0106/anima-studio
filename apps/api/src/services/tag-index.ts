@@ -6,6 +6,7 @@ import { createInterface } from "node:readline";
 import {
   ANIMA_CURATED_TAGS,
   OFFLINE_TAGS,
+  normalizeDanbooruTag,
   parseCsvRow,
   parseDanbooruCooccurrenceRow,
   parseDanbooruTagRow,
@@ -23,6 +24,7 @@ const fallbackFingerprint = "fallback-tags-v1";
 
 export interface TagDataSource {
   tagsCsvPath: string;
+  descriptionsCsvPath: string;
   cooccurrenceCsvPath: string;
   minimumCooccurrenceCount: number;
 }
@@ -34,8 +36,9 @@ export interface TagIndexInitialization {
 }
 
 async function sourceFingerprint(source: TagDataSource): Promise<string> {
-  const [tagsStat, cooccurrenceStat] = await Promise.all([
+  const [tagsStat, descriptionsStat, cooccurrenceStat] = await Promise.all([
     stat(source.tagsCsvPath),
+    stat(source.descriptionsCsvPath),
     stat(source.cooccurrenceCsvPath),
   ]);
   const identity = JSON.stringify({
@@ -44,6 +47,11 @@ async function sourceFingerprint(source: TagDataSource): Promise<string> {
       path: source.tagsCsvPath,
       bytes: tagsStat.size,
       modified: tagsStat.mtimeMs,
+    },
+    descriptions: {
+      path: source.descriptionsCsvPath,
+      bytes: descriptionsStat.size,
+      modified: descriptionsStat.mtimeMs,
     },
     cooccurrences: {
       path: source.cooccurrenceCsvPath,
@@ -99,13 +107,30 @@ export async function readDanbooruTagData(source: TagDataSource): Promise<{
   tags: OfflineTag[];
   cooccurrences: OfflineTagCooccurrence[];
 }> {
+  const descriptions = new Map<string, string>();
+  await readRows(
+    source.descriptionsCsvPath,
+    ["tag", "description"],
+    (fields) => {
+      const tag = normalizeDanbooruTag(fields[0] ?? "").toLowerCase();
+      const description = fields[1]?.trim() ?? "";
+      if (tag && description) descriptions.set(tag, description);
+    },
+  );
+
   const tags: OfflineTag[] = [];
   await readRows(
     source.tagsCsvPath,
     ["tag", "category", "count", "alias"],
     (fields) => {
       const value = parseDanbooruTagRow(fields);
-      if (value) tags.push(value);
+      if (value) {
+        tags.push({
+          ...value,
+          description:
+            descriptions.get(value.tag.toLowerCase()) ?? value.description,
+        });
+      }
     },
   );
 
@@ -115,6 +140,8 @@ export async function readDanbooruTagData(source: TagDataSource): Promise<{
     if (!existing) {
       tags.push(curated);
       tagsByName.set(curated.tag, curated);
+    } else if (!existing.description && curated.description) {
+      existing.description = curated.description;
     }
   }
 
