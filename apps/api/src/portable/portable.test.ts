@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { portableDataDirectory, assertPortableDataWritable } from "./paths";
 import { extractEmbeddedResources, type EmbeddedResource } from "./resources";
 import { EmbeddedStaticSite } from "./static";
+import { PORTABLE_APP_PORT, startPortableServer } from "./server";
 
 const temporaryDirectories: string[] = [];
 
@@ -88,17 +89,30 @@ describe("embedded static site", () => {
   });
 });
 
-describe("dynamic server port", () => {
-  test("lets Windows assign an available port even while other ports are occupied", async () => {
-    const occupied = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response("busy") });
-    const secondOccupied = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response("busy") });
-    const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response("ok") });
+describe("portable server port", () => {
+  test("prefers port 8787", () => {
+    expect(PORTABLE_APP_PORT).toBe(8787);
+  });
+
+  test("uses the preferred port and increments until one is available", async () => {
+    const probe = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch: () => new Response("probe"),
+    });
+    const preferredPort = probe.port!;
+    await probe.stop(true);
+    const occupied = Bun.serve({
+      port: preferredPort,
+      hostname: "127.0.0.1",
+      fetch: () => new Response("busy"),
+    });
+    const server = startPortableServer(() => new Response("ok"), preferredPort);
     try {
-      expect(server.port).toBeGreaterThan(0);
-      expect([occupied.port, secondOccupied.port]).not.toContain(server.port);
+      expect(server.port).toBe(preferredPort + 1);
       expect(await (await fetch(`http://127.0.0.1:${server.port}`)).text()).toBe("ok");
     } finally {
-      await Promise.all([server.stop(true), occupied.stop(true), secondOccupied.stop(true)]);
+      await Promise.all([server.stop(true), occupied.stop(true)]);
     }
   });
 });

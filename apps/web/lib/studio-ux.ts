@@ -6,15 +6,6 @@ import type {
 } from "@/lib/types";
 
 export type CreateStepId = "reference" | "prompt" | "models" | "generation";
-export type SettingsSection = "overview" | "runtime" | "storage";
-
-export const SETTINGS_SECTION_STORAGE_KEY =
-  "anima-studio:settings-section:v1";
-
-export function rememberSettingsSection(section: SettingsSection) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(SETTINGS_SECTION_STORAGE_KEY, section);
-}
 
 export interface PreflightIssue {
   code:

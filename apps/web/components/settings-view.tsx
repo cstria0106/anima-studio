@@ -16,6 +16,7 @@ import {
 } from "@/components/completion-notifications";
 import { RuntimeManager } from "@/components/runtime-manager";
 import { StorageDashboard } from "@/components/storage-dashboard";
+import { useUiPreferences } from "@/components/ui-preferences-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { SectionHeading } from "@/components/ui/field";
@@ -25,14 +26,10 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import {
-  rememberSettingsSection,
-  SETTINGS_SECTION_STORAGE_KEY,
-  type SettingsSection,
-} from "@/lib/studio-ux";
 import type {
   AppInfo,
   AppUpdateInfo,
+  SettingsSection,
   StorageCleanupResult,
   StorageCleanupTarget,
   StorageInventory,
@@ -77,7 +74,8 @@ export function SettingsView({
   onStorageRefresh,
   onStorageCleanup,
 }: SettingsViewProps) {
-  const [section, setSection] = React.useState<SettingsSection>("overview");
+  const { preferences, updatePreferences } = useUiPreferences();
+  const section = preferences.settingsSection ?? "overview";
   const [appInfo, setAppInfo] = React.useState<AppInfo | null>(null);
   const [appUpdate, setAppUpdate] = React.useState<AppUpdateInfo | null>(null);
   const [appInfoError, setAppInfoError] = React.useState("");
@@ -97,15 +95,12 @@ export function SettingsView({
   }, []);
 
   React.useEffect(() => {
-    const saved = window.localStorage.getItem(SETTINGS_SECTION_STORAGE_KEY);
-    if (isSettingsSection(saved)) setSection(saved);
     void refreshAppInfo();
   }, [refreshAppInfo]);
 
   function selectSection(next: string) {
     if (!isSettingsSection(next)) return;
-    setSection(next);
-    rememberSettingsSection(next);
+    updatePreferences({ settingsSection: next });
   }
 
   return (

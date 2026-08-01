@@ -17,6 +17,10 @@ import {
 import { extractEmbeddedResources } from "./portable/resources";
 import { EmbeddedStaticSite } from "./portable/static";
 import { GitHubUpdateService } from "./portable/update";
+import {
+  PORTABLE_APP_PORT,
+  startPortableServer,
+} from "./portable/server";
 
 const REPOSITORY_URL = "https://github.com/cstria0106/anima-studio";
 
@@ -73,7 +77,7 @@ async function main(): Promise<void> {
     let actualPort = 0;
     const config = loadConfig({
       host: "127.0.0.1",
-      port: 0,
+      port: PORTABLE_APP_PORT,
       dataDir,
       runtimeDir: join(dataDir, "runtime"),
       databasePath: join(dataDir, "anima-studio.sqlite"),
@@ -103,12 +107,7 @@ async function main(): Promise<void> {
         thirdPartyNotices: THIRD_PARTY_NOTICES,
       },
     });
-    server = Bun.serve({
-      hostname: "127.0.0.1",
-      port: 0,
-      fetch: runtime.app.fetch,
-      idleTimeout: 120,
-    });
+    server = startPortableServer((request) => runtime!.app.fetch(request));
     if (!server.port) throw new Error("Windows did not assign a server port.");
     actualPort = server.port;
     const url = `http://127.0.0.1:${actualPort}`;

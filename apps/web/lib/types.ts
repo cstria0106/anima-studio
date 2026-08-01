@@ -97,6 +97,15 @@ export interface GenerationDraft {
   };
 }
 
+export type SettingsSection = "overview" | "runtime" | "storage";
+
+export interface UiPreferences {
+  draft?: GenerationDraft;
+  blurSensitive?: boolean;
+  completionNotificationsEnabled?: boolean;
+  settingsSection?: SettingsSection;
+}
+
 export const DEFAULT_DRAFT: GenerationDraft = {
   referenceAssets: [],
   prompts: {

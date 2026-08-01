@@ -31,7 +31,7 @@
 - Ship only `dist/AnimaStudio.exe`. Do not add an installer, code signing, a tray process, a native window, or automatic executable replacement unless the product scope explicitly changes.
 - Keep all mutable packaged-app data at `join(dirname(process.execPath), "data")`. Do not introduce a configurable data directory, fixed server port, or LocalAppData fallback.
 - Never include or modify the repository `data` directory, user databases, models, outputs, or managed runtime as part of a build.
-- Keep the packaged HTTP server on `127.0.0.1` with port `0`. UI API and SSE calls must use same-origin relative `/api/...` URLs.
+- Keep the packaged HTTP server on `127.0.0.1`, preferring port `8787` and incrementing until an available port is found. UI API and SSE calls must use same-origin relative `/api/...` URLs.
 - Reuse `apps/api/src/process/windows.ts` for Windows process identity checks. Do not duplicate PID, executable-path, or process-start matching in the launcher or runtime supervisor.
 - Preserve token-authenticated instance probing and token-checked lock cleanup when changing single-instance behavior.
 - Do not install or download ComfyUI at application startup. Downloads begin only after an explicit user action such as **엔진 설치**.

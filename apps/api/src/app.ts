@@ -160,7 +160,74 @@ export type HuggingFaceLibraryService = Pick<
 >;
 
 export const RUNTIME_CONFIG_SETTING = "runtime-config-v1";
+export const UI_PREFERENCES_SETTING = "ui-preferences-v1";
 const DEFAULT_EXTERNAL_COMFY_URL = "http://127.0.0.1:8188";
+
+const SETTINGS_SECTIONS = new Set(["overview", "runtime", "storage"]);
+
+interface UiPreferences {
+  draft?: Record<string, unknown>;
+  blurSensitive?: boolean;
+  completionNotificationsEnabled?: boolean;
+  settingsSection?: string;
+}
+
+function uiPreferences(value: unknown): UiPreferences {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const input = value as Record<string, unknown>;
+  const result: UiPreferences = {};
+  if (
+    input.draft &&
+    typeof input.draft === "object" &&
+    !Array.isArray(input.draft)
+  ) {
+    result.draft = input.draft as Record<string, unknown>;
+  }
+  if (typeof input.blurSensitive === "boolean") {
+    result.blurSensitive = input.blurSensitive;
+  }
+  if (typeof input.completionNotificationsEnabled === "boolean") {
+    result.completionNotificationsEnabled =
+      input.completionNotificationsEnabled;
+  }
+  if (
+    typeof input.settingsSection === "string" &&
+    SETTINGS_SECTIONS.has(input.settingsSection)
+  ) {
+    result.settingsSection = input.settingsSection;
+  }
+  return result;
+}
+
+function uiPreferencesPatch(value: unknown): UiPreferences {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new RuntimeRequestError(
+      "UI preferences must be a JSON object.",
+      400,
+    );
+  }
+  const input = value as Record<string, unknown>;
+  const supported = new Set([
+    "draft",
+    "blurSensitive",
+    "completionNotificationsEnabled",
+    "settingsSection",
+  ]);
+  if (Object.keys(input).some((key) => !supported.has(key))) {
+    throw new RuntimeRequestError(
+      "UI preferences contain an unsupported field.",
+      400,
+    );
+  }
+  const result = uiPreferences(input);
+  if (Object.keys(result).length !== Object.keys(input).length) {
+    throw new RuntimeRequestError(
+      "UI preferences contain an invalid value.",
+      400,
+    );
+  }
+  return result;
+}
 
 function configuredRuntimeManifest(config: AppConfig): EngineManifest {
   if (
@@ -924,6 +991,24 @@ export function createApp(services: AppServices): Hono {
       );
     }
   };
+
+  app.get("/api/ui-preferences", (c) =>
+    c.json({
+      preferences: uiPreferences(
+        services.repository.getSetting<unknown>(UI_PREFERENCES_SETTING),
+      ),
+    }),
+  );
+
+  app.put("/api/ui-preferences", async (c) => {
+    const patch = uiPreferencesPatch(await parseJson(c.req.raw));
+    const current = uiPreferences(
+      services.repository.getSetting<unknown>(UI_PREFERENCES_SETTING),
+    );
+    const preferences = { ...current, ...patch };
+    services.repository.setSetting(UI_PREFERENCES_SETTING, preferences);
+    return c.json({ preferences });
+  });
 
   app.get("/api/comfy/runtime", async (c) =>
     c.json({ runtime: await runtimeResponse() }),

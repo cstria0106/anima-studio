@@ -4,9 +4,7 @@ import * as React from "react";
 import { Bell, BellOff, CheckCircle2, ShieldAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-
-const ENABLED_KEY = "anima-studio:completion-notifications:v1";
-const CHANGE_EVENT = "anima-studio:completion-notifications-change";
+import { useUiPreferences } from "@/components/ui-preferences-provider";
 
 export interface CompletionNotice {
   id: string;
@@ -16,34 +14,20 @@ export interface CompletionNotice {
 }
 
 export function useCompletionNotifications() {
+  const { preferences, updatePreferences } = useUiPreferences();
   const [supported, setSupported] = React.useState(false);
   const [permission, setPermission] =
     React.useState<NotificationPermission>("default");
-  const [enabled, setEnabled] = React.useState(false);
   const lastNotice = React.useRef("");
+  const enabled =
+    permission === "granted" &&
+    preferences.completionNotificationsEnabled === true;
 
   React.useEffect(() => {
     const available = typeof window !== "undefined" && "Notification" in window;
     setSupported(available);
     if (!available) return;
-    const synchronize = () => {
-      setPermission(Notification.permission);
-      setEnabled(
-        Notification.permission === "granted" &&
-          window.localStorage.getItem(ENABLED_KEY) === "true",
-      );
-    };
-    synchronize();
-    window.addEventListener(CHANGE_EVENT, synchronize);
-    window.addEventListener("storage", synchronize);
-    return () => {
-      window.removeEventListener(CHANGE_EVENT, synchronize);
-      window.removeEventListener("storage", synchronize);
-    };
-  }, []);
-
-  const broadcast = React.useCallback(() => {
-    window.dispatchEvent(new Event(CHANGE_EVENT));
+    setPermission(Notification.permission);
   }, []);
 
   const requestPermission = React.useCallback(async () => {
@@ -51,20 +35,16 @@ export function useCompletionNotifications() {
     const next = await Notification.requestPermission();
     setPermission(next);
     const nextEnabled = next === "granted";
-    setEnabled(nextEnabled);
-    window.localStorage.setItem(ENABLED_KEY, String(nextEnabled));
-    broadcast();
+    updatePreferences({ completionNotificationsEnabled: nextEnabled });
     return nextEnabled;
-  }, [broadcast, supported]);
+  }, [supported, updatePreferences]);
 
   const setNotificationEnabled = React.useCallback(
     (next: boolean) => {
       if (!supported || permission !== "granted") return;
-      setEnabled(next);
-      window.localStorage.setItem(ENABLED_KEY, String(next));
-      broadcast();
+      updatePreferences({ completionNotificationsEnabled: next });
     },
-    [broadcast, permission, supported],
+    [permission, supported, updatePreferences],
   );
 
   const notify = React.useCallback(

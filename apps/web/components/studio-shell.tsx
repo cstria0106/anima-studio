@@ -23,6 +23,10 @@ import { PromptEditor } from "@/components/prompt-editor";
 import { ReferenceUploader } from "@/components/reference-uploader";
 import { RuntimeStartupGate } from "@/components/runtime-startup-gate";
 import { SettingsView } from "@/components/settings-view";
+import {
+  normalizeGenerationDraft,
+  useUiPreferences,
+} from "@/components/ui-preferences-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -67,65 +71,9 @@ import { cn } from "@/lib/utils";
 import { useCompletionNotifications } from "@/components/completion-notifications";
 import {
   buildPreflightIssues,
-  clearModelAndLoraSelections,
   loadSeedIntoDraft,
   type PreflightIssue,
 } from "@/lib/studio-ux";
-
-const DRAFT_KEY = "anima-studio:creation-draft:v1";
-const MODEL_SELECTION_RESET_KEY =
-  "anima-studio:model-selection-defaults-cleared:v1";
-const LEGACY_UI_STORAGE_CLEANUP_KEY =
-  "anima-studio:legacy-ui-storage-cleaned:v1";
-const LEGACY_UI_STORAGE_KEYS = [
-  "anima-studio:sidebar-collapsed:v1",
-  "anima-studio:character-profiles:v1",
-  "anima-studio:model-packs:v1",
-] as const;
-
-function restoreDraft(): GenerationDraft {
-  if (typeof window === "undefined") return DEFAULT_DRAFT;
-  const resetModelSelections =
-    window.localStorage.getItem(MODEL_SELECTION_RESET_KEY) !== "true";
-  const finish = (draft: GenerationDraft) => {
-    if (!resetModelSelections) return draft;
-    const cleared = clearModelAndLoraSelections(draft);
-    window.localStorage.setItem(DRAFT_KEY, JSON.stringify(cleared));
-    window.localStorage.setItem(MODEL_SELECTION_RESET_KEY, "true");
-    return cleared;
-  };
-  try {
-    const raw = window.localStorage.getItem(DRAFT_KEY);
-    if (!raw) return finish(structuredClone(DEFAULT_DRAFT));
-    const saved = JSON.parse(raw) as Partial<GenerationDraft>;
-    return finish({
-      ...DEFAULT_DRAFT,
-      ...saved,
-      referenceAssets: (saved.referenceAssets ?? []).filter(
-        (asset) =>
-          asset.status === "ready" &&
-          Boolean(asset.id) &&
-          !asset.url?.startsWith("blob:"),
-      ),
-      prompts: { ...DEFAULT_DRAFT.prompts, ...saved.prompts },
-      models: { ...DEFAULT_DRAFT.models, ...saved.models },
-      sampling: { ...DEFAULT_DRAFT.sampling, ...saved.sampling },
-      instantLora: {
-        ...DEFAULT_DRAFT.instantLora,
-        ...saved.instantLora,
-      },
-      tagging: { ...DEFAULT_DRAFT.tagging, ...saved.tagging },
-      upscale: { ...DEFAULT_DRAFT.upscale, ...saved.upscale },
-      loras: (saved.loras ?? []).map((lora) => ({
-        ...lora,
-        triggerWords: lora.triggerWords ?? [],
-        useTriggerWords: lora.useTriggerWords !== false,
-      })),
-    });
-  } catch {
-    return finish(structuredClone(DEFAULT_DRAFT));
-  }
-}
 
 function CreateWorkspace({
   draft,
@@ -330,6 +278,12 @@ function CreateWorkspace({
 }
 
 export function StudioShell() {
+  const {
+    preferences,
+    ready: preferencesReady,
+    updatePreferences,
+  } = useUiPreferences();
+  const draftInitialized = React.useRef(false);
   const libraryTriggerRef = React.useRef<HTMLButtonElement>(null);
   const settingsTriggerRef = React.useRef<HTMLButtonElement>(null);
   const [historyOpen, setHistoryOpen] = React.useState(false);
@@ -384,17 +338,11 @@ export function StudioShell() {
   }, [activeJob, notifyCompletion]);
 
   React.useEffect(() => {
-    setDraft(restoreDraft());
-    if (
-      window.localStorage.getItem(LEGACY_UI_STORAGE_CLEANUP_KEY) !== "true"
-    ) {
-      for (const key of LEGACY_UI_STORAGE_KEYS) {
-        window.localStorage.removeItem(key);
-      }
-      window.localStorage.setItem(LEGACY_UI_STORAGE_CLEANUP_KEY, "true");
-    }
+    if (!preferencesReady || draftInitialized.current) return;
+    draftInitialized.current = true;
+    setDraft(normalizeGenerationDraft(preferences.draft));
     setHydrated(true);
-  }, []);
+  }, [preferences.draft, preferencesReady]);
 
   React.useEffect(() => {
     if (!toast || toast.type === "error") return;
@@ -413,10 +361,10 @@ export function StudioShell() {
           (asset) => asset.status === "ready" && !asset.url.startsWith("blob:"),
         ),
       };
-      window.localStorage.setItem(DRAFT_KEY, JSON.stringify(serializable));
+      updatePreferences({ draft: serializable });
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [draft, hydrated]);
+  }, [draft, hydrated, updatePreferences]);
 
   const refreshSystem = React.useCallback(async () => {
     setLoadingSystem(true);

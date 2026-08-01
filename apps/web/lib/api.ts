@@ -31,7 +31,31 @@ import {
   type StorageCleanupTarget,
   type StorageInventory,
   type TagSuggestion,
+  type UiPreferences,
 } from "@/lib/types";
+
+export async function getUiPreferences(
+  signal?: AbortSignal,
+): Promise<UiPreferences> {
+  const response = await apiFetch<{ preferences: UiPreferences }>(
+    "/api/ui-preferences",
+    { signal },
+  );
+  return response.preferences;
+}
+
+export async function updateUiPreferences(
+  patch: Partial<UiPreferences>,
+): Promise<UiPreferences> {
+  const response = await apiFetch<{ preferences: UiPreferences }>(
+    "/api/ui-preferences",
+    {
+      method: "PUT",
+      body: JSON.stringify(patch),
+    },
+  );
+  return response.preferences;
+}
 
 export function getAppInfo(signal?: AbortSignal): Promise<AppInfo> {
   return apiFetch<AppInfo>("/api/app/info", { signal });

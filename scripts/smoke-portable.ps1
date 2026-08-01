@@ -33,7 +33,7 @@ try {
   if ($info.dataPath -ne (Join-Path $smokeRoot "data")) { throw "Data path mismatch" }
   $secondOutput = & $exe --no-browser
   if ($LASTEXITCODE -ne 0 -or $secondOutput -notmatch [regex]::Escape($base)) {
-    throw "Second launch did not reuse the existing dynamic URL"
+    throw "Second launch did not reuse the existing URL"
   }
   [pscustomobject]@{
     TemporaryDirectory = $smokeRoot

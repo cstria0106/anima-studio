@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useUiPreferences } from "@/components/ui-preferences-provider";
 import {
   Card,
   CardContent,
@@ -67,7 +68,6 @@ import type {
   ModelInstallTask,
   ManagedModelInstallation,
 } from "@/lib/types";
-import { rememberSettingsSection } from "@/lib/studio-ux";
 import { cn } from "@/lib/utils";
 import {
   Tabs,
@@ -90,8 +90,6 @@ interface CivitaiInstallationPreview {
   thumbnailUrl: string | null;
   sensitive: boolean;
 }
-
-const BLUR_KEY = "anima-studio:blur-sensitive-previews:v1";
 
 function formatBytes(value: number | null | undefined) {
   if (value === null || value === undefined || !Number.isFinite(value)) {
@@ -197,6 +195,7 @@ export function LibraryView({
   onOpenManagedRuntime,
   onOptionsChanged,
 }: LibraryViewProps) {
+  const { preferences, updatePreferences } = useUiPreferences();
   const [provider, setProvider] =
     React.useState<CivitaiProviderStatus | null>(null);
   const [animaProvider, setAnimaProvider] =
@@ -217,7 +216,7 @@ export function LibraryView({
   const [destination, setDestination] =
     React.useState<CivitaiDestination>("loras");
   const [relativeDir, setRelativeDir] = React.useState("");
-  const [blurSensitive, setBlurSensitive] = React.useState(true);
+  const blurSensitive = preferences.blurSensitive !== false;
   const [previewRevealed, setPreviewRevealed] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
   const [inspecting, setInspecting] = React.useState(false);
@@ -298,14 +297,8 @@ export function LibraryView({
   }, []);
 
   React.useEffect(() => {
-    const saved = window.localStorage.getItem(BLUR_KEY);
-    if (saved !== null) setBlurSensitive(saved !== "false");
     void loadProviders();
   }, [loadProviders]);
-
-  React.useEffect(() => {
-    window.localStorage.setItem(BLUR_KEY, String(blurSensitive));
-  }, [blurSensitive]);
 
   React.useEffect(
     () => () => {
@@ -651,7 +644,7 @@ export function LibraryView({
             onInstall={installAnima}
             onRemove={(id) => removeInstallation(id, "anima")}
             onOpenManagedRuntime={() => {
-              rememberSettingsSection("runtime");
+              updatePreferences({ settingsSection: "runtime" });
               onOpenManagedRuntime();
             }}
           />
@@ -892,7 +885,9 @@ export function LibraryView({
                         size="sm"
                         variant="ghost"
                         onClick={() => {
-                          setBlurSensitive((current) => !current);
+                          updatePreferences({
+                            blurSensitive: !blurSensitive,
+                          });
                           setPreviewRevealed(false);
                         }}
                       >

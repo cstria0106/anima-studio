@@ -20,6 +20,7 @@ import {
 import {
   createRuntime,
   RUNTIME_CONFIG_SETTING,
+  UI_PREFERENCES_SETTING,
   type ApiRuntime,
   type HuggingFaceLibraryService,
   type ModelLibraryService,
@@ -578,6 +579,50 @@ async function uploadReference(api: ApiRuntime): Promise<string> {
 }
 
 describe("Anima Studio API", () => {
+  test("persists and partially updates UI preferences", async () => {
+    const { runtime: api } = await runtime();
+
+    const draftResponse = await api.app.request("/api/ui-preferences", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        draft: { prompts: { positive: "red eyes" } },
+        blurSensitive: false,
+      }),
+    });
+    expect(draftResponse.status).toBe(200);
+
+    const sectionResponse = await api.app.request("/api/ui-preferences", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ settingsSection: "runtime" }),
+    });
+    expect(await sectionResponse.json()).toEqual({
+      preferences: {
+        draft: { prompts: { positive: "red eyes" } },
+        blurSensitive: false,
+        settingsSection: "runtime",
+      },
+    });
+    expect(
+      api.repository.getSetting<unknown>(UI_PREFERENCES_SETTING),
+    ).toEqual({
+      draft: { prompts: { positive: "red eyes" } },
+      blurSensitive: false,
+      settingsSection: "runtime",
+    });
+  });
+
+  test("rejects invalid UI preference values", async () => {
+    const { runtime: api } = await runtime();
+    const response = await api.app.request("/api/ui-preferences", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ settingsSection: "missing" }),
+    });
+    expect(response.status).toBe(400);
+  });
+
   test("keeps a previous managed bundle stopped until it is updated", async () => {
     const dataDir = await mkdtemp(join(tmpdir(), "anima-managed-upgrade-test-"));
     temporaryDirectories.push(dataDir);
