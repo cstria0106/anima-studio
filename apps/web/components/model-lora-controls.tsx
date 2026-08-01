@@ -56,7 +56,7 @@ function LoraThumbnail({
       fill
       unoptimized
       sizes={`${size}px`}
-      className="object-contain"
+      className="object-cover"
       onError={() => setFailed(true)}
     />
   );
