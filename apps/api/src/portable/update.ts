@@ -79,10 +79,14 @@ export class GitHubUpdateService {
     };
   }
 
-  async check(): Promise<AppUpdateInfo> {
+  async check(forceRefresh = false): Promise<AppUpdateInfo> {
     const cached = await readCache(this.cachePath);
     const now = this.now();
-    if (cached && now.getTime() - Date.parse(cached.fetchedAt) < DAY_MS) {
+    if (
+      !forceRefresh &&
+      cached &&
+      now.getTime() - Date.parse(cached.fetchedAt) < DAY_MS
+    ) {
       return this.result(cached);
     }
     try {

@@ -53,4 +53,35 @@ describe("GitHub update checks", () => {
     time = new Date("2026-08-05T00:00:00Z");
     expect((await service.check()).updateAvailable).toBeTrue();
   });
+
+  test("force refresh bypasses a fresh cache without a release", async () => {
+    const root = await mkdtemp(join(tmpdir(), "anima-update-"));
+    cleanup.push(root);
+    let calls = 0;
+    let ifNoneMatch: string | null = null;
+    const request = (async (_url: string | URL | Request, init?: RequestInit) => {
+      calls += 1;
+      ifNoneMatch = new Headers(init?.headers).get("if-none-match");
+      if (calls === 1) {
+        return Response.json([], { headers: { etag: '"empty"' } });
+      }
+      return Response.json([
+        { tag_name: "v1.1.0", html_url: "https://example/release" },
+      ]);
+    });
+    const service = new GitHubUpdateService(
+      "1.0.0",
+      join(root, "cache.json"),
+      request,
+      () => new Date("2026-08-01T00:00:00Z"),
+    );
+
+    expect((await service.check()).latestVersion).toBeNull();
+    expect((await service.check()).latestVersion).toBeNull();
+    expect(calls).toBe(1);
+
+    expect((await service.check(true)).latestVersion).toBe("1.1.0");
+    expect(calls).toBe(2);
+    expect(String(ifNoneMatch)).toBe('"empty"');
+  });
 });

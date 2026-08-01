@@ -1421,7 +1421,9 @@ export function createApp(services: AppServices): Hono {
         checkedAt: null,
       });
     }
-    return c.json(await portable.updates.check());
+    return c.json(
+      await portable.updates.check(c.req.query("refresh") === "true"),
+    );
   });
 
   app.get("/api/app/licenses", (c) => {

@@ -81,12 +81,12 @@ export function SettingsView({
   const [appInfoError, setAppInfoError] = React.useState("");
   const [checkingUpdate, setCheckingUpdate] = React.useState(false);
 
-  const refreshAppInfo = React.useCallback(async () => {
+  const refreshAppInfo = React.useCallback(async (refreshUpdate = false) => {
     setCheckingUpdate(true);
     setAppInfoError("");
     const [info, update] = await Promise.allSettled([
       getAppInfo(),
-      getAppUpdate(),
+      getAppUpdate({ refresh: refreshUpdate }),
     ]);
     if (info.status === "fulfilled") setAppInfo(info.value);
     else setAppInfoError("앱 정보를 불러오지 못했습니다.");
@@ -163,7 +163,7 @@ export function SettingsView({
                           ? `새 버전 ${appUpdate.latestVersion} 사용 가능`
                           : appUpdate?.latestVersion
                             ? `최신 버전 (${appUpdate.latestVersion})`
-                            : "확인할 수 없음 (오프라인 사용 가능)"}
+                            : "업데이트 정보를 확인할 수 없습니다"}
                       </dd>
                     </dl>
                   ) : (
@@ -175,7 +175,7 @@ export function SettingsView({
                       size="sm"
                       variant="outline"
                       disabled={checkingUpdate}
-                      onClick={() => void refreshAppInfo()}
+                      onClick={() => void refreshAppInfo(true)}
                     >
                       <RefreshCw className={checkingUpdate ? "animate-spin" : ""} />
                       업데이트 확인

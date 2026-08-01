@@ -61,8 +61,13 @@ export function getAppInfo(signal?: AbortSignal): Promise<AppInfo> {
   return apiFetch<AppInfo>("/api/app/info", { signal });
 }
 
-export function getAppUpdate(signal?: AbortSignal): Promise<AppUpdateInfo> {
-  return apiFetch<AppUpdateInfo>("/api/app/update", { signal });
+export function getAppUpdate(
+  options: { refresh?: boolean; signal?: AbortSignal } = {},
+): Promise<AppUpdateInfo> {
+  const path = options.refresh
+    ? "/api/app/update?refresh=true"
+    : "/api/app/update";
+  return apiFetch<AppUpdateInfo>(path, { signal: options.signal });
 }
 
 interface ApiGenerationConfig {
