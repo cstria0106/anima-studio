@@ -66,11 +66,22 @@ export function replaceTagAtCursor(
   const after = value.slice(tag.end);
   const leadingSpace = before && !/\s$/.test(before) ? " " : "";
   const completed = `${before}${leadingSpace}${replacement}${after}`;
+  const completedCursor =
+    before.length + leadingSpace.length + replacement.length;
 
   if (tag.end < value.length) {
+    if (value[tag.end] === "\n" || value[tag.end] === "\r") {
+      return {
+        value: `${before}${leadingSpace}${replacement},${after}`,
+        cursor: completedCursor + 1,
+      };
+    }
+
+    const trailingHorizontalSpace =
+      value.slice(tag.end + 1).match(/^[^\S\r\n]*/)?.[0].length ?? 0;
     return {
       value: completed,
-      cursor: before.length + leadingSpace.length + replacement.length,
+      cursor: completedCursor + 1 + trailingHorizontalSpace,
     };
   }
 
@@ -78,6 +89,13 @@ export function replaceTagAtCursor(
     value: `${completed}, `,
     cursor: completed.length + 2,
   };
+}
+
+export function isAutocompleteCommitKey(
+  key: string,
+  isComposing: boolean,
+) {
+  return !isComposing && (key === "Enter" || key === "Tab");
 }
 
 export function extractTags(value: string) {

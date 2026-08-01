@@ -15,6 +15,7 @@ import {
   cn,
   extractTags,
   getTagAtCursor,
+  isAutocompleteCommitKey,
   replaceTagAtCursor,
   tagComparisonKey,
 } from "@/lib/utils";
@@ -88,7 +89,7 @@ function TagTextarea({
       pendingCursor.current,
     );
     pendingCursor.current = null;
-  }, [value]);
+  }, [cursor, value]);
 
   React.useEffect(() => {
     function dismissOnOutsidePointerDown(event: PointerEvent) {
@@ -207,7 +208,10 @@ function TagTextarea({
               setActiveIndex((index) => selectableIndex(index - 1, -1, index));
             }
             if (
-              (event.key === "Enter" || event.key === "Tab") &&
+              isAutocompleteCommitKey(
+                event.key,
+                event.nativeEvent.isComposing,
+              ) &&
               suggestions[activeIndex] &&
               !isIncluded(suggestions[activeIndex])
             ) {

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   getTagAtCursor,
+  isAutocompleteCommitKey,
   replaceTagAtCursor,
   tagComparisonKey,
 } from "./utils";
@@ -46,7 +47,7 @@ describe("tag prompt editing", () => {
     });
   });
 
-  test("uses line breaks as tag boundaries without replacing them", () => {
+  test("uses line breaks as tag boundaries and adds a comma before them", () => {
     const multiline = "black hair\nlong hair\ncat ears";
     const cursor = multiline.indexOf("long") + "long".length;
 
@@ -54,9 +55,27 @@ describe("tag prompt editing", () => {
       tag: "long hair",
       query: "long",
     });
-    expect(replaceTagAtCursor(multiline, cursor, "short hair").value).toBe(
-      "black hair\nshort hair\ncat ears",
-    );
+    expect(replaceTagAtCursor(multiline, cursor, "short hair")).toEqual({
+      value: "black hair\nshort hair,\ncat ears",
+      cursor: "black hair\nshort hair,".length,
+    });
+  });
+
+  test("adds the missing comma when completing a tag before blank lines", () => {
+    const multiline = [
+      "1girl, solo, loli, vrc,",
+      "red eyes, white pupils",
+      "",
+      "black hair, long hair, cat ears, animal ear fluff,",
+      "",
+      "serafuku,",
+    ].join("\n");
+    const cursor = multiline.indexOf("white pupils") + "white pupils".length;
+
+    expect(replaceTagAtCursor(multiline, cursor, "white pupils")).toEqual({
+      value: multiline.replace("white pupils\n", "white pupils,\n"),
+      cursor: cursor + 1,
+    });
   });
 
   test("replaces only the tag containing the cursor", () => {
@@ -64,7 +83,17 @@ describe("tag prompt editing", () => {
 
     expect(replaceTagAtCursor(prompt, cursor, "dog ears")).toEqual({
       value: "black hair, long hair, dog ears, fishbone hair",
-      cursor: "black hair, long hair, dog ears".length,
+      cursor: "black hair, long hair, dog ears, ".length,
+    });
+  });
+
+  test("moves past an existing comma when completing an unchanged tag", () => {
+    const unchanged = "red eyes, white pupils, black hair";
+    const cursor = unchanged.indexOf("white pupils") + "white pupils".length;
+
+    expect(replaceTagAtCursor(unchanged, cursor, "white pupils")).toEqual({
+      value: unchanged,
+      cursor: "red eyes, white pupils, ".length,
     });
   });
 
@@ -86,5 +115,22 @@ describe("tag prompt editing", () => {
       tagComparisonKey("phoebe (wuthering_waves)"),
     );
     expect(tagComparisonKey("score_7")).toBe("score_7");
+  });
+});
+
+describe("autocomplete keyboard handling", () => {
+  test("commits Enter and Tab outside text composition", () => {
+    expect([
+      isAutocompleteCommitKey("Enter", false),
+      isAutocompleteCommitKey("Tab", false),
+    ]).toEqual([true, true]);
+  });
+
+  test("does not commit Enter while an IME composition is active", () => {
+    expect(isAutocompleteCommitKey("Enter", true)).toBeFalse();
+  });
+
+  test("does not commit unrelated keys", () => {
+    expect(isAutocompleteCommitKey("ArrowDown", false)).toBeFalse();
   });
 });
