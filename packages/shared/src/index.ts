@@ -51,8 +51,8 @@ export const loraSelectionSchema = z.object({
 export const taggingOptionsSchema = z.object({
   generalThreshold: z.number().min(0).max(1).default(0.35),
   characterThreshold: z.number().min(0).max(1).default(0.7),
-  prependTags: z.string().default(", 3d, koikatsu (medium)"),
-  appendTags: z.string().default("vrcg"),
+  prependTags: z.string().default(""),
+  appendTags: z.string().default(""),
   excludeTags: z.string().default(""),
   replaceTags: z.string().default(""),
   removeUnderscore: z.boolean().default(true),

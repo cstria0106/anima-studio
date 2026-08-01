@@ -155,8 +155,8 @@ export const DEFAULT_DRAFT: GenerationDraft = {
   tagging: {
     threshold: 0.35,
     characterThreshold: 0.7,
-    prependTags: ", 3d, koikatsu (medium)",
-    appendTags: "vrcg",
+    prependTags: "",
+    appendTags: "",
     excludeTags: "",
     replaceTags: "",
     removeUnderscore: true,
