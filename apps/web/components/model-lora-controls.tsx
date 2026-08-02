@@ -262,6 +262,8 @@ export function ModelLoraControls({
   onLorasChange,
   validationWarning,
 }: ModelLoraControlsProps) {
+  const [loraStrengthsLinked, setLoraStrengthsLinked] =
+    React.useState(false);
   const loraOptionsByPath = React.useMemo(
     () =>
       new Map(
@@ -294,6 +296,18 @@ export function ModelLoraControls({
     onLorasChange(
       loras.map((lora) => (lora.id === id ? { ...lora, ...patch } : lora)),
     );
+  }
+
+  function setStrengthsLinked(linked: boolean) {
+    setLoraStrengthsLinked(linked);
+    if (linked) {
+      onLorasChange(
+        loras.map((lora) => ({
+          ...lora,
+          clipStrength: lora.modelStrength,
+        })),
+      );
+    }
   }
 
   return (
@@ -354,7 +368,25 @@ export function ModelLoraControls({
       <div className="h-px bg-border/70" />
 
       <div className="space-y-4">
-        <h3 className="text-sm font-medium">LoRA</h3>
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-medium">LoRA</h3>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-medium text-muted-foreground">
+              Model · CLIP 연동
+            </span>
+            <Switch
+              size="sm"
+              checked={loraStrengthsLinked}
+              onCheckedChange={setStrengthsLinked}
+              aria-label="LoRA Model 및 CLIP 강도 연동"
+              title={
+                loraStrengthsLinked
+                  ? "Model과 CLIP 강도를 따로 조절"
+                  : "Model과 CLIP 강도를 함께 조절"
+              }
+            />
+          </div>
+        </div>
 
         <LoraFinder
           options={options.loras}
@@ -437,22 +469,38 @@ export function ModelLoraControls({
                   </div>
 
                   <div className="space-y-1 px-2.5 py-2">
-                    <StrengthSlider
-                      id={`lora-model-strength-${lora.id}`}
-                      label="Model"
-                      value={lora.modelStrength}
-                      onChange={(modelStrength) =>
-                        updateLora(lora.id, { modelStrength })
-                      }
-                    />
-                    <StrengthSlider
-                      id={`lora-clip-strength-${lora.id}`}
-                      label="CLIP"
-                      value={lora.clipStrength}
-                      onChange={(clipStrength) =>
-                        updateLora(lora.id, { clipStrength })
-                      }
-                    />
+                    {loraStrengthsLinked ? (
+                      <StrengthSlider
+                        id={`lora-linked-strength-${lora.id}`}
+                        label="강도"
+                        value={lora.modelStrength}
+                        onChange={(strength) =>
+                          updateLora(lora.id, {
+                            modelStrength: strength,
+                            clipStrength: strength,
+                          })
+                        }
+                      />
+                    ) : (
+                      <>
+                        <StrengthSlider
+                          id={`lora-model-strength-${lora.id}`}
+                          label="Model"
+                          value={lora.modelStrength}
+                          onChange={(modelStrength) =>
+                            updateLora(lora.id, { modelStrength })
+                          }
+                        />
+                        <StrengthSlider
+                          id={`lora-clip-strength-${lora.id}`}
+                          label="CLIP"
+                          value={lora.clipStrength}
+                          onChange={(clipStrength) =>
+                            updateLora(lora.id, { clipStrength })
+                          }
+                        />
+                      </>
+                    )}
                   </div>
                 </div>
               );
