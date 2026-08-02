@@ -404,7 +404,6 @@ export function JobPanel({
             ) : null}
             <Button
               type="button"
-              size="lg"
               className="w-full"
               disabled={!canGenerate || submitting}
               onClick={onGenerate}
