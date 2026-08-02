@@ -99,6 +99,7 @@ export interface InstalledLoraMetadata {
   value: string;
   triggerWords: string[];
   thumbnailUrl?: string;
+  sourceUrl?: string;
 }
 
 export interface DownloadedLoraThumbnail {
@@ -416,12 +417,18 @@ export class CivitaiModelLibraryService {
             ...(version?.thumbnailUrl
               ? { thumbnailUrl: version.thumbnailUrl }
               : {}),
+            ...(installation.sourceUrl
+              ? { sourceUrl: installation.sourceUrl }
+              : {}),
           };
         } catch {
           return {
             name: installation.modelName || value,
             value,
             triggerWords: [],
+            ...(installation.sourceUrl
+              ? { sourceUrl: installation.sourceUrl }
+              : {}),
           };
         }
       }),

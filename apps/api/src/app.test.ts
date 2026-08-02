@@ -717,6 +717,8 @@ describe("Anima Studio API", () => {
           value,
           triggerWords: [],
           thumbnailUrl: "https://image.civitai.com/style.jpeg",
+          sourceUrl:
+            "https://civitai.com/models/123?modelVersionId=456",
         })),
       downloadLoraThumbnail: async () => thumbnail,
     } as ModelLibraryService;
@@ -724,10 +726,17 @@ describe("Anima Studio API", () => {
 
     const optionsResponse = await api.app.request("/api/options");
     const options = (await optionsResponse.json()) as {
-      loras: Array<{ value: string; thumbnailUrl?: string }>;
+      loras: Array<{
+        value: string;
+        thumbnailUrl?: string;
+        sourceUrl?: string;
+      }>;
     };
     expect(options.loras[0]?.thumbnailUrl).toBe(
       "/api/lora-thumbnail?lora=style.safetensors",
+    );
+    expect(options.loras[0]?.sourceUrl).toBe(
+      "https://civitai.com/models/123?modelVersionId=456",
     );
 
     const thumbnailResponse = await api.app.request(

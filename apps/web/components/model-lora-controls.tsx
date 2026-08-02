@@ -288,6 +288,7 @@ export function ModelLoraControls({
         triggerWords: option.triggerWords ?? [],
         useTriggerWords: true,
         thumbnailUrl: option.thumbnailUrl,
+        sourceUrl: option.sourceUrl,
       },
     ]);
   }
@@ -402,18 +403,36 @@ export function ModelLoraControls({
               );
               const thumbnailUrl =
                 currentOption?.thumbnailUrl ?? lora.thumbnailUrl;
+              const sourceUrl = currentOption?.sourceUrl ?? lora.sourceUrl;
               return (
                 <div
                   key={lora.id}
                   className="overflow-hidden rounded-xl border border-border/75 bg-background/35"
                 >
                   <div className="relative grid aspect-[4/3] w-full place-items-center overflow-hidden bg-muted text-muted-foreground">
-                    <LoraThumbnail
-                      src={thumbnailUrl}
-                      size={360}
-                      fallback={<ImageIcon className="size-8" />}
-                    />
-                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/65 to-transparent px-3 pb-3 pt-10 text-white">
+                    {sourceUrl ? (
+                      <a
+                        href={sourceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="absolute inset-0 grid place-items-center outline-none transition after:pointer-events-none after:absolute after:inset-0 after:ring-inset after:transition hover:after:ring-2 hover:after:ring-pink-300/70 focus-visible:after:ring-2 focus-visible:after:ring-pink-300"
+                        aria-label={`${lora.name} Civitai 원본 페이지 열기`}
+                        title="Civitai 원본 페이지 열기"
+                      >
+                        <LoraThumbnail
+                          src={thumbnailUrl}
+                          size={360}
+                          fallback={<ImageIcon className="size-8" />}
+                        />
+                      </a>
+                    ) : (
+                      <LoraThumbnail
+                        src={thumbnailUrl}
+                        size={360}
+                        fallback={<ImageIcon className="size-8" />}
+                      />
+                    )}
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/65 to-transparent px-3 pb-3 pt-10 text-white">
                       <p className="truncate text-sm font-semibold drop-shadow-sm">
                         {lora.name}
                       </p>
@@ -422,7 +441,7 @@ export function ModelLoraControls({
                       </p>
                       {lora.triggerWords.length ? (
                         <div
-                          className="mt-1.5 flex max-w-full cursor-pointer items-center gap-1.5 rounded border border-white/10 bg-black/50 px-1.5 py-0.5 text-[9px] text-pink-100 backdrop-blur-sm transition hover:border-white/25 hover:bg-black/70"
+                          className="pointer-events-auto mt-1.5 flex max-w-full cursor-pointer items-center gap-1.5 rounded border border-white/10 bg-black/50 px-1.5 py-0.5 text-[9px] text-pink-100 backdrop-blur-sm transition hover:border-white/25 hover:bg-black/70"
                           title={lora.triggerWords.join(", ")}
                           onClick={(event) => {
                             if ((event.target as Element).closest("button")) {

@@ -323,6 +323,12 @@ function loraOptions(value: unknown): LoraOption[] {
           : typeof record.thumbnail_url === "string"
             ? record.thumbnail_url
             : undefined,
+      sourceUrl:
+        typeof record.sourceUrl === "string"
+          ? record.sourceUrl
+          : typeof record.source_url === "string"
+            ? record.source_url
+            : undefined,
     });
   }
   return result;

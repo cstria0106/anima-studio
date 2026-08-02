@@ -33,6 +33,7 @@ export interface LoraSelection {
   triggerWords: string[];
   useTriggerWords: boolean;
   thumbnailUrl?: string;
+  sourceUrl?: string;
 }
 
 export interface GenerationDraft {
@@ -182,6 +183,7 @@ export interface ModelOption {
 export interface LoraOption extends ModelOption {
   triggerWords?: string[];
   thumbnailUrl?: string;
+  sourceUrl?: string;
 }
 
 export interface StudioOptions {

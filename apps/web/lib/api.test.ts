@@ -1,11 +1,46 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createJob, getJob } from "./api";
+import { createJob, getJob, getOptions } from "./api";
 import { DEFAULT_DRAFT, type GenerationDraft } from "./types";
 
 const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+});
+
+describe("studio options", () => {
+  test("preserves the Civitai source URL for installed LoRAs", async () => {
+    let requestedUrl = "";
+    globalThis.fetch = (async (input) => {
+      requestedUrl = input instanceof Request ? input.url : String(input);
+      return new Response(
+        JSON.stringify({
+          loras: [
+            {
+              name: "Style LoRA",
+              value: "style.safetensors",
+              thumbnailUrl: "/api/lora-thumbnail?lora=style.safetensors",
+              sourceUrl:
+                "https://civitai.com/models/123?modelVersionId=456",
+            },
+          ],
+        }),
+        { headers: { "content-type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    await expect(getOptions()).resolves.toMatchObject({
+      loras: [
+        {
+          name: "Style LoRA",
+          value: "style.safetensors",
+          sourceUrl:
+            "https://civitai.com/models/123?modelVersionId=456",
+        },
+      ],
+    });
+    expect(requestedUrl).toBe("/api/options");
+  });
 });
 
 describe("history job restoration", () => {
