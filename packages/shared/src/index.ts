@@ -1,15 +1,15 @@
 import { z } from "zod";
 
 export const CURATED_IMAGE_PRESETS = [
-  { label: "세로 · 1:2", width: 704, height: 1408 },
-  { label: "세로 · 4:7", width: 768, height: 1344 },
-  { label: "세로 · 2:3", width: 832, height: 1248 },
-  { label: "세로 · 7:9", width: 896, height: 1152 },
   { label: "정사각형 · 1:1", width: 1024, height: 1024 },
   { label: "가로 · 9:7", width: 1152, height: 896 },
-  { label: "가로 · 3:2", width: 1248, height: 832 },
+  { label: "세로 · 7:9", width: 896, height: 1152 },
+  { label: "가로 · 19:13", width: 1216, height: 832 },
+  { label: "세로 · 13:19", width: 832, height: 1216 },
   { label: "가로 · 7:4", width: 1344, height: 768 },
-  { label: "가로 · 2:1", width: 1408, height: 704 },
+  { label: "세로 · 4:7", width: 768, height: 1344 },
+  { label: "가로 · 12:5", width: 1536, height: 640 },
+  { label: "세로 · 5:12", width: 640, height: 1536 },
 ] as const;
 
 export const jobStatuses = [
