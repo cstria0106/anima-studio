@@ -70,6 +70,7 @@ function TagTextarea({
   const [activeIndex, setActiveIndex] = React.useState(0);
   const [cursor, setCursor] = React.useState(value.length);
   const autocompleteRef = React.useRef<HTMLDivElement>(null);
+  const highlightRef = React.useRef<HTMLDivElement>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const acceptsSuggestions = React.useRef(false);
   const pendingCursor = React.useRef<number | null>(null);
@@ -96,6 +97,25 @@ function TagTextarea({
     () => new Set(contextTags.map(tagComparisonKey)),
     [contextTags],
   );
+
+  const syncHighlight = React.useCallback(() => {
+    const highlight = highlightRef.current;
+    const textarea = textareaRef.current;
+    if (!highlight || !textarea) return;
+
+    const styles = window.getComputedStyle(textarea);
+    const horizontalBorder =
+      Number.parseFloat(styles.borderLeftWidth) +
+      Number.parseFloat(styles.borderRightWidth);
+    const scrollbarWidth = Math.max(
+      0,
+      textarea.offsetWidth - textarea.clientWidth - horizontalBorder,
+    );
+
+    highlight.style.right = `${scrollbarWidth}px`;
+    highlight.scrollTop = textarea.scrollTop;
+    highlight.scrollLeft = textarea.scrollLeft;
+  }, []);
 
   function updateCursor(textarea: HTMLTextAreaElement) {
     const nextCursor = textarea.selectionStart;
@@ -132,6 +152,16 @@ function TagTextarea({
     );
     pendingCursor.current = null;
   }, [cursor, value]);
+
+  React.useLayoutEffect(syncHighlight, [syncHighlight, value]);
+
+  React.useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const observer = new ResizeObserver(syncHighlight);
+    observer.observe(textarea);
+    return () => observer.disconnect();
+  }, [syncHighlight]);
 
   React.useEffect(() => {
     function dismissOnOutsidePointerDown(event: PointerEvent) {
@@ -219,8 +249,9 @@ function TagTextarea({
         className="relative rounded-md bg-surface-2"
       >
         <div
+          ref={highlightRef}
           aria-hidden="true"
-          className="prompt-highlight pointer-events-none absolute inset-0 overflow-scroll whitespace-pre-wrap break-words rounded-md border border-transparent px-3 py-3 font-mono text-[13px] leading-6 text-foreground"
+          className="pointer-events-none absolute bottom-0 left-0 top-0 overflow-hidden whitespace-pre-wrap break-words rounded-md border border-transparent px-3 py-3 font-mono text-[13px] leading-6 text-foreground"
         >
           <PromptHighlight value={value} />
         </div>
@@ -246,10 +277,10 @@ function TagTextarea({
           }}
           placeholder={placeholder}
           spellCheck={false}
-          className="prompt-syntax-textarea relative bg-transparent font-mono text-[13px] text-transparent caret-foreground"
+          className="prompt-syntax-textarea relative bg-transparent font-mono text-[13px] leading-6 text-transparent caret-foreground"
           onScroll={(event) => {
-            const highlight = event.currentTarget.previousElementSibling;
-            if (!(highlight instanceof HTMLElement)) return;
+            const highlight = highlightRef.current;
+            if (!highlight) return;
             highlight.scrollTop = event.currentTarget.scrollTop;
             highlight.scrollLeft = event.currentTarget.scrollLeft;
           }}
