@@ -17,6 +17,9 @@ export function InstantReferenceControls({
   onChange,
 }: InstantReferenceControlsProps) {
   const { instantLora, tagging } = value;
+  const active = value.referenceAssets.some(
+    (asset) => asset.status === "ready",
+  );
   const patchInstant = (patch: Partial<GenerationDraft["instantLora"]>) =>
     onChange({ ...value, instantLora: { ...instantLora, ...patch } });
   const patchTagging = (patch: Partial<GenerationDraft["tagging"]>) =>
@@ -28,11 +31,19 @@ export function InstantReferenceControls({
         <span className="inline-flex items-center gap-2 text-xs font-medium">
           <Sparkles className="size-4 text-violet-300" />
           학습 설정
+          {!active ? (
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-normal text-muted-foreground">
+              참조 없음 · 비활성
+            </span>
+          ) : null}
         </span>
         <ChevronDown className="size-4 text-muted-foreground transition group-open:rotate-180" />
       </summary>
 
-      <div className="space-y-5 border-t border-border/60 p-4">
+      <fieldset
+        disabled={!active}
+        className="space-y-5 border-t border-border/60 p-4 disabled:opacity-50"
+      >
         <div className="grid gap-4 md:grid-cols-2">
           <CommittedNumberField
             label="Model strength"
@@ -232,7 +243,7 @@ export function InstantReferenceControls({
             />
           </div>
         </section>
-      </div>
+      </fieldset>
     </details>
   );
 }

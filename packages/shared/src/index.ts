@@ -120,7 +120,7 @@ export const upscaleJobRequestSchema = z
   .default({});
 
 export const generationConfigSchema = z.object({
-  referenceAssetIds: z.array(z.string().min(1)).min(1),
+  referenceAssetIds: z.array(z.string().min(1)),
   prompts: z
     .object({
       basePositive: z

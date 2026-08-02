@@ -21,8 +21,8 @@ export interface WorkflowBuildResult {
   nodePhases: Record<string, JobPhase>;
   nodeLabels: Record<string, string>;
   outputKinds: Record<string, "base" | "upscale">;
-  autoTagsNodeId: string;
-  autoTagsOutputIndex: number;
+  autoTagsNodeId: string | null;
+  autoTagsOutputIndex: number | null;
 }
 
 export interface WorkflowEngine {
@@ -90,7 +90,7 @@ export class PortableWorkflowEngine implements WorkflowEngine {
       nodeLabels: built.nodeLabels,
       outputKinds: built.outputKinds,
       autoTagsNodeId: built.autoTagsNodeId,
-      autoTagsOutputIndex: built.autoTagsSource[1],
+      autoTagsOutputIndex: built.autoTagsSource?.[1] ?? null,
     };
   }
 

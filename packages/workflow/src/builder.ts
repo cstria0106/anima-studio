@@ -93,9 +93,6 @@ function validateBuildInput(
   uploadedInputNames: string[],
   options: WorkflowBuildOptions,
 ): void {
-  if (uploadedInputNames.length === 0) {
-    throw new Error("At least one uploaded reference image is required");
-  }
   if (uploadedInputNames.length !== config.referenceAssetIds.length) {
     throw new Error(
       "uploadedInputNames must match config.referenceAssetIds in count and order",
@@ -367,100 +364,107 @@ export function buildWorkflow(
     "VAE 로드",
   );
 
-  const referenceImages = buildReferenceNodes(
-    accumulator,
-    uploadedInputNames,
-  );
+  let generatedModel = link(NODE_IDS.modelLoader, 0);
+  let generatedClip = link(NODE_IDS.clipLoader, 0);
+  let autoTagsNodeId: string | null = null;
+  let autoTagsSource: ComfyLink | null = null;
 
-  const training = config.instantLora.training;
-  addNode(
-    accumulator,
-    NODE_IDS.trainOptions,
-    classes.trainOptions,
-    {
-      steps_override: training.steps,
-      learning_rate_override: training.learningRate,
-      network_dim_override: training.networkDim,
-      network_alpha_override: training.networkAlpha,
-      resolution_override: training.resolution,
-      gradient_checkpointing: training.gradientCheckpointing,
-      cache_latents: training.cacheLatents,
-      cache_text_encoder_outputs: training.cacheTextEncoderOutputs,
-      seed_override: training.seed,
-      force_retrain: training.forceRetrain,
-      train_batch_size_override: training.batchSize,
-    },
-    "training",
-    "Instant LoRA 학습 설정",
-  );
+  if (uploadedInputNames.length > 0) {
+    const referenceImages = buildReferenceNodes(
+      accumulator,
+      uploadedInputNames,
+    );
+    const training = config.instantLora.training;
+    addNode(
+      accumulator,
+      NODE_IDS.trainOptions,
+      classes.trainOptions,
+      {
+        steps_override: training.steps,
+        learning_rate_override: training.learningRate,
+        network_dim_override: training.networkDim,
+        network_alpha_override: training.networkAlpha,
+        resolution_override: training.resolution,
+        gradient_checkpointing: training.gradientCheckpointing,
+        cache_latents: training.cacheLatents,
+        cache_text_encoder_outputs: training.cacheTextEncoderOutputs,
+        seed_override: training.seed,
+        force_retrain: training.forceRetrain,
+        train_batch_size_override: training.batchSize,
+      },
+      "training",
+      "Instant LoRA 학습 설정",
+    );
 
-  const tagging = config.instantLora.tagging;
-  addNode(
-    accumulator,
-    NODE_IDS.taggingOptions,
-    classes.taggingOptions,
-    {
-      general_threshold: tagging.generalThreshold,
-      character_threshold: tagging.characterThreshold,
-      prepend_tags: tagging.prependTags,
-      append_tags: tagging.appendTags,
-      exclude_tags: tagging.excludeTags,
-      replace_tags: tagging.replaceTags,
-      remove_underscore: tagging.removeUnderscore,
-    },
-    "training",
-    "참조 이미지 태깅 설정",
-  );
+    const tagging = config.instantLora.tagging;
+    addNode(
+      accumulator,
+      NODE_IDS.taggingOptions,
+      classes.taggingOptions,
+      {
+        general_threshold: tagging.generalThreshold,
+        character_threshold: tagging.characterThreshold,
+        prepend_tags: tagging.prependTags,
+        append_tags: tagging.appendTags,
+        exclude_tags: tagging.excludeTags,
+        replace_tags: tagging.replaceTags,
+        remove_underscore: tagging.removeUnderscore,
+      },
+      "training",
+      "참조 이미지 태깅 설정",
+    );
 
-  addNode(
-    accumulator,
-    NODE_IDS.instantReference,
-    classes.instantReference,
-    {
-      model_strength: config.instantLora.modelStrength,
-      clip_strength: config.instantLora.clipStrength,
-      profile: config.instantLora.profile,
-      model: link(NODE_IDS.modelLoader, 0),
-      clip: link(NODE_IDS.clipLoader, 0),
-      images: referenceImages,
-      vae: link(NODE_IDS.vaeLoader, 0),
-      tagging_options: link(NODE_IDS.taggingOptions, 0),
-      train_options: link(NODE_IDS.trainOptions, 0),
-    },
-    "training",
-    "참조 태깅 및 Instant LoRA 학습",
-  );
-  addNode(
-    accumulator,
-    NODE_IDS.autoTagsSave,
-    classes.saveText,
-    {
-      text: link(NODE_IDS.instantReference, 4),
-      filename_prefix:
-        options.autoTagsFilenamePrefix ?? "AnimaStudio/tags",
-      format: "txt",
-    },
-    "training",
-    "자동 태그 저장",
-  );
+    addNode(
+      accumulator,
+      NODE_IDS.instantReference,
+      classes.instantReference,
+      {
+        model_strength: config.instantLora.modelStrength,
+        clip_strength: config.instantLora.clipStrength,
+        profile: config.instantLora.profile,
+        model: link(NODE_IDS.modelLoader, 0),
+        clip: link(NODE_IDS.clipLoader, 0),
+        images: referenceImages,
+        vae: link(NODE_IDS.vaeLoader, 0),
+        tagging_options: link(NODE_IDS.taggingOptions, 0),
+        train_options: link(NODE_IDS.trainOptions, 0),
+      },
+      "training",
+      "참조 태깅 및 Instant LoRA 학습",
+    );
+    addNode(
+      accumulator,
+      NODE_IDS.autoTagsSave,
+      classes.saveText,
+      {
+        text: link(NODE_IDS.instantReference, 4),
+        filename_prefix:
+          options.autoTagsFilenamePrefix ?? "AnimaStudio/tags",
+        format: "txt",
+      },
+      "training",
+      "자동 태그 저장",
+    );
+    addNode(
+      accumulator,
+      NODE_IDS.loraOptimizer,
+      classes.loraOptimizer,
+      {
+        output_strength: 1,
+        clip_strength_multiplier: 1,
+        model: link(NODE_IDS.modelLoader, 0),
+        lora_stack: link(NODE_IDS.instantReference, 3),
+        clip: link(NODE_IDS.clipLoader, 0),
+      },
+      "loading_models",
+      "LoRA 적용",
+    );
 
-  addNode(
-    accumulator,
-    NODE_IDS.loraOptimizer,
-    classes.loraOptimizer,
-    {
-      output_strength: 1,
-      clip_strength_multiplier: 1,
-      model: link(NODE_IDS.modelLoader, 0),
-      lora_stack: link(NODE_IDS.instantReference, 3),
-      clip: link(NODE_IDS.clipLoader, 0),
-    },
-    "loading_models",
-    "LoRA 적용",
-  );
-
-  let generatedModel = link(NODE_IDS.loraOptimizer, 0);
-  let generatedClip = link(NODE_IDS.loraOptimizer, 1);
+    generatedModel = link(NODE_IDS.loraOptimizer, 0);
+    generatedClip = link(NODE_IDS.loraOptimizer, 1);
+    autoTagsNodeId = NODE_IDS.autoTagsSave;
+    autoTagsSource = link(NODE_IDS.instantReference, 4);
+  }
   config.loras
     .filter((lora) => lora.enabled)
     .forEach((lora, index) => {
@@ -689,8 +693,8 @@ export function buildWorkflow(
     nodeLabels: accumulator.labels,
     outputKinds,
     outputNodeIds,
-    autoTagsNodeId: NODE_IDS.autoTagsSave,
-    autoTagsSource: link(NODE_IDS.instantReference, 4),
+    autoTagsNodeId,
+    autoTagsSource,
   };
 }
 

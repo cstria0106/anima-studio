@@ -12,7 +12,6 @@ export interface PreflightIssue {
     | "comfy_offline"
     | "capabilities_missing"
     | "options_loading"
-    | "reference_missing"
     | "reference_uploading"
     | "diffusion_required"
     | "clip_required"
@@ -112,17 +111,6 @@ export function buildPreflightIssues({
     });
   }
 
-  const readyAssets = draft.referenceAssets.filter(
-    (asset) => asset.status === "ready",
-  );
-  if (!readyAssets.length) {
-    issues.push({
-      code: "reference_missing",
-      message: "참조 이미지를 1장 이상 추가해주세요.",
-      stepId: "reference",
-      severity: "error",
-    });
-  }
   if (draft.referenceAssets.some((asset) => asset.status === "uploading")) {
     issues.push({
       code: "reference_uploading",

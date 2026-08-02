@@ -43,7 +43,6 @@ describe("studio UX readiness", () => {
     });
 
     expect(issues.map((issue) => [issue.code, issue.stepId, issue.fieldId])).toEqual([
-      ["reference_missing", "reference", undefined],
       ["diffusion_required", "models", "diffusion-model"],
       ["clip_required", "models", "clip-model"],
       ["vae_required", "models", "vae-model"],
@@ -53,6 +52,18 @@ describe("studio UX readiness", () => {
   test("reports no blocking issue for the default portable setup once resources exist", () => {
     const issues = buildPreflightIssues({
       draft: readyDraft,
+      options,
+      optionsLoading: false,
+      health: { ok: true, comfyui: true },
+      capabilities: { ready: true, missingNodes: [] },
+    });
+
+    expect(issues).toEqual([]);
+  });
+
+  test("allows generation without a reference image", () => {
+    const issues = buildPreflightIssues({
+      draft: { ...readyDraft, referenceAssets: [] },
       options,
       optionsLoading: false,
       health: { ok: true, comfyui: true },

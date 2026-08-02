@@ -197,7 +197,7 @@ class FakeWorkflow implements WorkflowEngine {
     uploadedInputNames: string[],
     actualSeed: number,
   ): WorkflowBuildResult {
-    expect(uploadedInputNames).toHaveLength(1);
+    expect(uploadedInputNames).toHaveLength(config.referenceAssetIds.length);
     if (config.sampling.cfgStart > config.sampling.cfgEnd) {
       throw new Error("sampling.cfgStart cannot be greater than sampling.cfgEnd");
     }
@@ -218,12 +218,12 @@ class FakeWorkflow implements WorkflowEngine {
   }
 
   buildUpscale(
-    _config: GenerationConfig,
+    config: GenerationConfig,
     uploadedInputNames: string[],
     baseImageInputName: string,
     actualSeed: number,
   ): WorkflowBuildResult {
-    expect(uploadedInputNames).toHaveLength(1);
+    expect(uploadedInputNames).toHaveLength(config.referenceAssetIds.length);
     expect(baseImageInputName).toContain(
       "anima-studio/upscale-sources/",
     );
@@ -1268,6 +1268,28 @@ describe("Anima Studio API", () => {
         assets: [{ id: assetId }],
       },
     });
+  });
+
+  test("queues a generation without reference images", async () => {
+    const { runtime: api, comfy } = await runtime();
+    const config: GenerationConfig = {
+      ...structuredClone(testGenerationConfig),
+      referenceAssetIds: [],
+    };
+
+    const response = await api.app.request("/api/jobs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ config }),
+    });
+
+    expect(response.status).toBe(202);
+    const body = (await response.json()) as {
+      job: { id: string; status: string; assets: unknown[] };
+    };
+    expect(body.job).toMatchObject({ status: "queued", assets: [] });
+    expect(comfy.uploads).toHaveLength(0);
+    expect(comfy.queuedPrompts).toHaveLength(1);
   });
 
   test("cancels only the selected pending ComfyUI prompt", async () => {

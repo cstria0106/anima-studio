@@ -31,8 +31,8 @@ export interface BuiltWorkflow {
     base?: string;
     upscale?: string;
   };
-  autoTagsNodeId: string;
-  autoTagsSource: ComfyLink;
+  autoTagsNodeId: string | null;
+  autoTagsSource: ComfyLink | null;
 }
 
 export interface WorkflowBuildOptions {

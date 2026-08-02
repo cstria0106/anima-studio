@@ -120,7 +120,7 @@ describe("buildWorkflow", () => {
         (node) => node.class_type === "JoinStringMulti",
       ),
     ).toBeFalse();
-    expect(result.prompt[result.autoTagsNodeId]).toEqual({
+    expect(result.prompt[result.autoTagsNodeId!]).toEqual({
       class_type: "SaveText",
       inputs: {
         text: [NODE_IDS.instantReference, 4],
@@ -226,6 +226,29 @@ describe("buildWorkflow", () => {
       referenceBatchNodeId(1),
       0,
     ]);
+  });
+
+  test("temporarily disables Instant Reference when there are no reference images", () => {
+    const result = buildWorkflow(
+      makeConfig({ referenceAssetIds: [] }),
+      [],
+    );
+
+    expect(result.prompt[NODE_IDS.trainOptions]).toBeUndefined();
+    expect(result.prompt[NODE_IDS.taggingOptions]).toBeUndefined();
+    expect(result.prompt[NODE_IDS.instantReference]).toBeUndefined();
+    expect(result.prompt[NODE_IDS.loraOptimizer]).toBeUndefined();
+    expect(result.prompt[NODE_IDS.autoTagsSave]).toBeUndefined();
+    expect(result.prompt[NODE_IDS.positiveEncode]?.inputs.clip).toEqual([
+      NODE_IDS.clipLoader,
+      0,
+    ]);
+    expect(result.prompt[NODE_IDS.cfgGuidance]?.inputs.model).toEqual([
+      NODE_IDS.modelLoader,
+      0,
+    ]);
+    expect(result.autoTagsNodeId).toBeNull();
+    expect(result.autoTagsSource).toBeNull();
   });
 
   test("applies InstantReference through the optimizer, then chains enabled LoRAs", () => {

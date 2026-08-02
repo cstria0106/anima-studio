@@ -308,6 +308,7 @@ describe("generation job submission", () => {
 
     await createJob(draft).catch(() => undefined);
 
+    expect(submittedConfig?.referenceAssetIds).toEqual([]);
     expect(submittedConfig?.prompts).toEqual(draft.prompts);
     expect(submittedConfig?.loras).toEqual([
       {
