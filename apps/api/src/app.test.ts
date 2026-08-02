@@ -74,7 +74,9 @@ class FakeComfy implements ComfyClientLike {
     readonly baseUrl = "http://fake-comfy.test",
   ) {}
   queuedPromptId = "prompt-1";
+  runningPromptId: string | null = null;
   pending = true;
+  interrupted = false;
   uploads: UploadImageInput[] = [];
   history: ComfyHistory = {};
   queuedPrompts: ComfyPrompt[] = [];
@@ -116,7 +118,9 @@ class FakeComfy implements ComfyClientLike {
 
   async getQueue(): Promise<ComfyQueue> {
     return {
-      queue_running: [],
+      queue_running: this.runningPromptId
+        ? ([[0, this.runningPromptId]] as ComfyQueue["queue_running"])
+        : [],
       queue_pending: this.pending
         ? ([[0, this.queuedPromptId]] as ComfyQueue["queue_pending"])
         : [],
@@ -167,7 +171,8 @@ class FakeComfy implements ComfyClientLike {
   }
 
   async interrupt(): Promise<void> {
-    throw new Error("Not used in this test.");
+    this.interrupted = true;
+    this.runningPromptId = null;
   }
 
   connect(
@@ -1286,6 +1291,38 @@ describe("Anima Studio API", () => {
     expect(await cancelled.json()).toMatchObject({
       job: { id: body.job.id, status: "cancelled", phase: "cancelled" },
     });
+  });
+
+  test("interrupts the running prompt and leaves the next prompt queued", async () => {
+    const { runtime: api, comfy } = await runtime();
+    const assetId = await uploadReference(api);
+    const config = {
+      ...structuredClone(testGenerationConfig),
+      referenceAssetIds: [assetId],
+    };
+    const create = () =>
+      api.app.request("/api/jobs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ config }),
+      });
+
+    const first = (await (await create()).json()) as { job: { id: string } };
+    const firstPromptId = comfy.queuedPromptId;
+    await create();
+    const nextPromptId = comfy.queuedPromptId;
+    comfy.runningPromptId = firstPromptId;
+
+    const cancelled = await api.app.request(
+      `/api/jobs/${first.job.id}/cancel`,
+      { method: "POST" },
+    );
+
+    expect(cancelled.status).toBe(200);
+    expect(comfy.interrupted).toBeTrue();
+    expect((await comfy.getQueue()).queue_pending).toEqual([
+      [0, nextPromptId],
+    ]);
   });
 
   test("serves offline tag completions from SQLite FTS", async () => {

@@ -26,6 +26,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { cancelJob } from "@/lib/api";
+import { GenerationQueueList } from "@/components/generation-queue-list";
 import type { PreflightIssue } from "@/lib/studio-ux";
 import type { HealthResponse, JobStatus, StudioJob } from "@/lib/types";
 import { cn, formatElapsed, outputUrl } from "@/lib/utils";
@@ -60,6 +61,7 @@ const STATUS_LABELS: Record<JobStatus, string> = {
 
 export interface MobileExecutionDockProps {
   job: StudioJob | null;
+  queueJobs: StudioJob[];
   health: HealthResponse | null;
   canGenerate: boolean;
   validationMessage?: string;
@@ -72,6 +74,7 @@ export interface MobileExecutionDockProps {
 
 export function MobileExecutionDock({
   job,
+  queueJobs,
   health,
   canGenerate,
   validationMessage,
@@ -219,6 +222,24 @@ export function MobileExecutionDock({
                   </span>
                 </button>
               </SheetTrigger>
+
+              {active ? (
+                <Button
+                  type="button"
+                  className="h-11 min-w-[7.25rem]"
+                  disabled={!canGenerate || submitting}
+                  onClick={onGenerate}
+                  aria-keyshortcuts="Control+Enter"
+                  title="대기열에 추가 (Ctrl+Enter)"
+                >
+                  {submitting ? (
+                    <LoaderCircle className="animate-spin" />
+                  ) : (
+                    <Play />
+                  )}
+                  추가
+                </Button>
+              ) : null}
 
               {active ? (
                 <Button
@@ -407,6 +428,11 @@ export function MobileExecutionDock({
                 </p>
               ) : null}
 
+              <GenerationQueueList
+                jobs={queueJobs}
+                onJobUpdate={onJobUpdate}
+              />
+
               {selectedOutput ? (
                 <section className="space-y-3" aria-label="결과 상세">
                   <div className="grid grid-cols-3 gap-2 rounded-lg border border-border bg-surface-2 p-3 text-xs">
@@ -488,22 +514,23 @@ export function MobileExecutionDock({
           </div>
 
           <div className="shrink-0 border-t border-border bg-popover/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-            {active ? (
-              <Button
-                type="button"
-                variant="outline"
-                className="h-11 w-full border-danger/35 text-danger hover:bg-danger/10 hover:text-danger"
-                disabled={cancelling}
-                onClick={handleCancel}
-              >
-                {cancelling ? (
-                  <LoaderCircle className="animate-spin" />
-                ) : (
-                  <Ban />
-                )}
-                작업 취소
-              </Button>
-            ) : (
+            <div className={active ? "grid grid-cols-2 gap-2" : undefined}>
+              {active ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 border-danger/35 text-danger hover:bg-danger/10 hover:text-danger"
+                  disabled={cancelling}
+                  onClick={handleCancel}
+                >
+                  {cancelling ? (
+                    <LoaderCircle className="animate-spin" />
+                  ) : (
+                    <Ban />
+                  )}
+                  현재 취소
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 className="h-11 w-full"
@@ -522,9 +549,9 @@ export function MobileExecutionDock({
                 ) : (
                   <Play />
                 )}
-                생성
+                {active ? "대기열 추가" : "생성"}
               </Button>
-            )}
+            </div>
           </div>
         </SheetContent>
       </Sheet>

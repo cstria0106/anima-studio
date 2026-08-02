@@ -823,6 +823,7 @@ interface HistoryViewProps {
   onRepeatJob: (job: StudioJob) => Promise<void>;
   onDeleteJob: (jobId: string) => void;
   activeJob?: StudioJob | null;
+  trackedJobs?: StudioJob[];
   mobileOpen: boolean;
   onMobileOpenChange: (open: boolean) => void;
   desktopCollapsed: boolean;
@@ -841,6 +842,7 @@ export function HistoryView({
   onRepeatJob,
   onDeleteJob,
   activeJob,
+  trackedJobs = [],
   mobileOpen,
   onMobileOpenChange,
   desktopCollapsed,
@@ -882,6 +884,15 @@ export function HistoryView({
       current?.id === activeJob.id ? activeJob : current,
     );
   }, [activeJob]);
+
+  React.useEffect(() => {
+    if (!trackedJobs.length) return;
+    setJobs((current) => mergeJobs(current, trackedJobs));
+    setSelected((current) => {
+      if (!current) return current;
+      return trackedJobs.find((job) => job.id === current.id) ?? current;
+    });
+  }, [trackedJobs]);
 
   const load = React.useCallback(
     async (cursor = "") => {

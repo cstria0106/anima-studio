@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { ResultActionBar } from "@/components/result-action-bar";
+import { GenerationQueueList } from "@/components/generation-queue-list";
 import { cancelJob, upscaleJob } from "@/lib/api";
 import type {
   CapabilitiesResponse,
@@ -61,6 +62,7 @@ const statusMeta: Record<
 
 interface JobPanelProps {
   job: StudioJob | null;
+  queueJobs: StudioJob[];
   capabilities: CapabilitiesResponse | null;
   submitting: boolean;
   canGenerate: boolean;
@@ -76,6 +78,7 @@ interface JobPanelProps {
 
 export function JobPanel({
   job,
+  queueJobs,
   capabilities,
   submitting,
   canGenerate,
@@ -377,22 +380,28 @@ export function JobPanel({
             </div>
           ) : null}
 
-          {active ? (
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full border-red-400/20 text-red-200 hover:bg-red-400/10 hover:text-red-100"
-              onClick={handleCancel}
-              disabled={cancelling}
-            >
-              {cancelling ? (
-                <LoaderCircle className="animate-spin" />
-              ) : (
-                <Ban />
-              )}
-              작업 취소
-            </Button>
-          ) : (
+          <GenerationQueueList
+            jobs={queueJobs}
+            onJobUpdate={onJobUpdate}
+          />
+
+          <div className={active ? "grid grid-cols-2 gap-2" : undefined}>
+            {active ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="border-red-400/20 text-red-200 hover:bg-red-400/10 hover:text-red-100"
+                onClick={handleCancel}
+                disabled={cancelling}
+              >
+                {cancelling ? (
+                  <LoaderCircle className="animate-spin" />
+                ) : (
+                  <Ban />
+                )}
+                현재 취소
+              </Button>
+            ) : null}
             <Button
               type="button"
               size="lg"
@@ -404,14 +413,16 @@ export function JobPanel({
             >
               {submitting ? (
                 <LoaderCircle className="animate-spin" />
+              ) : active ? (
+                <Play />
               ) : job ? (
                 <RotateCcw />
               ) : (
                 <Play />
               )}
-              생성
+              {active ? "대기열 추가" : "생성"}
             </Button>
-          )}
+          </div>
 
           {!canGenerate && preflightIssues.length ? (
             <div className="space-y-1.5" aria-label="생성 전 확인 항목">

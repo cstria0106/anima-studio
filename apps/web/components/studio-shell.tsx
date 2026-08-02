@@ -52,6 +52,8 @@ import {
   createJob,
   getCapabilities,
   getHealth,
+  getJob,
+  getJobs,
   getOptions,
   getStorage,
 } from "@/lib/api";
@@ -83,6 +85,7 @@ function CreateWorkspace({
   health,
   capabilities,
   activeJob,
+  queueJobs,
   onJobUpdate,
   onGenerate,
   onLoadJobSettings,
@@ -97,6 +100,7 @@ function CreateWorkspace({
   health: HealthResponse | null;
   capabilities: CapabilitiesResponse | null;
   activeJob: StudioJob | null;
+  queueJobs: StudioJob[];
   onJobUpdate: (job: StudioJob) => void;
   onGenerate: () => void;
   onLoadJobSettings: (job: StudioJob) => void;
@@ -235,6 +239,7 @@ function CreateWorkspace({
         <div className="space-y-4">
           <JobPanel
             job={activeJob}
+            queueJobs={queueJobs}
             capabilities={capabilities}
             submitting={submitting}
             canGenerate={canGenerate}
@@ -263,6 +268,7 @@ function CreateWorkspace({
         </div>
         <MobileExecutionDock
           job={activeJob}
+          queueJobs={queueJobs}
           health={health}
           submitting={submitting}
           canGenerate={canGenerate}
@@ -304,6 +310,7 @@ export function StudioShell() {
   const [loadingSystem, setLoadingSystem] = React.useState(true);
   const [systemError, setSystemError] = React.useState("");
   const [activeJob, setActiveJob] = React.useState<StudioJob | null>(null);
+  const [trackedJobs, setTrackedJobs] = React.useState<StudioJob[]>([]);
   const [historyDetailRequest, setHistoryDetailRequest] = React.useState<{
     id: number;
     job: StudioJob;
@@ -317,25 +324,133 @@ export function StudioShell() {
   const completionNotifications = useCompletionNotifications();
   const notifyCompletion = completionNotifications.notify;
 
+  const updateTrackedJob = React.useCallback((job: StudioJob) => {
+    setTrackedJobs((current) => {
+      const exists = current.some((item) => item.id === job.id);
+      return exists
+        ? current.map((item) => (item.id === job.id ? job : item))
+        : [...current, job];
+    });
+    setActiveJob((current) => (current?.id === job.id ? job : current));
+  }, []);
+
+  const trackSubmittedJob = React.useCallback((job: StudioJob) => {
+    setTrackedJobs((current) => {
+      const exists = current.some((item) => item.id === job.id);
+      return exists
+        ? current.map((item) => (item.id === job.id ? job : item))
+        : [...current, job];
+    });
+    setActiveJob((current) =>
+      current && ["uploading", "queued", "running"].includes(current.status)
+        ? current
+        : job,
+    );
+  }, []);
+
   React.useEffect(() => {
-    if (!activeJob || !["completed", "failed"].includes(activeJob.status)) {
+    for (const job of trackedJobs) {
+      if (!["completed", "failed"].includes(job.status)) continue;
+      notifyCompletion({
+        id: job.id + ":" + job.status,
+        title:
+          job.status === "completed"
+            ? "Anima 이미지 생성 완료"
+            : "Anima 이미지 생성 실패",
+        body:
+          job.status === "completed"
+            ? "Seed " +
+              job.settings.sampling.seed +
+              " 결과가 준비되었습니다."
+            : job.error ?? "작업 상세에서 오류를 확인해주세요.",
+        tone: job.status === "completed" ? "success" : "error",
+      });
+    }
+  }, [notifyCompletion, trackedJobs]);
+
+  React.useEffect(() => {
+    let stopped = false;
+    Promise.all([
+      getJobs({ status: "uploading" }),
+      getJobs({ status: "queued" }),
+      getJobs({ status: "running" }),
+    ])
+      .then((results) => {
+        if (stopped) return;
+        const restored = results.flatMap((result) => result.jobs);
+        setTrackedJobs((current) => {
+          const restoredIds = new Set(restored.map((job) => job.id));
+          return [
+            ...restored,
+            ...current.filter((job) => !restoredIds.has(job.id)),
+          ];
+        });
+        setActiveJob(
+          (current) =>
+            current ??
+            restored.find((job) => job.status === "running") ??
+            restored[0] ??
+            null,
+        );
+      })
+      .catch(() => {
+        // The regular system refresh will surface connection problems.
+      });
+    return () => {
+      stopped = true;
+    };
+  }, []);
+
+  const backgroundJobIds = trackedJobs
+    .filter(
+      (job) =>
+        job.id !== activeJob?.id &&
+        ["uploading", "queued", "running"].includes(job.status),
+    )
+    .map((job) => job.id)
+    .join("\n");
+
+  React.useEffect(() => {
+    if (!backgroundJobIds) return;
+    let stopped = false;
+    let refreshing = false;
+
+    const refresh = async () => {
+      if (refreshing || stopped) return;
+      refreshing = true;
+      const results = await Promise.allSettled(
+        backgroundJobIds.split("\n").map((id) => getJob(id)),
+      );
+      if (!stopped) {
+        for (const result of results) {
+          if (result.status === "fulfilled") updateTrackedJob(result.value);
+        }
+      }
+      refreshing = false;
+    };
+
+    void refresh();
+    const interval = window.setInterval(() => void refresh(), 3_500);
+    return () => {
+      stopped = true;
+      window.clearInterval(interval);
+    };
+  }, [backgroundJobIds, updateTrackedJob]);
+
+  React.useEffect(() => {
+    if (
+      activeJob &&
+      ["uploading", "queued", "running"].includes(activeJob.status)
+    ) {
       return;
     }
-    notifyCompletion({
-      id: activeJob.id + ":" + activeJob.status,
-      title:
-        activeJob.status === "completed"
-          ? "Anima 이미지 생성 완료"
-          : "Anima 이미지 생성 실패",
-      body:
-        activeJob.status === "completed"
-          ? "Seed " +
-            activeJob.settings.sampling.seed +
-            " 결과가 준비되었습니다."
-          : activeJob.error ?? "작업 상세에서 오류를 확인해주세요.",
-      tone: activeJob.status === "completed" ? "success" : "error",
-    });
-  }, [activeJob, notifyCompletion]);
+    const nextJob =
+      trackedJobs.find((job) => job.status === "running") ??
+      trackedJobs.find((job) =>
+        ["uploading", "queued"].includes(job.status),
+      );
+    if (nextJob && nextJob.id !== activeJob?.id) setActiveJob(nextJob);
+  }, [activeJob, trackedJobs]);
 
   React.useEffect(() => {
     if (!preferencesReady || draftInitialized.current) return;
@@ -466,7 +581,7 @@ export function StudioShell() {
     setSubmitting(true);
     try {
       const job = await createJob(draft);
-      setActiveJob(job);
+      trackSubmittedJob(job);
       setToast({
         type: "success",
         message: "작업을 ComfyUI 대기열에 추가했습니다.",
@@ -491,7 +606,7 @@ export function StudioShell() {
     setSubmitting(true);
     try {
       const job = await createJob(nextDraft);
-      setActiveJob(job);
+      trackSubmittedJob(job);
       setToast({ type: "success", message });
     } finally {
       setSubmitting(false);
@@ -574,17 +689,22 @@ export function StudioShell() {
         desktopCollapsed={historyCollapsed}
         onDesktopCollapsedChange={setHistoryCollapsed}
         activeJob={activeJob}
+        trackedJobs={trackedJobs}
         detailRequest={historyDetailRequest}
         onLoadSettings={loadSettings}
         onLoadSeed={loadSeed}
         onRepeatJob={repeatJob}
         onDeleteJob={(jobId) => {
+          setTrackedJobs((current) =>
+            current.filter((job) => job.id !== jobId),
+          );
           setActiveJob((current) =>
             current?.id === jobId ? null : current,
           );
         }}
         onTrackJob={(job) => {
           setActiveJob(job);
+          updateTrackedJob(job);
           setToast({
             type: "success",
             message:
@@ -740,7 +860,8 @@ export function StudioShell() {
             health={health}
             capabilities={capabilities}
             activeJob={activeJob}
-            onJobUpdate={setActiveJob}
+            queueJobs={trackedJobs}
+            onJobUpdate={updateTrackedJob}
             onGenerate={handleGenerate}
             onLoadJobSettings={(job) => loadSettings(job.settings)}
             onLoadJobSeed={(job) => loadSeed(job.settings.sampling.seed)}
