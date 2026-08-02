@@ -16,7 +16,7 @@ export {
 } from "./sanitize";
 export {
   NODE_IDS,
-  loraLoaderNodeId,
+  loraStackNodeId,
   referenceBatchNodeId,
   referenceLoadNodeId,
   SANITIZED_ANIMA_TEMPLATE,

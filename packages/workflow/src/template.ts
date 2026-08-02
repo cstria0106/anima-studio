@@ -45,7 +45,7 @@ export const SANITIZED_ANIMA_TEMPLATE = Object.freeze({
     trainOptions: "ReferenceTrainOptions",
     taggingOptions: "ReferenceTaggingOptions",
     instantReference: "InstantReferenceLoRA",
-    loraLoader: "LoraLoader",
+    loraStack: "LoRAStackDynamic",
     loraOptimizer: "LoRAOptimizerSimple",
     textEncode: "CLIPTextEncode",
     cfgGuidance: "ScheduledCFGGuidance",
@@ -93,7 +93,7 @@ export const NODE_IDS = Object.freeze({
 
 const REFERENCE_LOAD_NODE_START = 1000;
 const REFERENCE_BATCH_NODE_START = 2000;
-const LORA_LOADER_NODE_START = 3000;
+const LORA_STACK_NODE_START = 3000;
 
 export function referenceLoadNodeId(index: number): string {
   return String(REFERENCE_LOAD_NODE_START + index);
@@ -103,6 +103,6 @@ export function referenceBatchNodeId(index: number): string {
   return String(REFERENCE_BATCH_NODE_START + index);
 }
 
-export function loraLoaderNodeId(index: number): string {
-  return String(LORA_LOADER_NODE_START + index);
+export function loraStackNodeId(index: number): string {
+  return String(LORA_STACK_NODE_START + index);
 }

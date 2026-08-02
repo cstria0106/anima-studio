@@ -4,7 +4,8 @@ import type { GenerationConfig } from "@anima/shared";
 import {
   buildUpscaleWorkflow,
   buildWorkflow,
-  loraLoaderNodeId,
+  loraStackNodeId,
+  manifest,
   NODE_IDS,
   referenceBatchNodeId,
   referenceLoadNodeId,
@@ -251,7 +252,7 @@ describe("buildWorkflow", () => {
     expect(result.autoTagsSource).toBeNull();
   });
 
-  test("applies InstantReference through the optimizer, then chains enabled LoRAs", () => {
+  test("optimizes Instant Reference and enabled LoRAs as one stack", () => {
     const config = makeConfig({
       loras: [
         {
@@ -286,37 +287,100 @@ describe("buildWorkflow", () => {
       "b.png",
       "c.png",
     ]);
+    expect(result.prompt[loraStackNodeId(0)]).toMatchObject({
+      class_type: "LoRAStackDynamic",
+      inputs: {
+        settings_visibility: "advanced",
+        input_mode: "text",
+        lora_count: 2,
+        lora_name_text_1: "style-a",
+        model_strength_1: 0.3,
+        clip_strength_1: 0.3,
+        lora_name_text_2: "style-b",
+        model_strength_2: 0.8,
+        clip_strength_2: 0.6,
+        lora_name_text_3: "None",
+        lora_stack: [NODE_IDS.instantReference, 3],
+      },
+    });
     expect(result.prompt[NODE_IDS.loraOptimizer]?.inputs.lora_stack).toEqual([
-      NODE_IDS.instantReference,
-      3,
+      loraStackNodeId(0),
+      0,
     ]);
-    expect(result.prompt[loraLoaderNodeId(0)]).toEqual({
-      class_type: "LoraLoader",
-      inputs: {
-        model: [NODE_IDS.loraOptimizer, 0],
-        clip: [NODE_IDS.loraOptimizer, 1],
-        lora_name: "style-a",
-        strength_model: 0.3,
-        strength_clip: 0.3,
-      },
-    });
-    expect(result.prompt[loraLoaderNodeId(1)]).toEqual({
-      class_type: "LoraLoader",
-      inputs: {
-        model: [loraLoaderNodeId(0), 0],
-        clip: [loraLoaderNodeId(0), 1],
-        lora_name: "style-b",
-        strength_model: 0.8,
-        strength_clip: 0.6,
-      },
-    });
-    expect(result.prompt[loraLoaderNodeId(2)]).toBeUndefined();
     expect(result.prompt[NODE_IDS.positiveEncode]?.inputs.clip).toEqual([
-      loraLoaderNodeId(1),
+      NODE_IDS.loraOptimizer,
       1,
     ]);
     expect(result.prompt[NODE_IDS.cfgGuidance]?.inputs.model).toEqual([
-      loraLoaderNodeId(1),
+      NODE_IDS.loraOptimizer,
+      0,
+    ]);
+  });
+
+  test("runs the optimizer for regular LoRAs without Instant Reference", () => {
+    const config = makeConfig({
+      referenceAssetIds: [],
+      loras: [
+        {
+          name: "style-only.safetensors",
+          modelStrength: 0.7,
+          clipStrength: 0.4,
+          enabled: true,
+          triggerWords: [],
+          useTriggerWords: true,
+        },
+      ],
+    });
+
+    const result = buildWorkflow(config, []);
+    const stackNode = result.prompt[loraStackNodeId(0)];
+    const stackContract = manifest.packages
+      .flatMap((entry) => entry.nodes)
+      .find((node) => node.classType === "LoRAStackDynamic");
+
+    expect(result.prompt[NODE_IDS.instantReference]).toBeUndefined();
+    expect(stackNode?.inputs).toMatchObject({
+      lora_count: 1,
+      lora_name_text_1: "style-only.safetensors",
+      model_strength_1: 0.7,
+      clip_strength_1: 0.4,
+    });
+    expect(stackContract?.requiredInputs.every((input) =>
+      Object.hasOwn(stackNode?.inputs ?? {}, input),
+    )).toBeTrue();
+    expect(stackNode?.inputs.lora_stack).toBeUndefined();
+    expect(result.prompt[NODE_IDS.loraOptimizer]?.inputs.lora_stack).toEqual([
+      loraStackNodeId(0),
+      0,
+    ]);
+  });
+
+  test("chains additional stack nodes when more than ten LoRAs are enabled", () => {
+    const loras = Array.from({ length: 11 }, (_, index) => ({
+      name: `style-${index}.safetensors`,
+      modelStrength: 0.5 + index * 0.01,
+      clipStrength: 0.4 + index * 0.01,
+      enabled: true,
+      triggerWords: [],
+      useTriggerWords: true,
+    }));
+    const result = buildWorkflow(
+      makeConfig({ referenceAssetIds: [], loras }),
+      [],
+    );
+
+    expect(result.prompt[loraStackNodeId(1)]?.inputs).toMatchObject({
+      lora_count: 1,
+      lora_name_text_1: "style-10.safetensors",
+    });
+    expect(result.prompt[loraStackNodeId(0)]?.inputs).toMatchObject({
+      lora_count: 10,
+      lora_name_text_1: "style-0.safetensors",
+      lora_name_text_10: "style-9.safetensors",
+      lora_stack: [loraStackNodeId(1), 0],
+    });
+    expect(result.prompt[NODE_IDS.loraOptimizer]?.inputs.lora_stack).toEqual([
+      loraStackNodeId(0),
       0,
     ]);
   });

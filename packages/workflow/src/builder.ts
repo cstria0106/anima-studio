@@ -2,7 +2,7 @@ import { stripPromptComments, type GenerationConfig } from "@anima/shared";
 
 import {
   NODE_IDS,
-  loraLoaderNodeId,
+  loraStackNodeId,
   referenceBatchNodeId,
   referenceLoadNodeId,
   SANITIZED_ANIMA_TEMPLATE,
@@ -18,6 +18,7 @@ import type {
 
 const classes = SANITIZED_ANIMA_TEMPLATE.classTypes;
 const MAX_SEED = Number.MAX_SAFE_INTEGER;
+const LORAS_PER_STACK_NODE = 10;
 const RELATIVE_OUTPUT_PREFIX = /^[^<>:"|?*\u0000-\u001f]+$/;
 
 interface NodeAccumulator {
@@ -239,6 +240,32 @@ function normalizeTagPromptForGeneration(value: string): string {
   return stripPromptComments(value).replace(/\r\n|\r|\n/g, ",");
 }
 
+function buildLoraStackInputs(
+  loras: GenerationConfig["loras"],
+  chainedStack: ComfyLink | null,
+): Record<string, unknown> {
+  const inputs: Record<string, unknown> = {
+    settings_visibility: "advanced",
+    input_mode: "text",
+    lora_count: loras.length,
+  };
+
+  for (let index = 0; index < LORAS_PER_STACK_NODE; index += 1) {
+    const slot = index + 1;
+    const lora = loras[index];
+    inputs[`lora_name_${slot}`] = "None";
+    inputs[`lora_name_text_${slot}`] = lora?.name ?? "None";
+    inputs[`strength_${slot}`] = 1;
+    inputs[`model_strength_${slot}`] = lora?.modelStrength ?? 1;
+    inputs[`clip_strength_${slot}`] = lora?.clipStrength ?? 1;
+    inputs[`conflict_mode_${slot}`] = "all";
+    inputs[`key_filter_${slot}`] = "all";
+  }
+
+  if (chainedStack) inputs.lora_stack = chainedStack;
+  return inputs;
+}
+
 export function createRandomSeed(): number {
   const values = new Uint32Array(2);
   globalThis.crypto.getRandomValues(values);
@@ -366,6 +393,7 @@ export function buildWorkflow(
 
   let generatedModel = link(NODE_IDS.modelLoader, 0);
   let generatedClip = link(NODE_IDS.clipLoader, 0);
+  let loraStack: ComfyLink | null = null;
   let autoTagsNodeId: string | null = null;
   let autoTagsSource: ComfyLink | null = null;
 
@@ -445,6 +473,36 @@ export function buildWorkflow(
       "training",
       "자동 태그 저장",
     );
+    loraStack = link(NODE_IDS.instantReference, 3);
+    autoTagsNodeId = NODE_IDS.autoTagsSave;
+    autoTagsSource = link(NODE_IDS.instantReference, 4);
+  }
+
+  const enabledLoras = config.loras.filter((lora) => lora.enabled);
+  const loraChunks = Array.from(
+    { length: Math.ceil(enabledLoras.length / LORAS_PER_STACK_NODE) },
+    (_, index) =>
+      enabledLoras.slice(
+        index * LORAS_PER_STACK_NODE,
+        (index + 1) * LORAS_PER_STACK_NODE,
+      ),
+  );
+  for (let index = loraChunks.length - 1; index >= 0; index -= 1) {
+    const chunk = loraChunks[index];
+    if (!chunk) continue;
+    const nodeId = loraStackNodeId(index);
+    addNode(
+      accumulator,
+      nodeId,
+      classes.loraStack,
+      buildLoraStackInputs(chunk, loraStack),
+      "loading_models",
+      `LoRA 스택 ${index + 1}`,
+    );
+    loraStack = link(nodeId, 0);
+  }
+
+  if (loraStack) {
     addNode(
       accumulator,
       NODE_IDS.loraOptimizer,
@@ -453,39 +511,15 @@ export function buildWorkflow(
         output_strength: 1,
         clip_strength_multiplier: 1,
         model: link(NODE_IDS.modelLoader, 0),
-        lora_stack: link(NODE_IDS.instantReference, 3),
+        lora_stack: loraStack,
         clip: link(NODE_IDS.clipLoader, 0),
       },
       "loading_models",
-      "LoRA 적용",
+      "LoRA 최적화 적용",
     );
-
     generatedModel = link(NODE_IDS.loraOptimizer, 0);
     generatedClip = link(NODE_IDS.loraOptimizer, 1);
-    autoTagsNodeId = NODE_IDS.autoTagsSave;
-    autoTagsSource = link(NODE_IDS.instantReference, 4);
   }
-  config.loras
-    .filter((lora) => lora.enabled)
-    .forEach((lora, index) => {
-      const nodeId = loraLoaderNodeId(index);
-      addNode(
-        accumulator,
-        nodeId,
-        classes.loraLoader,
-        {
-          model: generatedModel,
-          clip: generatedClip,
-          lora_name: lora.name,
-          strength_model: lora.modelStrength,
-          strength_clip: lora.clipStrength,
-        },
-        "loading_models",
-        `LoRA 적용 ${index + 1}`,
-      );
-      generatedModel = link(nodeId, 0);
-      generatedClip = link(nodeId, 1);
-    });
 
   addNode(
     accumulator,
