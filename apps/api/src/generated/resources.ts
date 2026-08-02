@@ -19,14 +19,14 @@ import resource14 from "../../../../packages/tag-data/data/danbooru_tags.csv" wi
 import resource15 from "../../../web/out/404.html" with { type: "file" };
 import resource16 from "../../../web/out/index.html" with { type: "file" };
 import resource17 from "../../../web/out/index.txt" with { type: "file" };
-import resource18 from "../../../web/out/_next/static/27CjYxQrfTtLs3zCXWScF/_buildManifest.js" with { type: "file" };
-import resource19 from "../../../web/out/_next/static/27CjYxQrfTtLs3zCXWScF/_ssgManifest.js" with { type: "file" };
+import resource18 from "../../../web/out/_next/static/0y7H-kYbT7cJxsdHjKugD/_buildManifest.js" with { type: "file" };
+import resource19 from "../../../web/out/_next/static/0y7H-kYbT7cJxsdHjKugD/_ssgManifest.js" with { type: "file" };
 import resource20 from "../../../web/out/_next/static/chunks/390-efcd8416712a5e35.js" with { type: "file" };
 import resource21 from "../../../web/out/_next/static/chunks/562.6c3604e8ea532b1c.js" with { type: "file" };
 import resource22 from "../../../web/out/_next/static/chunks/774-45010500dd090d44.js" with { type: "file" };
 import resource23 from "../../../web/out/_next/static/chunks/831.305e501158ffed0f.js" with { type: "file" };
 import resource24 from "../../../web/out/_next/static/chunks/app/layout-958ecc226151d7c1.js" with { type: "file" };
-import resource25 from "../../../web/out/_next/static/chunks/app/page-581491acfeb07a28.js" with { type: "file" };
+import resource25 from "../../../web/out/_next/static/chunks/app/page-9564f5823579c25a.js" with { type: "file" };
 import resource26 from "../../../web/out/_next/static/chunks/app/_not-found/page-dbfec746eb708058.js" with { type: "file" };
 import resource27 from "../../../web/out/_next/static/chunks/e2a671fb-2429dba85e7e5097.js" with { type: "file" };
 import resource28 from "../../../web/out/_next/static/chunks/framework-4cc4a10014994fa1.js" with { type: "file" };
@@ -38,7 +38,7 @@ import resource33 from "../../../web/out/_next/static/chunks/polyfills-42372ed13
 import resource34 from "../../../web/out/_next/static/chunks/webpack-6bf59e3e9632c3b8.js" with { type: "file" };
 import resource35 from "../../../web/out/_next/static/css/a19d2770304cbbcf.css" with { type: "file" };
 
-export const APP_VERSION = "0.1.5";
+export const APP_VERSION = "0.1.6";
 export const RESOURCE_CONTENT_HASH = "daf5f93cf9cba4c812e659afadef5d2a571cf5b06f11512ff322b5d5bb3005aa";
 export const EXTRACTED_RESOURCES: readonly EmbeddedResource[] = [
   { path: "migrations/0000_initial.sql", sha256: "00e80ee7ed585ec9aaa4e967fcb9a88c7a732518548dc954a154d8f4bae9e408", size: 4830, blob: Bun.file(resource0) },
@@ -58,17 +58,17 @@ export const EXTRACTED_RESOURCES: readonly EmbeddedResource[] = [
   { path: "tag-data/danbooru_tags.csv", sha256: "723fc007a6415d8618aef74b07f256ec4270507f9a1fb28c6cc77724a1ca274f", size: 4843848, blob: Bun.file(resource14) },
 ];
 export const STATIC_RESOURCES: readonly EmbeddedResource[] = [
-  { path: "404.html", sha256: "3128a7a5d99220dd15039c0b6e41c055b5c129f6ca05280ad4a865959e486cc7", size: 6042, blob: Bun.file(resource15) },
-  { path: "index.html", sha256: "ed52517e2e65731984f2364d8b3e25b8fe09ff9465f65bf29f07ece125de8aa1", size: 6647, blob: Bun.file(resource16) },
-  { path: "index.txt", sha256: "9f9678c1a6d6aec3cde3a9aafe8dca758fbd95ab5ba00d3c6ec8a2f14d0f3b49", size: 3331, blob: Bun.file(resource17) },
-  { path: "_next/static/27CjYxQrfTtLs3zCXWScF/_buildManifest.js", sha256: "2ac3cf26765c067f4631931bf711e4b747ce0d9602e838cd5ed77f0d66fab324", size: 506, blob: Bun.file(resource18) },
-  { path: "_next/static/27CjYxQrfTtLs3zCXWScF/_ssgManifest.js", sha256: "678f6ce2cb80b1fe72fc67e7412be6e2ab6ada083111b64f7c40d35e3cba5e00", size: 80, blob: Bun.file(resource19) },
+  { path: "404.html", sha256: "e2105910552054f6ce7a756ac0aafbffce6840141d4aa86d147e0efa3533e22a", size: 6042, blob: Bun.file(resource15) },
+  { path: "index.html", sha256: "3528c1e060114684c2d957b41dde10cbed56c81575d76993e2f83206a263834e", size: 6647, blob: Bun.file(resource16) },
+  { path: "index.txt", sha256: "2213cd1172487c8317557d8f01180ac15ea24e5d5e9ae6da925623a4045405fc", size: 3331, blob: Bun.file(resource17) },
+  { path: "_next/static/0y7H-kYbT7cJxsdHjKugD/_buildManifest.js", sha256: "2ac3cf26765c067f4631931bf711e4b747ce0d9602e838cd5ed77f0d66fab324", size: 506, blob: Bun.file(resource18) },
+  { path: "_next/static/0y7H-kYbT7cJxsdHjKugD/_ssgManifest.js", sha256: "678f6ce2cb80b1fe72fc67e7412be6e2ab6ada083111b64f7c40d35e3cba5e00", size: 80, blob: Bun.file(resource19) },
   { path: "_next/static/chunks/390-efcd8416712a5e35.js", sha256: "336cc849dd51fe15897dfc51f395cf458b0b6e8c513b7f3a83df192ab1b45ba0", size: 200028, blob: Bun.file(resource20) },
   { path: "_next/static/chunks/562.6c3604e8ea532b1c.js", sha256: "126c2f2545e56764c2006284b175595176ccb6133c5803b4bb8f438b1cc10897", size: 5444, blob: Bun.file(resource21) },
   { path: "_next/static/chunks/774-45010500dd090d44.js", sha256: "00feb68af050d066ff631b95ec549cd1a2b67a9897a048afaa3297d7dc085255", size: 173747, blob: Bun.file(resource22) },
   { path: "_next/static/chunks/831.305e501158ffed0f.js", sha256: "d317a760f17873a413d35252c10cb12ff6d3ee8f23aec9bb1911c5dc183fa477", size: 739, blob: Bun.file(resource23) },
   { path: "_next/static/chunks/app/layout-958ecc226151d7c1.js", sha256: "61cfb5c2da663c85723c4b47d1e56d4178afd8794ca82404fc52efd8e2860ef4", size: 195, blob: Bun.file(resource24) },
-  { path: "_next/static/chunks/app/page-581491acfeb07a28.js", sha256: "b49d854a51c86328964bc18ba6fb19b5624c2d6c41c2fc91e192f6c7918f88c6", size: 208130, blob: Bun.file(resource25) },
+  { path: "_next/static/chunks/app/page-9564f5823579c25a.js", sha256: "1660f0668a77007b00213b86ebfd8ebbdd43eafe2d847e61cd64bde45442dbef", size: 208863, blob: Bun.file(resource25) },
   { path: "_next/static/chunks/app/_not-found/page-dbfec746eb708058.js", sha256: "362ad39c894524bac649f5b4627ff0d4e326ef7e211a136a559116ed66e44db9", size: 2670, blob: Bun.file(resource26) },
   { path: "_next/static/chunks/e2a671fb-2429dba85e7e5097.js", sha256: "add35b80b5345135f718cf5af9006fd1d0b798c457e41bf07cee64e0afc01149", size: 173018, blob: Bun.file(resource27) },
   { path: "_next/static/chunks/framework-4cc4a10014994fa1.js", sha256: "dfdf38d1586327a669e36c162fb715146f52fafb5aa0012c698f9bc5252b74b1", size: 189763, blob: Bun.file(resource28) },
