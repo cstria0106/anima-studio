@@ -179,6 +179,30 @@ describe("buildWorkflow", () => {
     );
   });
 
+  test("excludes line comments from tag prompts", () => {
+    const config = makeConfig({
+      prompts: {
+        basePositive: "quality",
+        positive: "character, // try blue hair later\nred eyes // keep this",
+        baseNegative: "bad quality",
+        negative: "artifact // generated hands",
+      },
+    });
+
+    const result = buildWorkflow(config, [
+      "anima-studio/reference-a.png",
+      "anima-studio/reference-b.png",
+      "anima-studio/reference-c.png",
+    ]);
+
+    expect(result.prompt[NODE_IDS.positiveEncode]?.inputs.text).toBe(
+      "quality\ncharacter, ,red eyes ",
+    );
+    expect(result.prompt[NODE_IDS.negativeEncode]?.inputs.text).toBe(
+      "bad quality\nartifact ",
+    );
+  });
+
   test("uses core LoadImage and ImageBatch nodes in reference order", () => {
     const result = buildWorkflow(makeConfig(), [
       "refs/first.png",

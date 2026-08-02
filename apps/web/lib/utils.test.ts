@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
+  getPromptCommentRanges,
+  isPositionInPromptComment,
+  stripPromptComments,
+} from "@anima/shared";
+import {
   getTagAtCursor,
   isAutocompleteCommitKey,
   replaceTagAtCursor,
@@ -44,6 +49,20 @@ describe("tag prompt editing", () => {
     expect(getTagAtCursor(prompt, cursor)).toMatchObject({
       tag: "cat ears",
       query: "cat ears",
+    });
+  });
+
+  test("keeps a trailing line comment outside the active tag", () => {
+    const commented = "black hair, long ha // compare with short hair";
+    const cursor = commented.indexOf("long ha") + "long ha".length;
+
+    expect(getTagAtCursor(commented, cursor)).toMatchObject({
+      tag: "long ha",
+      query: "long ha",
+    });
+    expect(replaceTagAtCursor(commented, cursor, "long hair")).toEqual({
+      value: "black hair, long hair // compare with short hair",
+      cursor: "black hair, long hair".length,
     });
   });
 
@@ -132,5 +151,35 @@ describe("autocomplete keyboard handling", () => {
 
   test("does not commit unrelated keys", () => {
     expect(isAutocompleteCommitKey("ArrowDown", false)).toBeFalse();
+  });
+});
+
+describe("prompt line comments", () => {
+  const prompt = "red eyes, // experiment\nlong hair // optional";
+
+  test("finds comment text without consuming line breaks", () => {
+    expect(getPromptCommentRanges(prompt)).toEqual([
+      {
+        start: prompt.indexOf("// experiment"),
+        end: prompt.indexOf("// experiment") + "// experiment".length,
+      },
+      {
+        start: prompt.indexOf("// optional"),
+        end: prompt.length,
+      },
+    ]);
+  });
+
+  test("removes comments while preserving line structure", () => {
+    expect(stripPromptComments(prompt)).toBe("red eyes, \nlong hair ");
+  });
+
+  test("recognizes cursor positions inside comments only", () => {
+    const commentStart = prompt.indexOf("// experiment");
+    expect(isPositionInPromptComment(prompt, commentStart)).toBeFalse();
+    expect(isPositionInPromptComment(prompt, commentStart + 2)).toBeTrue();
+    expect(
+      isPositionInPromptComment(prompt, prompt.indexOf("long hair")),
+    ).toBeFalse();
   });
 });

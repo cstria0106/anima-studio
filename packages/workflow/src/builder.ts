@@ -1,4 +1,4 @@
-import type { GenerationConfig } from "@anima/shared";
+import { stripPromptComments, type GenerationConfig } from "@anima/shared";
 
 import {
   NODE_IDS,
@@ -239,7 +239,7 @@ function joinPromptFields(fields: readonly string[]): string {
 }
 
 function normalizeTagPromptForGeneration(value: string): string {
-  return value.replace(/\r\n|\r|\n/g, ",");
+  return stripPromptComments(value).replace(/\r\n|\r|\n/g, ",");
 }
 
 export function createRandomSeed(): number {

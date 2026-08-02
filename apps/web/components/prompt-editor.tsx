@@ -1,6 +1,11 @@
 "use client";
 
 import * as React from "react";
+import {
+  getPromptCommentRanges,
+  isPositionInPromptComment,
+  stripPromptComments,
+} from "@anima/shared";
 import { ChevronDown, Hash } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Field } from "@/components/ui/field";
@@ -25,6 +30,25 @@ type Prompts = GenerationDraft["prompts"];
 interface PromptEditorProps {
   value: Prompts;
   onChange: (value: Prompts) => void;
+}
+
+function PromptHighlight({ value }: { value: string }) {
+  const ranges = React.useMemo(() => getPromptCommentRanges(value), [value]);
+  const content: React.ReactNode[] = [];
+  let offset = 0;
+
+  for (const range of ranges) {
+    content.push(value.slice(offset, range.start));
+    content.push(
+      <span key={range.start} className="text-emerald-400">
+        {value.slice(range.start, range.end)}
+      </span>,
+    );
+    offset = range.end;
+  }
+  content.push(value.slice(offset));
+
+  return <>{content}</>;
 }
 
 function TagTextarea({
@@ -54,11 +78,17 @@ function TagTextarea({
     () => getTagAtCursor(value, cursor),
     [cursor, value],
   );
+  const cursorInComment = React.useMemo(
+    () => isPositionInPromptComment(value, cursor),
+    [cursor, value],
+  );
   const latestTag = activeTag.query;
   const contextTags = React.useMemo(
     () =>
       extractTags(
-        `${value.slice(0, activeTag.start)}${value.slice(activeTag.end)}`,
+        stripPromptComments(
+          `${value.slice(0, activeTag.start)}${value.slice(activeTag.end)}`,
+        ),
       ),
     [activeTag.end, activeTag.start, value],
   );
@@ -66,6 +96,18 @@ function TagTextarea({
     () => new Set(contextTags.map(tagComparisonKey)),
     [contextTags],
   );
+
+  function updateCursor(textarea: HTMLTextAreaElement) {
+    const nextCursor = textarea.selectionStart;
+    const inComment = isPositionInPromptComment(textarea.value, nextCursor);
+    setCursor(nextCursor);
+    acceptsSuggestions.current = !inComment;
+    setAutocompleteActive(!inComment);
+    if (inComment) {
+      setSuggestions([]);
+      setOpen(false);
+    }
+  }
 
   function isIncluded(suggestion: TagSuggestion) {
     return includedTagKeys.has(tagComparisonKey(suggestion.tag));
@@ -110,7 +152,7 @@ function TagTextarea({
 
   React.useEffect(() => {
     const requestId = ++requestSequence.current;
-    if (!autocompleteActive || latestTag.length < 1) {
+    if (!autocompleteActive || cursorInComment || latestTag.length < 1) {
       setSuggestions([]);
       setOpen(false);
       return;
@@ -149,7 +191,13 @@ function TagTextarea({
     return () => {
       controller.abort();
     };
-  }, [autocompleteActive, contextTags, includedTagKeys, latestTag]);
+  }, [
+    autocompleteActive,
+    contextTags,
+    cursorInComment,
+    includedTagKeys,
+    latestTag,
+  ]);
 
   function choose(suggestion: TagSuggestion) {
     if (isIncluded(suggestion)) return;
@@ -166,25 +214,30 @@ function TagTextarea({
 
   return (
     <Field label={label} htmlFor={id}>
-      <div ref={autocompleteRef} className="relative">
+      <div
+        ref={autocompleteRef}
+        className="relative rounded-md bg-surface-2"
+      >
+        <div
+          aria-hidden="true"
+          className="prompt-highlight pointer-events-none absolute inset-0 overflow-scroll whitespace-pre-wrap break-words rounded-md border border-transparent px-3 py-3 font-mono text-[13px] leading-6 text-foreground"
+        >
+          <PromptHighlight value={value} />
+        </div>
         <AutoResizeTextarea
           ref={textareaRef}
           id={id}
           value={value}
           onChange={(event) => {
-            setCursor(event.target.selectionStart);
+            updateCursor(event.target);
             onChange(event.target.value);
           }}
-          onSelect={(event) => setCursor(event.currentTarget.selectionStart)}
+          onSelect={(event) => updateCursor(event.currentTarget)}
           onClick={(event) => {
-            acceptsSuggestions.current = true;
-            setAutocompleteActive(true);
-            setCursor(event.currentTarget.selectionStart);
+            updateCursor(event.currentTarget);
           }}
           onFocus={(event) => {
-            acceptsSuggestions.current = true;
-            setAutocompleteActive(true);
-            setCursor(event.currentTarget.selectionStart);
+            updateCursor(event.currentTarget);
           }}
           onBlur={() => {
             acceptsSuggestions.current = false;
@@ -193,7 +246,13 @@ function TagTextarea({
           }}
           placeholder={placeholder}
           spellCheck={false}
-          className="font-mono text-[13px]"
+          className="prompt-syntax-textarea relative bg-transparent font-mono text-[13px] text-transparent caret-foreground"
+          onScroll={(event) => {
+            const highlight = event.currentTarget.previousElementSibling;
+            if (!(highlight instanceof HTMLElement)) return;
+            highlight.scrollTop = event.currentTarget.scrollTop;
+            highlight.scrollLeft = event.currentTarget.scrollLeft;
+          }}
           aria-autocomplete="list"
           aria-controls={`${id}-suggestions`}
           aria-expanded={open}

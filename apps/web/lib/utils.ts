@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { getPromptCommentRanges } from "@anima/shared";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -45,6 +46,10 @@ export function getTagAtCursor(value: string, cursor: number) {
   const nextSeparators = [",", "\n", "\r"]
     .map((separator) => value.indexOf(separator, position))
     .filter((index) => index >= 0);
+  const nextComment = getPromptCommentRanges(value).find(
+    (range) => range.start >= position,
+  );
+  if (nextComment) nextSeparators.push(nextComment.start);
   const start = previousSeparator + 1;
   const end = nextSeparators.length ? Math.min(...nextSeparators) : value.length;
 
@@ -70,6 +75,15 @@ export function replaceTagAtCursor(
     before.length + leadingSpace.length + replacement.length;
 
   if (tag.end < value.length) {
+    if (value.startsWith("//", tag.end)) {
+      const commentSpacing =
+        value.slice(tag.start, tag.end).match(/[^\S\r\n]*$/)?.[0] || " ";
+      return {
+        value: `${before}${leadingSpace}${replacement}${commentSpacing}${after}`,
+        cursor: completedCursor,
+      };
+    }
+
     if (value[tag.end] === "\n" || value[tag.end] === "\r") {
       return {
         value: `${before}${leadingSpace}${replacement},${after}`,

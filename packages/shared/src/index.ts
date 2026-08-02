@@ -1,5 +1,32 @@
 import { z } from "zod";
 
+export interface PromptCommentRange {
+  start: number;
+  end: number;
+}
+
+/** Returns every `//` line-comment range without including its line break. */
+export function getPromptCommentRanges(value: string): PromptCommentRange[] {
+  return Array.from(value.matchAll(/\/\/[^\r\n]*/g), (match) => ({
+    start: match.index,
+    end: match.index + match[0].length,
+  }));
+}
+
+/** Removes `//` line comments while preserving the prompt's line structure. */
+export function stripPromptComments(value: string): string {
+  return value.replace(/\/\/[^\r\n]*/g, "");
+}
+
+export function isPositionInPromptComment(
+  value: string,
+  position: number,
+): boolean {
+  return getPromptCommentRanges(value).some(
+    (range) => position > range.start && position <= range.end,
+  );
+}
+
 export const CURATED_IMAGE_PRESETS = [
   { label: "정사각형 · 1:1", width: 1024, height: 1024 },
   { label: "가로 · 9:7", width: 1152, height: 896 },

@@ -75,6 +75,22 @@
     background-clip: content-box;
   }
 
+  .prompt-highlight {
+    scrollbar-color: transparent transparent;
+  }
+
+  .prompt-highlight::-webkit-scrollbar-thumb {
+    background: transparent;
+  }
+
+  .prompt-syntax-textarea::placeholder {
+    color: hsl(var(--muted-foreground));
+  }
+
+  .prompt-syntax-textarea::selection {
+    color: transparent;
+  }
+
   summary::-webkit-details-marker {
     display: none;
   }
