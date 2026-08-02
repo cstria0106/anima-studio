@@ -115,6 +115,9 @@ interface ApiGenerationConfig {
       batchSize: number;
     };
   };
+  loraOptimizer: {
+    enabled: boolean;
+  };
   seed: { mode: "random" | "fixed"; value: number };
   sampling: {
     sampler: string;
@@ -623,6 +626,7 @@ function draftToConfig(draft: GenerationDraft): ApiGenerationConfig {
         batchSize: draft.instantLora.batchSize,
       },
     },
+    loraOptimizer: draft.loraOptimizer,
     seed: {
       mode: draft.sampling.seedMode,
       value: draft.sampling.seed,
@@ -733,6 +737,11 @@ function configToDraft(config: ApiGenerationConfig): GenerationDraft {
       resolution:
         config.instantLora?.training?.resolution ??
         DEFAULT_DRAFT.instantLora.resolution,
+    },
+    loraOptimizer: {
+      enabled:
+        config.loraOptimizer?.enabled ??
+        DEFAULT_DRAFT.loraOptimizer.enabled,
     },
     tagging: {
       ...DEFAULT_DRAFT.tagging,

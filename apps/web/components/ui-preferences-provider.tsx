@@ -65,6 +65,10 @@ export function normalizeGenerationDraft(
       ...DEFAULT_DRAFT.instantLora,
       ...record(saved.instantLora),
     },
+    loraOptimizer: {
+      ...DEFAULT_DRAFT.loraOptimizer,
+      ...record(saved.loraOptimizer),
+    },
     tagging: { ...DEFAULT_DRAFT.tagging, ...record(saved.tagging) },
     upscale: { ...DEFAULT_DRAFT.upscale, ...record(saved.upscale) },
     loras: Array.isArray(saved.loras)

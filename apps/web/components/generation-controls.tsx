@@ -250,6 +250,19 @@ export function GenerationControls({
           ) : null}
         </div>
       </details>
+
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-background/30 px-4 py-3">
+        <div className="min-w-0">
+          <p className="text-xs font-medium">LoRA Optimizer</p>
+        </div>
+        <Switch
+          checked={value.loraOptimizer.enabled}
+          onCheckedChange={(enabled) =>
+            onChange({ ...value, loraOptimizer: { enabled } })
+          }
+          aria-label="LoRA Optimizer 사용"
+        />
+      </div>
     </div>
   );
 }

@@ -148,6 +148,11 @@ export const generationConfigSchema = z.object({
       training: trainingOptionsSchema.default({}),
     })
     .default({}),
+  loraOptimizer: z
+    .object({
+      enabled: z.boolean().default(true),
+    })
+    .default({}),
   seed: z
     .object({
       mode: z.enum(["random", "fixed"]).default("random"),

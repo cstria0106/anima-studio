@@ -4,6 +4,7 @@ import type { GenerationConfig } from "@anima/shared";
 import {
   buildUpscaleWorkflow,
   buildWorkflow,
+  loraLoaderNodeId,
   loraStackNodeId,
   manifest,
   NODE_IDS,
@@ -59,6 +60,7 @@ function makeConfig(
         batchSize: 0,
       },
     },
+    loraOptimizer: { enabled: true },
     seed: { mode: "fixed", value: 123456 },
     sampling: {
       sampler: "er_sde",
@@ -351,6 +353,56 @@ describe("buildWorkflow", () => {
     expect(stackNode?.inputs.lora_stack).toBeUndefined();
     expect(result.prompt[NODE_IDS.loraOptimizer]?.inputs.lora_stack).toEqual([
       loraStackNodeId(0),
+      0,
+    ]);
+  });
+
+  test("applies regular LoRAs without training when the optimizer is disabled", () => {
+    const config = makeConfig({
+      referenceAssetIds: [],
+      loraOptimizer: { enabled: false },
+      loras: [
+        {
+          name: "style-only.safetensors",
+          modelStrength: 0.7,
+          clipStrength: 0.4,
+          enabled: true,
+          triggerWords: [],
+          useTriggerWords: true,
+        },
+      ],
+    });
+
+    const result = buildWorkflow(config, []);
+
+    expect(result.prompt[NODE_IDS.instantReference]).toBeUndefined();
+    expect(result.prompt[NODE_IDS.loraOptimizer]).toBeUndefined();
+    expect(result.prompt[loraStackNodeId(0)]).toBeUndefined();
+    expect(result.prompt[loraLoaderNodeId(0)]).toEqual({
+      class_type: "LoraLoader",
+      inputs: {
+        model: [NODE_IDS.modelLoader, 0],
+        clip: [NODE_IDS.clipLoader, 0],
+        lora_name: "style-only.safetensors",
+        strength_model: 0.7,
+        strength_clip: 0.4,
+      },
+    });
+  });
+
+  test("uses the direct Instant Reference output when the optimizer is disabled", () => {
+    const result = buildWorkflow(
+      makeConfig({ loraOptimizer: { enabled: false } }),
+      ["a.png", "b.png", "c.png"],
+    );
+
+    expect(result.prompt[NODE_IDS.loraOptimizer]).toBeUndefined();
+    expect(result.prompt[NODE_IDS.positiveEncode]?.inputs.clip).toEqual([
+      NODE_IDS.instantReference,
+      1,
+    ]);
+    expect(result.prompt[NODE_IDS.cfgGuidance]?.inputs.model).toEqual([
+      NODE_IDS.instantReference,
       0,
     ]);
   });

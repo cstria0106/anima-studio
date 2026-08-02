@@ -215,6 +215,9 @@ describe("history job restoration", () => {
         batchSize: 3,
         resolution: "1024",
       },
+      loraOptimizer: {
+        enabled: true,
+      },
       tagging: {
         threshold: 0.41,
         characterThreshold: 0.77,
@@ -293,6 +296,7 @@ describe("generation job submission", () => {
 
     const draft = structuredClone(DEFAULT_DRAFT);
     draft.prompts.positive = "user prompt";
+    draft.loraOptimizer.enabled = false;
     draft.loras = [
       {
         id: "lora-submit",
@@ -309,6 +313,7 @@ describe("generation job submission", () => {
     await createJob(draft).catch(() => undefined);
 
     expect(submittedConfig?.referenceAssetIds).toEqual([]);
+    expect(submittedConfig?.loraOptimizer).toEqual({ enabled: false });
     expect(submittedConfig?.prompts).toEqual(draft.prompts);
     expect(submittedConfig?.loras).toEqual([
       {

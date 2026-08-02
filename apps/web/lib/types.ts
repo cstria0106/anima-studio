@@ -78,6 +78,9 @@ export interface GenerationDraft {
     batchSize: number;
     resolution: string;
   };
+  loraOptimizer: {
+    enabled: boolean;
+  };
   tagging: {
     threshold: number;
     characterThreshold: number;
@@ -149,6 +152,9 @@ export const DEFAULT_DRAFT: GenerationDraft = {
     seed: 42,
     batchSize: 0,
     resolution: "",
+  },
+  loraOptimizer: {
+    enabled: true,
   },
   tagging: {
     threshold: 0.35,

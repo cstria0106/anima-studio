@@ -2,6 +2,7 @@ import { stripPromptComments, type GenerationConfig } from "@anima/shared";
 
 import {
   NODE_IDS,
+  loraLoaderNodeId,
   loraStackNodeId,
   referenceBatchNodeId,
   referenceLoadNodeId,
@@ -479,46 +480,72 @@ export function buildWorkflow(
   }
 
   const enabledLoras = config.loras.filter((lora) => lora.enabled);
-  const loraChunks = Array.from(
-    { length: Math.ceil(enabledLoras.length / LORAS_PER_STACK_NODE) },
-    (_, index) =>
-      enabledLoras.slice(
-        index * LORAS_PER_STACK_NODE,
-        (index + 1) * LORAS_PER_STACK_NODE,
-      ),
-  );
-  for (let index = loraChunks.length - 1; index >= 0; index -= 1) {
-    const chunk = loraChunks[index];
-    if (!chunk) continue;
-    const nodeId = loraStackNodeId(index);
-    addNode(
-      accumulator,
-      nodeId,
-      classes.loraStack,
-      buildLoraStackInputs(chunk, loraStack),
-      "loading_models",
-      `LoRA 스택 ${index + 1}`,
+  if (config.loraOptimizer.enabled) {
+    const loraChunks = Array.from(
+      { length: Math.ceil(enabledLoras.length / LORAS_PER_STACK_NODE) },
+      (_, index) =>
+        enabledLoras.slice(
+          index * LORAS_PER_STACK_NODE,
+          (index + 1) * LORAS_PER_STACK_NODE,
+        ),
     );
-    loraStack = link(nodeId, 0);
-  }
+    for (let index = loraChunks.length - 1; index >= 0; index -= 1) {
+      const chunk = loraChunks[index];
+      if (!chunk) continue;
+      const nodeId = loraStackNodeId(index);
+      addNode(
+        accumulator,
+        nodeId,
+        classes.loraStack,
+        buildLoraStackInputs(chunk, loraStack),
+        "loading_models",
+        `LoRA 스택 ${index + 1}`,
+      );
+      loraStack = link(nodeId, 0);
+    }
 
-  if (loraStack) {
-    addNode(
-      accumulator,
-      NODE_IDS.loraOptimizer,
-      classes.loraOptimizer,
-      {
-        output_strength: 1,
-        clip_strength_multiplier: 1,
-        model: link(NODE_IDS.modelLoader, 0),
-        lora_stack: loraStack,
-        clip: link(NODE_IDS.clipLoader, 0),
-      },
-      "loading_models",
-      "LoRA 최적화 적용",
-    );
-    generatedModel = link(NODE_IDS.loraOptimizer, 0);
-    generatedClip = link(NODE_IDS.loraOptimizer, 1);
+    if (loraStack) {
+      addNode(
+        accumulator,
+        NODE_IDS.loraOptimizer,
+        classes.loraOptimizer,
+        {
+          output_strength: 1,
+          clip_strength_multiplier: 1,
+          model: link(NODE_IDS.modelLoader, 0),
+          lora_stack: loraStack,
+          clip: link(NODE_IDS.clipLoader, 0),
+        },
+        "loading_models",
+        "LoRA 최적화 적용",
+      );
+      generatedModel = link(NODE_IDS.loraOptimizer, 0);
+      generatedClip = link(NODE_IDS.loraOptimizer, 1);
+    }
+  } else {
+    if (uploadedInputNames.length > 0) {
+      generatedModel = link(NODE_IDS.instantReference, 0);
+      generatedClip = link(NODE_IDS.instantReference, 1);
+    }
+    enabledLoras.forEach((lora, index) => {
+      const nodeId = loraLoaderNodeId(index);
+      addNode(
+        accumulator,
+        nodeId,
+        classes.loraLoader,
+        {
+          model: generatedModel,
+          clip: generatedClip,
+          lora_name: lora.name,
+          strength_model: lora.modelStrength,
+          strength_clip: lora.clipStrength,
+        },
+        "loading_models",
+        `LoRA 적용 ${index + 1}`,
+      );
+      generatedModel = link(nodeId, 0);
+      generatedClip = link(nodeId, 1);
+    });
   }
 
   addNode(

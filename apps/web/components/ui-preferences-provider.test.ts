@@ -7,6 +7,7 @@ describe("normalizeGenerationDraft", () => {
     const draft = normalizeGenerationDraft({
       prompts: { positive: "red eyes" },
       sampling: { steps: 42 },
+      loraOptimizer: { enabled: false },
     });
 
     expect(draft.prompts.positive).toBe("red eyes");
@@ -15,6 +16,7 @@ describe("normalizeGenerationDraft", () => {
     );
     expect(draft.sampling.steps).toBe(42);
     expect(draft.sampling.scheduler).toBe(DEFAULT_DRAFT.sampling.scheduler);
+    expect(draft.loraOptimizer.enabled).toBeFalse();
   });
 
   test("drops transient references and clears legacy model selections", () => {
@@ -34,5 +36,6 @@ describe("normalizeGenerationDraft", () => {
     expect(draft.models.diffusion).toBe("");
     expect(draft.loras).toEqual([]);
     expect(draft.referenceAssets.map((asset) => asset.id)).toEqual(["saved"]);
+    expect(draft.loraOptimizer.enabled).toBeTrue();
   });
 });
