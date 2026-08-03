@@ -199,8 +199,10 @@ export function HistoryView({
   const [images, setImages] = React.useState<LibraryImage[]>([]);
   const [view, setView] = React.useState<FolderView>("all");
   const [query, setQuery] = React.useState("");
+  const [debouncedQuery, setDebouncedQuery] = React.useState("");
   const [nextCursor, setNextCursor] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [hasLoadedImages, setHasLoadedImages] = React.useState(false);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [error, setError] = React.useState("");
   const [expandedIds, setExpandedIds] = React.useState<string[]>([]);
@@ -270,7 +272,7 @@ export function HistoryView({
       try {
         const result = await getLibraryImages({
           folder: view,
-          ...(query.trim() ? { query: query.trim() } : {}),
+          ...(debouncedQuery ? { query: debouncedQuery } : {}),
           ...(cursor ? { cursor } : {}),
         });
         if (currentRequest !== requestId.current) return;
@@ -285,6 +287,7 @@ export function HistoryView({
             : result.images,
         );
         setNextCursor(result.nextCursor);
+        setHasLoadedImages(true);
       } catch (loadError) {
         if (currentRequest !== requestId.current) return;
         setError(
@@ -299,7 +302,7 @@ export function HistoryView({
         }
       }
     },
-    [query, view],
+    [debouncedQuery, view],
   );
 
   React.useEffect(() => {
@@ -309,9 +312,17 @@ export function HistoryView({
   }, [loadFolders]);
 
   React.useEffect(() => {
-    clearSelection();
-    const timer = window.setTimeout(() => void loadImages(), 180);
+    const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 180);
     return () => window.clearTimeout(timer);
+  }, [query]);
+
+  React.useEffect(() => {
+    clearSelection();
+    setNextCursor(null);
+    void loadImages();
+    return () => {
+      requestId.current += 1;
+    };
   }, [clearSelection, loadImages]);
 
   const completedFingerprint = trackedJobs
@@ -881,7 +892,7 @@ export function HistoryView({
             }
           }}
         >
-          {loading ? (
+          {loading && !hasLoadedImages ? (
             <div className="grid grid-cols-2 gap-3">
               {Array.from({ length: 8 }, (_, index) => (
                 <div key={index} className="aspect-[4/5] animate-pulse rounded-xl bg-muted" />
