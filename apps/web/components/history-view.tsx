@@ -242,7 +242,7 @@ export function HistoryDetailDialog({
                   </div>
                   <div>
                     <p className="mb-1 text-[11px] text-muted-foreground">Negative</p>
-                    <p className="whitespace-pre-wrap break-words text-muted-foreground">
+                    <p className="whitespace-pre-wrap break-words">
                       {job.settings.prompts.negative || "입력 없음"}
                     </p>
                   </div>
