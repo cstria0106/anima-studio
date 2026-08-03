@@ -311,6 +311,25 @@ export class LibraryService {
     return { moved: this.repository.moveOutputs(outputIds, targetFolderId) };
   }
 
+  downloadImages(outputIds: string[]): Array<{
+    filename: string;
+    mimeType: string;
+    load: () => Promise<Uint8Array>;
+  }> {
+    const validatedIds = ids(outputIds);
+    return validatedIds.map((id) => {
+      const output = this.repository.findOutput(id);
+      if (!output) {
+        throw new JobSubmissionError("One or more images no longer exist.", 404);
+      }
+      return {
+        filename: output.filename,
+        mimeType: output.mimeType,
+        load: async () => (await this.storage.readOutput(output)).bytes,
+      };
+    });
+  }
+
   async deleteImages(raw: unknown): Promise<LibraryImageDeleteResultDto> {
     const input = object(raw);
     const outputIds = ids(input.ids);

@@ -6,6 +6,8 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronsUp,
+  Dices,
+  Download,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -18,9 +20,13 @@ import {
   Pencil,
   RefreshCw,
   Search,
+  Settings2,
+  Sparkles,
+  SquareArrowOutUpRight,
   Trash2,
 } from "lucide-react";
 import { HistoryDetailDialog } from "@/components/history-view";
+import { UpscaleSettingsDialog } from "@/components/upscale-settings-dialog";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -62,11 +68,12 @@ import {
   selectLibraryContextTarget,
   selectLibraryItem,
 } from "@/lib/library-selection";
-import type {
-  GenerationDraft,
-  LibraryFolder,
-  LibraryImage,
-  StudioJob,
+import {
+  DEFAULT_DRAFT,
+  type GenerationDraft,
+  type LibraryFolder,
+  type LibraryImage,
+  type StudioJob,
 } from "@/lib/types";
 import { cn, formatDate, outputUrl } from "@/lib/utils";
 
@@ -207,6 +214,10 @@ export function HistoryView({
   const [actionNotice, setActionNotice] = React.useState("");
   const [deleting, setDeleting] = React.useState(false);
   const [deleteIds, setDeleteIds] = React.useState<string[]>([]);
+  const [upscaleTarget, setUpscaleTarget] = React.useState<{
+    job: StudioJob;
+    outputId: string;
+  } | null>(null);
   const [folderDelete, setFolderDelete] = React.useState<LibraryFolder | null>(
     null,
   );
@@ -378,6 +389,44 @@ export function HistoryView({
     setSelectedIds(next.selectedIds);
     setAnchorId(next.anchorId);
     setMenu({ type: "image", id: image.id, x, y });
+  }
+
+  function downloadImages(targetIds: string[]) {
+    setMenu(null);
+    const query = new URLSearchParams();
+    for (const id of targetIds) query.append("id", id);
+    const anchor = document.createElement("a");
+    anchor.href = `/api/library/images/download?${query}`;
+    anchor.click();
+  }
+
+  async function runImageAction(
+    image: LibraryImage,
+    action: (job: StudioJob) => void,
+  ) {
+    setMenu(null);
+    setError("");
+    try {
+      action(await getJob(image.jobId));
+    } catch (actionFailure) {
+      setError(
+        actionFailure instanceof Error
+          ? actionFailure.message
+          : "이미지 작업을 실행하지 못했습니다.",
+      );
+    }
+  }
+
+  function openUpscale(job: StudioJob, image: LibraryImage) {
+    const output = job.outputs.find((item) => item.id === image.id);
+    if (
+      job.status !== "completed" ||
+      job.settings.upscale.enabled ||
+      output?.kind !== "base"
+    ) {
+      throw new Error("이 이미지는 업스케일할 수 없습니다.");
+    }
+    setUpscaleTarget({ job, outputId: image.id });
   }
 
   const refreshLibrary = React.useCallback(async () => {
@@ -927,6 +976,16 @@ export function HistoryView({
   );
 
   const menuFolder = menu?.type === "folder" ? folders.find((f) => f.id === menu.id) : null;
+  const menuImageIds =
+    menu?.type === "image"
+      ? selectedSet.has(menu.id)
+        ? selectedIds
+        : [menu.id]
+      : [];
+  const menuImage =
+    menuImageIds.length === 1
+      ? images.find((image) => image.id === menuImageIds[0]) ?? null
+      : null;
 
   return (
     <>
@@ -1003,21 +1062,91 @@ export function HistoryView({
         <div
           role="menu"
           className="fixed z-[100] min-w-40 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl"
-          style={{ left: Math.min(menu.x, window.innerWidth - 180), top: Math.min(menu.y, window.innerHeight - 170) }}
+          style={{
+            left: Math.max(8, Math.min(menu.x, window.innerWidth - 180)),
+            top: Math.max(8, Math.min(menu.y, window.innerHeight - 330)),
+          }}
           onPointerDown={(event) => event.stopPropagation()}
         >
           {menu.type === "image" ? (
-            <button
-              type="button"
-              role="menuitem"
-              className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs text-red-300 hover:bg-accent"
-              onClick={() => {
-                setDeleteIds(selectedSet.has(menu.id) ? selectedIds : [menu.id]);
-                setMenu(null);
-              }}
-            >
-              <Trash2 /> 삭제
-            </button>
+            <>
+              {menuImage ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs hover:bg-accent"
+                  onClick={() => {
+                    setMenu(null);
+                    void openImage(menuImage);
+                  }}
+                >
+                  <SquareArrowOutUpRight /> 열기
+                </button>
+              ) : null}
+              <button
+                type="button"
+                role="menuitem"
+                className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs hover:bg-accent"
+                onClick={() =>
+                  downloadImages(selectedSet.has(menu.id) ? selectedIds : [menu.id])
+                }
+              >
+                <Download /> 이미지 저장
+              </button>
+              {menuImage ? (
+                <>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs hover:bg-accent"
+                    onClick={() =>
+                      void runImageAction(menuImage, (job) =>
+                        onLoadSettings(structuredClone(job.settings)),
+                      )
+                    }
+                  >
+                    <Settings2 /> 설정 불러오기
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs hover:bg-accent"
+                    onClick={() =>
+                      void runImageAction(menuImage, (job) =>
+                        onLoadSeed(job.settings.sampling.seed),
+                      )
+                    }
+                  >
+                    <Dices /> 시드 불러오기
+                  </button>
+                  {menuImage.kind === "base" ? (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs hover:bg-accent"
+                      onClick={() =>
+                        void runImageAction(menuImage, (job) =>
+                          openUpscale(job, menuImage),
+                        )
+                      }
+                    >
+                      <Sparkles /> 업스케일
+                    </button>
+                  ) : null}
+                </>
+              ) : null}
+              <button
+                type="button"
+                role="menuitem"
+                className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs text-red-300 hover:bg-accent"
+                onClick={() => {
+                  setDeleteIds(selectedSet.has(menu.id) ? selectedIds : [menu.id]);
+                  setMenu(null);
+                }}
+              >
+                <Trash2 /> 삭제
+              </button>
+            </>
           ) : menuFolder ? (
             <>
               <button
@@ -1090,6 +1219,25 @@ export function HistoryView({
           }
         }}
         onDelete={(outputId) => performDeleteImages([outputId])}
+      />
+
+      <UpscaleSettingsDialog
+        open={Boolean(upscaleTarget)}
+        initialSettings={
+          upscaleTarget?.job.settings.upscale ?? DEFAULT_DRAFT.upscale
+        }
+        onOpenChange={(open) => {
+          if (!open) setUpscaleTarget(null);
+        }}
+        onSubmit={async (settings) => {
+          if (!upscaleTarget) return;
+          const nextJob = await upscaleJob(
+            upscaleTarget.job.id,
+            settings,
+            upscaleTarget.outputId,
+          );
+          onTrackJob(nextJob);
+        }}
       />
 
       <AlertDialog open={deleteIds.length > 0} onOpenChange={(open) => !open && setDeleteIds([])}>

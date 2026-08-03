@@ -1636,6 +1636,27 @@ describe("Anima Studio API", () => {
       ]),
     );
 
+    const singleDownload = await api.app.request(
+      `/api/library/images/download?id=${output.id}`,
+    );
+    expect(singleDownload.headers.get("content-type")).toBe("image/png");
+    expect(singleDownload.headers.get("content-disposition")).toContain(
+      "attachment;",
+    );
+    expect(new Uint8Array(await singleDownload.arrayBuffer()).slice(0, 4)).toEqual(
+      new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+    );
+
+    const multipleDownload = await api.app.request(
+      `/api/library/images/download?id=${output.id}&id=${remainingOutput.id}`,
+    );
+    expect(multipleDownload.headers.get("content-type")).toBe("application/zip");
+    expect(multipleDownload.headers.get("content-disposition")).toContain(
+      "attachment;",
+    );
+    const zipBytes = new Uint8Array(await multipleDownload.arrayBuffer());
+    expect(new DataView(zipBytes.buffer).getUint32(0, true)).toBe(0x04034b50);
+
     const deleted = await api.app.request("/api/library/images/delete", {
       method: "POST",
       headers: { "content-type": "application/json" },

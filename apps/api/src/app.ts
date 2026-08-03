@@ -31,6 +31,7 @@ import { createDatabase, type DatabaseContext } from "./db/database";
 import { StudioRepository } from "./db/repository";
 import { JobEventBroker } from "./events/broker";
 import { FileStorage } from "./files/storage";
+import { createZipStream, uniqueZipNames } from "./files/zip";
 import {
   CivitaiApiClient,
   DirectCivitaiDownloadClient,
@@ -418,6 +419,10 @@ function reconcileInterruptedRuntimeOperations(
 function inlineDisposition(filename: string): string {
   const ascii = filename.replace(/[^\x20-\x7e]+/g, "_").replaceAll('"', "'");
   return `inline; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+}
+
+function attachmentDisposition(filename: string): string {
+  return inlineDisposition(filename).replace(/^inline;/, "attachment;");
 }
 
 function numberParameter(
@@ -1851,6 +1856,36 @@ export function createApp(services: AppServices): Hono {
       }),
     ),
   );
+
+  app.get("/api/library/images/download", async (c) => {
+    const files = services.library.downloadImages(c.req.queries("id") ?? []);
+    if (files.length === 1) {
+      const file = files[0]!;
+      const bytes = await file.load();
+      return new Response(bytes.slice().buffer, {
+        headers: {
+          "content-type": file.mimeType,
+          "content-length": String(bytes.byteLength),
+          "content-disposition": attachmentDisposition(file.filename),
+        },
+      });
+    }
+
+    const names = uniqueZipNames(files.map((file) => file.filename));
+    const timestamp = new Date().toISOString().replaceAll(":", "-").slice(0, 19);
+    const filename = `anima-studio-images-${timestamp}.zip`;
+    return new Response(
+      createZipStream(
+        files.map((file, index) => ({ name: names[index]!, load: file.load })),
+      ),
+      {
+        headers: {
+          "content-type": "application/zip",
+          "content-disposition": attachmentDisposition(filename),
+        },
+      },
+    );
+  });
 
   app.patch("/api/library/images/folder", async (c) =>
     c.json({
