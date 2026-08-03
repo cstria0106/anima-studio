@@ -274,21 +274,6 @@ export function HistoryDetailDialog({
                   </div>
                 </CardContent>
               </Card>
-
-              {job.autoTags?.length ? (
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">자동 태그</CardTitle>
-                  </CardHeader>
-                  <CardContent className="flex flex-wrap gap-1.5">
-                    {job.autoTags.map((tag) => (
-                      <Badge key={tag} variant="secondary">
-                        {tag}
-                      </Badge>
-                    ))}
-                  </CardContent>
-                </Card>
-              ) : null}
             </div>
 
             {detailLoading ? (
