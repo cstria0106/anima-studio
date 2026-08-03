@@ -26,6 +26,9 @@ export function normalizeDanbooruTag(value: string): string {
     .replaceAll("\\)", ")")
     .trim();
   if (/^score_[1-9]$/i.test(unescaped)) return unescaped.toLowerCase();
+  if (unescaped.includes("_") && !/[\p{L}\p{N}]/u.test(unescaped)) {
+    return unescaped;
+  }
   return unescaped.replaceAll("_", " ").replace(/\s+/g, " ").trim();
 }
 

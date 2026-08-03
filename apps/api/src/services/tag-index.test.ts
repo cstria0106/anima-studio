@@ -57,6 +57,7 @@ async function fixture(): Promise<{
       'red_eyes,0,900,"scarlet_eyes"',
       "white_pupils,0,500,",
       "solo,0,800,",
+      "=_=,0,29526,",
     ].join("\n"),
   );
   await Bun.write(
@@ -168,7 +169,7 @@ describe("Danbooru tag index", () => {
       imported: true,
       metadata: {
         source: "danbooru",
-        tagCount: 27,
+        tagCount: 28,
         cooccurrenceCount: 3,
       },
     });
@@ -181,6 +182,9 @@ describe("Danbooru tag index", () => {
     expect(firstRepository.searchTags("r")).toContainEqual(
       expect.objectContaining({ tag: "red eyes" }),
     );
+    expect(firstRepository.searchTags("=_=", 1)).toEqual([
+      expect.objectContaining({ tag: "=_=", insertText: "=_=" }),
+    ]);
     expect(firstRepository.relatedTags(["1girl"], "red")).toEqual([
       expect.objectContaining({
         tag: "red eyes",
@@ -199,7 +203,7 @@ describe("Danbooru tag index", () => {
     expect(reopened.imported).toBe(false);
     expect(reopened.metadata.fingerprint).toBe(first.metadata.fingerprint);
     expect(reopenedRepository.tagIndexCounts()).toEqual({
-      tagCount: 27,
+      tagCount: 28,
       cooccurrenceCount: 3,
     });
     reopenedDatabase.close();

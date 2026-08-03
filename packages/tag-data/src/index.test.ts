@@ -42,6 +42,7 @@ describe("Danbooru CSV parsing", () => {
     expect(normalizeDanbooruTag("  koikatsu_(medium)  ")).toBe(
       "koikatsu (medium)",
     );
+    expect(normalizeDanbooruTag("=_=")).toBe("=_=");
   });
 
   test("normalizes prompt escapes while preserving Anima score tags", () => {

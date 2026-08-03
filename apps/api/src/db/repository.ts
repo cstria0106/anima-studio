@@ -1743,6 +1743,37 @@ export class StudioRepository {
         );
     }
 
+    const searchLexically = () => {
+      const lexicalTier = sql<number>`CASE
+        WHEN lower(${tags.tag}) = ${trimmed} THEN 0
+        WHEN instr(lower(${tags.tag}), ${trimmed}) = 1 THEN 1
+        WHEN instr(lower(${tags.tag}), ${trimmed}) > 0 THEN 2
+        ELSE 3
+      END`;
+      return this.db
+        .select()
+        .from(tags)
+        .where(
+          or(
+            sql`instr(lower(${tags.tag}), ${trimmed}) > 0`,
+            sql`instr(lower(${tags.category}), ${trimmed}) > 0`,
+            sql`instr(lower(${tags.aliases}), ${trimmed}) > 0`,
+            sql`instr(lower(${tags.description}), ${trimmed}) > 0`,
+          ),
+        )
+        .orderBy(lexicalTier, desc(tags.count), asc(tags.tag))
+        .limit(boundedLimit)
+        .all()
+        .map((row) =>
+          this.tagSuggestion({
+            ...row,
+            category: row.category as TagSuggestion["category"],
+          }),
+        );
+    };
+
+    if (!/[\p{L}\p{N}]/u.test(trimmed)) return searchLexically();
+
     const tokens = trimmed
       .split(/\s+/)
       .filter(Boolean)
@@ -1785,32 +1816,7 @@ export class StudioRepository {
         .all(ftsQuery, trimmed, boundedLimit)
         .map((row) => this.tagSuggestion(row));
     } catch {
-      const lexicalTier = sql<number>`CASE
-        WHEN lower(${tags.tag}) = ${trimmed} THEN 0
-        WHEN instr(lower(${tags.tag}), ${trimmed}) = 1 THEN 1
-        WHEN instr(lower(${tags.tag}), ${trimmed}) > 0 THEN 2
-        ELSE 3
-      END`;
-      return this.db
-        .select()
-        .from(tags)
-        .where(
-          or(
-            sql`instr(lower(${tags.tag}), ${trimmed}) > 0`,
-            sql`instr(lower(${tags.category}), ${trimmed}) > 0`,
-            sql`instr(lower(${tags.aliases}), ${trimmed}) > 0`,
-            sql`instr(lower(${tags.description}), ${trimmed}) > 0`,
-          ),
-        )
-        .orderBy(lexicalTier, desc(tags.count), asc(tags.tag))
-        .limit(boundedLimit)
-        .all()
-        .map((row) =>
-          this.tagSuggestion({
-            ...row,
-            category: row.category as TagSuggestion["category"],
-          }),
-        );
+      return searchLexically();
     }
   }
 

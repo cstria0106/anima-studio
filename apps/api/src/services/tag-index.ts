@@ -19,7 +19,7 @@ import type {
   TagIndexStats,
 } from "../db/repository";
 
-const importFormatVersion = 2;
+const importFormatVersion = 3;
 const fallbackFingerprint = "fallback-tags-v1";
 
 export interface TagDataSource {
