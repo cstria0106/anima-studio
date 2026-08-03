@@ -197,7 +197,6 @@ export function HistoryView({
   const [loading, setLoading] = React.useState(true);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [error, setError] = React.useState("");
-  const [notice, setNotice] = React.useState("");
   const [expandedIds, setExpandedIds] = React.useState<string[]>([]);
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const [anchorId, setAnchorId] = React.useState<string | null>(null);
@@ -400,11 +399,6 @@ export function HistoryView({
         setDetailJob(remaining.length ? { ...detailJob, outputs: remaining } : null);
         setActiveOutputId(remaining[0]?.id ?? "");
       }
-      setNotice(
-        result.blocked.length
-          ? `${result.deletedIds.length}개를 삭제했고 ${result.blocked.length}개는 보류했습니다.`
-          : `${result.deletedIds.length}개 이미지를 삭제했습니다.`,
-      );
       setDeleteIds([]);
       await loadFolders();
       return result.deletedIds.length > 0;
@@ -454,7 +448,7 @@ export function HistoryView({
     setFolderSaving(true);
     setError("");
     try {
-      const result = await deleteLibraryFolder(folderDelete.id);
+      await deleteLibraryFolder(folderDelete.id);
       const removedCurrentView =
         view !== "all" &&
         view !== "unfiled" &&
@@ -462,9 +456,6 @@ export function HistoryView({
       if (removedCurrentView) {
         setView("unfiled");
       }
-      setNotice(
-        `${result.deletedFolderCount}개 폴더를 삭제하고 ${result.unfiledImageCount}개 이미지를 미분류로 옮겼습니다.`,
-      );
       setFolderDelete(null);
       await loadFolders();
       if (!removedCurrentView) await loadImages();
@@ -484,7 +475,6 @@ export function HistoryView({
         if (target === "root" || target === "all") return;
         const folderId = target === "unfiled" ? null : target;
         await moveLibraryImages(payload.ids, folderId);
-        setNotice(`${payload.ids.length}개 이미지를 이동했습니다.`);
         clearSelection();
       } else {
         if (target === "unfiled" || target === "all") return;
@@ -498,7 +488,6 @@ export function HistoryView({
           return;
         }
         await updateLibraryFolder(payload.folderId, { parentId });
-        setNotice("폴더를 이동했습니다.");
       }
       await refreshLibrary();
     } catch (dropError) {
@@ -830,7 +819,6 @@ export function HistoryView({
             </div>
           ) : null}
           {error ? <p className="mt-2 text-[11px] text-red-300">{error}</p> : null}
-          {notice ? <p className="mt-2 text-[11px] text-emerald-300">{notice}</p> : null}
         </div>
         <div
           className="min-h-0 flex-1 overflow-y-auto p-3 pb-14"
