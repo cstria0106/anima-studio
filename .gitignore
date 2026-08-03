@@ -12,6 +12,10 @@ coverage/
 *.tsbuildinfo
 .turbo/
 
+# Generated portable release resources
+/THIRD_PARTY_NOTICES.md
+/apps/api/src/generated/resources.ts
+
 # Local environment files
 .env
 .env.*
