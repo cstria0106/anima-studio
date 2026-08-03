@@ -101,7 +101,7 @@ export function HistoryDetailDialog({
           aria-describedby={undefined}
           className="flex h-[100dvh] w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:h-[calc(100dvh-2rem)] sm:w-[calc(100vw-2rem)] sm:max-w-[1400px] sm:rounded-xl sm:border"
         >
-          <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2 pr-14 sm:px-5 sm:pr-14">
+          <div className="flex flex-wrap items-center gap-2 px-4 pt-3 pr-14 sm:px-5 sm:pr-14">
             {output ? (
               <Button size="sm" variant="outline" asChild>
                 <a href={outputUrl(output.url ?? output.id)} download>
@@ -160,7 +160,7 @@ export function HistoryDetailDialog({
             </p>
           ) : null}
 
-          <div className="relative grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)] lg:overflow-hidden">
+          <div className="relative grid min-h-0 flex-1 gap-4 overflow-y-auto px-4 pb-4 pt-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)] lg:overflow-hidden">
             <div className="flex min-h-[50dvh] min-w-0 flex-col gap-3 lg:min-h-0">
               <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-black/30">
                 {output ? (
