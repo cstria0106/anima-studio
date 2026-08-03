@@ -429,36 +429,32 @@ export function ModelLoraControls({
                     src={thumbnailUrl}
                     className="relative grid aspect-square w-full place-items-center overflow-hidden bg-muted text-muted-foreground"
                   >
-                    {sourceUrl ? (
-                      <a
-                        href={sourceUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="absolute inset-0 grid place-items-center outline-none transition after:pointer-events-none after:absolute after:inset-0 after:ring-inset after:transition hover:after:ring-2 hover:after:ring-pink-300/70 focus-visible:after:ring-2 focus-visible:after:ring-pink-300"
-                        aria-label={`${lora.name} Civitai 원본 페이지 열기`}
-                        title="Civitai 원본 페이지 열기"
-                      >
-                        <LoraThumbnail
-                          src={thumbnailUrl}
-                          size={360}
-                          fallback={<ImageIcon className="size-8" />}
-                        />
-                      </a>
-                    ) : (
-                      <LoraThumbnail
-                        src={thumbnailUrl}
-                        size={360}
-                        fallback={<ImageIcon className="size-8" />}
-                      />
-                    )}
+                    <LoraThumbnail
+                      src={thumbnailUrl}
+                      size={360}
+                      fallback={<ImageIcon className="size-8" />}
+                    />
                     <div className="pointer-events-none absolute inset-0 z-10 bg-black/30 opacity-100 transition duration-200 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100" />
                     <div className="absolute inset-x-0 bottom-0 z-20 space-y-2 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-3 pb-3 pt-16 text-white opacity-100 transition duration-200 sm:pointer-events-none sm:translate-y-1 sm:opacity-0 sm:group-hover:pointer-events-auto sm:group-hover:translate-y-0 sm:group-hover:opacity-100 sm:group-focus-within:pointer-events-auto sm:group-focus-within:translate-y-0 sm:group-focus-within:opacity-100">
-                      <p
-                        className="truncate text-sm font-semibold drop-shadow-sm"
-                        title={lora.path}
-                      >
-                        {lora.name}
-                      </p>
+                      {sourceUrl ? (
+                        <a
+                          href={sourceUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="block truncate text-sm font-semibold text-white drop-shadow-sm outline-none transition hover:text-pink-200 focus-visible:text-pink-200 focus-visible:underline"
+                          aria-label={`${lora.name} Civitai 원본 페이지 열기`}
+                          title="Civitai 원본 페이지 열기"
+                        >
+                          {lora.name}
+                        </a>
+                      ) : (
+                        <p
+                          className="truncate text-sm font-semibold drop-shadow-sm"
+                          title={lora.path}
+                        >
+                          {lora.name}
+                        </p>
+                      )}
                       {lora.triggerWords.length ? (
                         <div
                           className="flex max-w-full cursor-pointer items-center gap-1.5 border-t border-white/15 pt-1.5 text-[9px] text-pink-100 transition hover:text-white"
