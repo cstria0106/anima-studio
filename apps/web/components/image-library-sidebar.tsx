@@ -1061,7 +1061,7 @@ export function HistoryView({
       {menu ? (
         <div
           role="menu"
-          className="fixed z-[100] min-w-40 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl"
+          className="fixed z-[100] min-w-40 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl [&_svg]:size-3.5 [&_svg]:shrink-0"
           style={{
             left: Math.max(8, Math.min(menu.x, window.innerWidth - 180)),
             top: Math.max(8, Math.min(menu.y, window.innerHeight - 330)),
