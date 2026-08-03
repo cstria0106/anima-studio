@@ -3,6 +3,8 @@ param(
   [string]$Executable
 )
 
+$ErrorActionPreference = "Stop"
+
 $smokeRoot = Join-Path ([IO.Path]::GetTempPath()) ("Anima Studio 한글 " + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $smokeRoot | Out-Null
 $exe = Join-Path $smokeRoot "AnimaStudio.exe"
@@ -24,8 +26,21 @@ try {
   }
   $instance = Get-Content -LiteralPath $descriptor | ConvertFrom-Json
   $base = "http://127.0.0.1:$($instance.port)"
+  $health = $null
+  while (!$process.HasExited -and (Get-Date) -lt $deadline) {
+    try {
+      $health = Invoke-RestMethod "$base/api/health"
+      if ($health.ok) { break }
+    } catch {
+      Start-Sleep -Milliseconds 250
+    }
+  }
+  if (!$health.ok) {
+    Get-Content -LiteralPath $stdout -ErrorAction SilentlyContinue
+    Get-Content -LiteralPath $stderr -ErrorAction SilentlyContinue
+    throw "Smoke health check did not become ready. Files retained at $smokeRoot"
+  }
   $rootResult = Invoke-WebRequest "$base/" -UseBasicParsing
-  $health = Invoke-RestMethod "$base/api/health"
   $info = Invoke-RestMethod "$base/api/app/info"
   if ($rootResult.StatusCode -ne 200) { throw "UI failed" }
   if (!$health.ok) { throw "Health failed" }

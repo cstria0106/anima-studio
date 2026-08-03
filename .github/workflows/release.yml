@@ -31,28 +31,7 @@ jobs:
       - run: bun run build:exe
       - name: Smoke test single EXE
         shell: pwsh
-        run: |
-          $smoke = Join-Path $env:RUNNER_TEMP "Anima Studio 한글 smoke"
-          New-Item -ItemType Directory -Force -Path $smoke | Out-Null
-          Copy-Item dist\AnimaStudio.exe $smoke
-          $exe = Join-Path $smoke "AnimaStudio.exe"
-          $process = Start-Process -FilePath $exe -ArgumentList "--no-browser" -WorkingDirectory $smoke -PassThru
-          try {
-            $descriptor = Join-Path $smoke "data\_app\instance.json"
-            $deadline = (Get-Date).AddMinutes(3)
-            while (!(Test-Path $descriptor) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
-            if (!(Test-Path $descriptor)) { throw "instance.json was not created" }
-            $instance = Get-Content $descriptor | ConvertFrom-Json
-            $base = "http://127.0.0.1:$($instance.port)"
-            if ((Invoke-WebRequest "$base/" -UseBasicParsing).StatusCode -ne 200) { throw "UI failed" }
-            if (!(Invoke-RestMethod "$base/api/health").ok) { throw "Health failed" }
-            $info = Invoke-RestMethod "$base/api/app/info"
-            if ($info.port -ne $instance.port) { throw "Port mismatch" }
-            if ($info.dataPath -ne (Join-Path $smoke "data")) { throw "Data path mismatch" }
-          } finally {
-            if (!$process.HasExited) { Stop-Process -Id $process.Id }
-            $process.WaitForExit(30000)
-          }
+        run: .\scripts\smoke-portable.ps1 -Executable .\dist\AnimaStudio.exe
       - name: Create checksums
         shell: pwsh
         run: |
