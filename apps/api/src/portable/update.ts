@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
@@ -76,6 +76,10 @@ export class GitHubUpdateService {
     private readonly request: UpdateFetch = fetch,
     private readonly now: () => Date = () => new Date(),
   ) {}
+
+  async clearCache(): Promise<void> {
+    await rm(this.cachePath, { force: true });
+  }
 
   private result(cache: UpdateCache | null): AppUpdateInfo {
     return {

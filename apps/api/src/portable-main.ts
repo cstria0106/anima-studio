@@ -109,6 +109,11 @@ async function main(): Promise<void> {
       ),
       danbooruTagDataFingerprint: TAG_DATA_CONTENT_HASH,
     });
+    const updates = new GitHubUpdateService(
+      APP_VERSION,
+      join(dataDir, "_app", "update-cache.json"),
+    );
+    await updates.clearCache();
     runtime = await createRuntime({
       config,
       portableApp: {
@@ -118,10 +123,7 @@ async function main(): Promise<void> {
         dataDir,
         instanceToken: lease.token,
         port: () => actualPort,
-        updates: new GitHubUpdateService(
-          APP_VERSION,
-          join(dataDir, "_app", "update-cache.json"),
-        ),
+        updates,
         staticSite,
         thirdPartyNotices: THIRD_PARTY_NOTICES,
       },

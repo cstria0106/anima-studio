@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, test } from "bun:test";
@@ -95,5 +95,39 @@ describe("GitHub update checks", () => {
     expect((await service.check(true)).latestVersion).toBe("1.1.0");
     expect(calls).toBe(2);
     expect(String(ifNoneMatch)).toBe('"empty"');
+  });
+
+  test("clears the persisted cache before a new app session", async () => {
+    const root = await mkdtemp(join(tmpdir(), "anima-update-"));
+    cleanup.push(root);
+    const cachePath = join(root, "cache.json");
+    await writeFile(
+      cachePath,
+      JSON.stringify({
+        etag: '"stale"',
+        fetchedAt: "2026-08-01T00:00:00.000Z",
+        latestVersion: "1.1.0",
+        releaseUrl: "https://example/stale",
+        releaseNotes: null,
+      }),
+    );
+    let ifNoneMatch: string | null = null;
+    const request = (async (_url: string | URL | Request, init?: RequestInit) => {
+      ifNoneMatch = new Headers(init?.headers).get("if-none-match");
+      return Response.json([
+        { tag_name: "v1.2.0", html_url: "https://example/current" },
+      ]);
+    });
+    const service = new GitHubUpdateService(
+      "1.0.0",
+      cachePath,
+      request,
+      () => new Date("2026-08-01T00:00:01Z"),
+    );
+
+    await service.clearCache();
+
+    expect((await service.check()).latestVersion).toBe("1.2.0");
+    expect(ifNoneMatch).toBeNull();
   });
 });
