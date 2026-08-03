@@ -761,7 +761,7 @@ export function StudioShell() {
         )}
       >
         <div
-          className="glass-surface sticky top-3 z-40 ml-auto mr-3 flex w-fit items-center gap-1.5 rounded-xl border border-border p-1.5 shadow-lg sm:mr-4 lg:mr-6"
+          className="sticky top-3 z-40 ml-auto mr-3 flex w-fit items-center gap-1.5 rounded-xl border border-white/15 bg-black/75 p-1.5 text-white shadow-lg backdrop-blur sm:mr-4 lg:mr-6"
           aria-label="스튜디오 도구"
         >
           <Button
