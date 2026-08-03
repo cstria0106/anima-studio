@@ -682,5 +682,6 @@ export interface AppUpdateInfo {
   latestVersion: string | null;
   updateAvailable: boolean;
   releaseUrl: string | null;
+  releaseNotes: string | null;
   checkedAt: string | null;
 }

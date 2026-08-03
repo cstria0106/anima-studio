@@ -8,6 +8,7 @@ export interface AppUpdateInfo {
   latestVersion: string | null;
   updateAvailable: boolean;
   releaseUrl: string | null;
+  releaseNotes: string | null;
   checkedAt: string | null;
 }
 
@@ -21,11 +22,13 @@ interface UpdateCache {
   fetchedAt: string;
   latestVersion: string | null;
   releaseUrl: string | null;
+  releaseNotes: string | null;
 }
 
 interface GitHubRelease {
   tag_name?: string;
   html_url?: string;
+  body?: string | null;
   draft?: boolean;
   prerelease?: boolean;
 }
@@ -52,8 +55,16 @@ async function readCache(path: string): Promise<UpdateCache | null> {
       typeof value.fetchedAt === "string" &&
       (typeof value.etag === "string" || value.etag === null) &&
       (typeof value.latestVersion === "string" || value.latestVersion === null) &&
-      (typeof value.releaseUrl === "string" || value.releaseUrl === null)
-    ) return value as UpdateCache;
+      (typeof value.releaseUrl === "string" || value.releaseUrl === null) &&
+      (value.releaseNotes === undefined ||
+        typeof value.releaseNotes === "string" ||
+        value.releaseNotes === null)
+    ) {
+      return {
+        ...(value as Omit<UpdateCache, "releaseNotes">),
+        releaseNotes: value.releaseNotes ?? null,
+      };
+    }
   } catch {}
   return null;
 }
@@ -75,6 +86,7 @@ export class GitHubUpdateService {
           ? compareVersions(cache.latestVersion, this.currentVersion) > 0
           : false,
       releaseUrl: cache?.releaseUrl ?? null,
+      releaseNotes: cache?.releaseNotes ?? null,
       checkedAt: cache?.fetchedAt ?? null,
     };
   }
@@ -119,6 +131,7 @@ export class GitHubUpdateService {
           fetchedAt: now.toISOString(),
           latestVersion: release?.tag_name?.replace(/^v/, "") ?? null,
           releaseUrl: release?.html_url ?? null,
+          releaseNotes: release?.body?.trim() || null,
         };
       }
       await mkdir(dirname(this.cachePath), { recursive: true });

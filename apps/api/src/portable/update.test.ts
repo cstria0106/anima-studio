@@ -22,13 +22,25 @@ describe("GitHub update checks", () => {
       calls += 1;
       return Response.json([
         { tag_name: "v9.0.0-beta.1", html_url: "https://example/pre", prerelease: true },
-        { tag_name: "v1.2.0", html_url: "https://example/stable", prerelease: false },
+        {
+          tag_name: "v1.2.0",
+          html_url: "https://example/stable",
+          body: "  New image tools\n\nFaster startup  ",
+          prerelease: false,
+        },
       ], { headers: { etag: '"release-etag"' } });
     });
     const now = () => new Date("2026-08-01T00:00:00Z");
     const service = new GitHubUpdateService("1.0.0", join(root, "cache.json"), request, now);
-    expect(await service.check()).toMatchObject({ latestVersion: "1.2.0", updateAvailable: true });
-    expect(await service.check()).toMatchObject({ latestVersion: "1.2.0" });
+    expect(await service.check()).toMatchObject({
+      latestVersion: "1.2.0",
+      updateAvailable: true,
+      releaseNotes: "New image tools\n\nFaster startup",
+    });
+    expect(await service.check()).toMatchObject({
+      latestVersion: "1.2.0",
+      releaseNotes: "New image tools\n\nFaster startup",
+    });
     expect(calls).toBe(1);
   });
 

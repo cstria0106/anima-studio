@@ -1444,6 +1444,7 @@ export function createApp(services: AppServices): Hono {
         latestVersion: null,
         updateAvailable: false,
         releaseUrl: null,
+        releaseNotes: null,
         checkedAt: null,
       });
     }
