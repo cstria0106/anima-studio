@@ -22,7 +22,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -33,8 +32,6 @@ import {
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
 } from "@/components/ui/dialog";
 import type { GenerationDraft, StudioJob } from "@/lib/types";
 import { cn, formatDate, outputUrl } from "@/lib/utils";
@@ -56,16 +53,6 @@ export interface HistoryDetailDialogProps {
     outputId: string,
   ) => Promise<void>;
   onDelete: (outputId: string) => Promise<boolean>;
-}
-
-function statusLabel(status: StudioJob["status"]): string {
-  if (status === "completed") return "완료";
-  if (status === "running") return "생성 중";
-  if (status === "queued") return "대기";
-  if (status === "uploading") return "업로드";
-  if (status === "failed") return "실패";
-  if (status === "cancelled") return "취소";
-  return "초안";
 }
 
 function SettingRow({ label, value }: { label: string; value: React.ReactNode }) {
@@ -114,19 +101,7 @@ export function HistoryDetailDialog({
           aria-describedby={undefined}
           className="flex h-[100dvh] w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:h-[calc(100dvh-2rem)] sm:w-[calc(100vw-2rem)] sm:max-w-[1400px] sm:rounded-xl sm:border"
         >
-          <DialogHeader className="shrink-0 border-b border-border px-4 py-3 pr-14 sm:px-5">
-            <div className="flex flex-wrap items-center gap-2">
-              <DialogTitle>생성 상세</DialogTitle>
-              <Badge variant={job.status === "completed" ? "success" : "secondary"}>
-                {statusLabel(job.status)}
-              </Badge>
-              <span className="font-mono text-[10px] text-muted-foreground">
-                {job.id.slice(0, 8)}
-              </span>
-            </div>
-          </DialogHeader>
-
-          <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2 sm:px-5">
+          <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2 pr-14 sm:px-5 sm:pr-14">
             {output ? (
               <Button size="sm" variant="outline" asChild>
                 <a href={outputUrl(output.url ?? output.id)} download>
