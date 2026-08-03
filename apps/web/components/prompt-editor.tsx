@@ -32,6 +32,37 @@ interface PromptEditorProps {
   onChange: (value: Prompts) => void;
 }
 
+function replaceTextareaValue(
+  textarea: HTMLTextAreaElement,
+  nextValue: string,
+) {
+  const currentValue = textarea.value;
+  let start = 0;
+  while (
+    start < currentValue.length &&
+    start < nextValue.length &&
+    currentValue[start] === nextValue[start]
+  ) {
+    start += 1;
+  }
+
+  let currentEnd = currentValue.length;
+  let nextEnd = nextValue.length;
+  while (
+    currentEnd > start &&
+    nextEnd > start &&
+    currentValue[currentEnd - 1] === nextValue[nextEnd - 1]
+  ) {
+    currentEnd -= 1;
+    nextEnd -= 1;
+  }
+
+  textarea.setSelectionRange(start, currentEnd);
+  // A native edit keeps the autocomplete commit in the textarea undo stack.
+  document.execCommand("insertText", false, nextValue.slice(start, nextEnd));
+  return textarea.value === nextValue;
+}
+
 function PromptHighlight({ value }: { value: string }) {
   const ranges = React.useMemo(() => getPromptCommentRanges(value), [value]);
   const content: React.ReactNode[] = [];
@@ -236,9 +267,18 @@ function TagTextarea({
       cursor,
       suggestion.insertText ?? suggestion.tag,
     );
-    pendingCursor.current = completed.cursor;
+    const textarea = textareaRef.current;
+
+    if (value !== completed.value) {
+      const replaced = textarea && replaceTextareaValue(textarea, completed.value);
+      if (!replaced) {
+        pendingCursor.current = completed.cursor;
+        onChange(completed.value);
+      }
+    }
+
+    textarea?.setSelectionRange(completed.cursor, completed.cursor);
     setCursor(completed.cursor);
-    onChange(completed.value);
     setOpen(false);
   }
 
