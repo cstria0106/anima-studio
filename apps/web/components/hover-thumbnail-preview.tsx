@@ -107,7 +107,7 @@ export function HoverThumbnailPreview({
         ? createPortal(
             <div
               aria-hidden="true"
-              className="pointer-events-none fixed z-[100] overflow-hidden rounded-lg border border-white/15 bg-black/90 shadow-2xl ring-1 ring-black/40"
+              className="pointer-events-none fixed z-[100] overflow-hidden rounded-lg bg-black/90 drop-shadow-[0_12px_24px_rgba(0,0,0,0.65)]"
               style={{
                 left: position.x,
                 top: position.y,
