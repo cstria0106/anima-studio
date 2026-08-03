@@ -98,7 +98,7 @@ function StrengthSlider({
     <div className="grid grid-cols-[2rem_minmax(0,1fr)_2rem] items-center gap-1.5">
       <label
         htmlFor={id}
-        className="text-[9px] font-medium text-muted-foreground"
+        className="text-[9px] font-medium text-white/70"
       >
         {label}
       </label>
@@ -106,7 +106,7 @@ function StrengthSlider({
         {showValue ? (
           <div
             role="tooltip"
-            className="pointer-events-none absolute bottom-full z-20 mb-1 -translate-x-1/2 rounded-md border border-white/10 bg-popover/95 px-2 py-1 text-[11px] font-semibold tabular-nums text-popover-foreground shadow-glass backdrop-blur-xl"
+            className="pointer-events-none absolute bottom-full z-20 mb-1 -translate-x-1/2 rounded-md border border-white/20 bg-white/90 px-2 py-1 text-[11px] font-semibold tabular-nums text-slate-950 shadow-glass backdrop-blur-xl"
             style={{ left: `${tooltipPosition}%` }}
           >
             {value.toFixed(2)}
@@ -120,7 +120,7 @@ function StrengthSlider({
           step={0.05}
           value={value}
           aria-valuetext={value.toFixed(2)}
-          className="h-1 w-full cursor-pointer appearance-none rounded-full bg-muted accent-primary outline-none transition focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed [&::-moz-range-thumb]:size-3 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border [&::-moz-range-thumb]:border-background [&::-moz-range-thumb]:bg-primary [&::-moz-range-thumb]:shadow-md [&::-webkit-slider-thumb]:size-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-background [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-md"
+          className="h-1 w-full cursor-pointer appearance-none rounded-full bg-white/25 accent-pink-200 outline-none transition focus-visible:ring-2 focus-visible:ring-pink-200/60 disabled:cursor-not-allowed [&::-moz-range-thumb]:size-3 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border [&::-moz-range-thumb]:border-white/80 [&::-moz-range-thumb]:bg-pink-200 [&::-moz-range-thumb]:shadow-md [&::-webkit-slider-thumb]:size-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-white/80 [&::-webkit-slider-thumb]:bg-pink-200 [&::-webkit-slider-thumb]:shadow-md"
           onChange={(event) => onChange(Number(event.currentTarget.value))}
           onPointerDown={() => {
             if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
@@ -147,7 +147,7 @@ function StrengthSlider({
       </div>
       <output
         htmlFor={id}
-        className="number-input text-right text-[9px] font-medium text-foreground"
+        className="number-input text-right text-[9px] font-semibold text-white/90"
       >
         {value.toFixed(2)}
       </output>
@@ -411,11 +411,23 @@ export function ModelLoraControls({
               return (
                 <div
                   key={lora.id}
-                  className="overflow-hidden rounded-xl border border-border/75 bg-background/35"
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (
+                      event.key === "Delete" &&
+                      event.target === event.currentTarget
+                    ) {
+                      onLorasChange(
+                        loras.filter((item) => item.id !== lora.id),
+                      );
+                    }
+                  }}
+                  className="group overflow-hidden rounded-xl border border-border/75 outline-none transition focus-visible:ring-2 focus-visible:ring-primary/40"
+                  aria-label={`${lora.name}. Delete 키로 제거`}
                 >
                   <HoverThumbnailPreview
                     src={thumbnailUrl}
-                    className="relative grid aspect-[4/3] w-full place-items-center overflow-hidden bg-muted text-muted-foreground"
+                    className="relative grid aspect-square w-full place-items-center overflow-hidden bg-muted text-muted-foreground"
                   >
                     {sourceUrl ? (
                       <a
@@ -439,16 +451,17 @@ export function ModelLoraControls({
                         fallback={<ImageIcon className="size-8" />}
                       />
                     )}
-                    <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/65 to-transparent px-3 pb-3 pt-10 text-white">
-                      <p className="truncate text-sm font-semibold drop-shadow-sm">
+                    <div className="pointer-events-none absolute inset-0 z-10 bg-black/30 opacity-100 transition duration-200 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100" />
+                    <div className="absolute inset-x-0 bottom-0 z-20 space-y-2 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-3 pb-3 pt-16 text-white opacity-100 transition duration-200 sm:pointer-events-none sm:translate-y-1 sm:opacity-0 sm:group-hover:pointer-events-auto sm:group-hover:translate-y-0 sm:group-hover:opacity-100 sm:group-focus-within:pointer-events-auto sm:group-focus-within:translate-y-0 sm:group-focus-within:opacity-100">
+                      <p
+                        className="truncate text-sm font-semibold drop-shadow-sm"
+                        title={lora.path}
+                      >
                         {lora.name}
-                      </p>
-                      <p className="mt-0.5 truncate text-[10px] text-white/70">
-                        {lora.path}
                       </p>
                       {lora.triggerWords.length ? (
                         <div
-                          className="pointer-events-auto mt-1.5 flex max-w-full cursor-pointer items-center gap-1.5 rounded border border-white/10 bg-black/50 px-1.5 py-0.5 text-[9px] text-pink-100 backdrop-blur-sm transition hover:border-white/25 hover:bg-black/70"
+                          className="flex max-w-full cursor-pointer items-center gap-1.5 border-t border-white/15 pt-1.5 text-[9px] text-pink-100 transition hover:text-white"
                           title={lora.triggerWords.join(", ")}
                           onClick={(event) => {
                             if ((event.target as Element).closest("button")) {
@@ -477,12 +490,46 @@ export function ModelLoraControls({
                           />
                         </div>
                       ) : null}
+                      <div className="space-y-1 border-t border-white/15 pt-1.5">
+                        {loraStrengthsLinked ? (
+                          <StrengthSlider
+                            id={`lora-linked-strength-${lora.id}`}
+                            label="강도"
+                            value={lora.modelStrength}
+                            onChange={(strength) =>
+                              updateLora(lora.id, {
+                                modelStrength: strength,
+                                clipStrength: strength,
+                              })
+                            }
+                          />
+                        ) : (
+                          <>
+                            <StrengthSlider
+                              id={`lora-model-strength-${lora.id}`}
+                              label="Model"
+                              value={lora.modelStrength}
+                              onChange={(modelStrength) =>
+                                updateLora(lora.id, { modelStrength })
+                              }
+                            />
+                            <StrengthSlider
+                              id={`lora-clip-strength-${lora.id}`}
+                              label="CLIP"
+                              value={lora.clipStrength}
+                              onChange={(clipStrength) =>
+                                updateLora(lora.id, { clipStrength })
+                              }
+                            />
+                          </>
+                        )}
+                      </div>
                     </div>
                     <Button
                       type="button"
                       size="icon"
                       variant="ghost"
-                      className="absolute right-2 top-2 size-8 bg-black/60 text-white/75 backdrop-blur-sm hover:bg-red-500/80 hover:text-white sm:size-8"
+                      className="absolute right-2 top-2 z-30 size-7 text-white/80 opacity-100 drop-shadow-md transition hover:bg-red-500/20 hover:text-red-100 sm:pointer-events-none sm:opacity-0 sm:group-hover:pointer-events-auto sm:group-hover:opacity-100 sm:group-focus-within:pointer-events-auto sm:group-focus-within:opacity-100"
                       aria-label={`${lora.name} 제거`}
                       onClick={() =>
                         onLorasChange(
@@ -493,41 +540,6 @@ export function ModelLoraControls({
                       <Trash2 />
                     </Button>
                   </HoverThumbnailPreview>
-
-                  <div className="space-y-1 px-2.5 py-2">
-                    {loraStrengthsLinked ? (
-                      <StrengthSlider
-                        id={`lora-linked-strength-${lora.id}`}
-                        label="강도"
-                        value={lora.modelStrength}
-                        onChange={(strength) =>
-                          updateLora(lora.id, {
-                            modelStrength: strength,
-                            clipStrength: strength,
-                          })
-                        }
-                      />
-                    ) : (
-                      <>
-                        <StrengthSlider
-                          id={`lora-model-strength-${lora.id}`}
-                          label="Model"
-                          value={lora.modelStrength}
-                          onChange={(modelStrength) =>
-                            updateLora(lora.id, { modelStrength })
-                          }
-                        />
-                        <StrengthSlider
-                          id={`lora-clip-strength-${lora.id}`}
-                          label="CLIP"
-                          value={lora.clipStrength}
-                          onChange={(clipStrength) =>
-                            updateLora(lora.id, { clipStrength })
-                          }
-                        />
-                      </>
-                    )}
-                  </div>
                 </div>
               );
             })}
