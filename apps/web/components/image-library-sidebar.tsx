@@ -15,13 +15,13 @@ import {
   Images,
   Inbox,
   LoaderCircle,
+  Maximize2,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
   RefreshCw,
   Search,
   Settings2,
-  Sparkles,
   SquareArrowOutUpRight,
   Trash2,
 } from "lucide-react";
@@ -1130,7 +1130,7 @@ export function HistoryView({
                         )
                       }
                     >
-                      <Sparkles /> 업스케일
+                      <Maximize2 /> 업스케일
                     </button>
                   ) : null}
                 </>

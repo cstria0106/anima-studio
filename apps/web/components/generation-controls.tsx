@@ -4,7 +4,7 @@ import { CURATED_IMAGE_PRESETS } from "@anima/shared";
 import {
   ChevronDown,
   Dices,
-  RotateCw,
+  Maximize2,
   Settings2,
 } from "lucide-react";
 import { useState } from "react";
@@ -188,7 +188,7 @@ export function GenerationControls({
           }}
         >
           <span className="inline-flex items-center gap-2 text-xs font-medium">
-            <RotateCw className="size-4 text-violet-300" />
+            <Maximize2 className="size-4 text-violet-300" />
             업스케일
           </span>
           <span className="ml-auto text-[10px] text-muted-foreground">

@@ -7,8 +7,8 @@ import {
   Download,
   ImageIcon,
   LoaderCircle,
+  Maximize2,
   Settings2,
-  Sparkles,
   Trash2,
 } from "lucide-react";
 import { UpscaleSettingsDialog } from "@/components/upscale-settings-dialog";
@@ -159,7 +159,7 @@ export function HistoryDetailDialog({
             </Button>
             {canUpscale ? (
               <Button type="button" size="sm" onClick={() => setUpscaleOpen(true)}>
-                <Sparkles /> 업스케일
+                <Maximize2 /> 업스케일
               </Button>
             ) : null}
             {output ? (
