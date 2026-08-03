@@ -13,7 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { GenerationControls } from "@/components/generation-controls";
-import { HistoryView } from "@/components/history-view";
+import { HistoryView } from "@/components/image-library-sidebar";
 import { InstantReferenceControls } from "@/components/instant-reference-controls";
 import { JobPanel } from "@/components/job-panel";
 import { LibraryView } from "@/components/library-view";
@@ -294,6 +294,7 @@ export function StudioShell() {
   const settingsTriggerRef = React.useRef<HTMLButtonElement>(null);
   const [historyOpen, setHistoryOpen] = React.useState(false);
   const [historyCollapsed, setHistoryCollapsed] = React.useState(false);
+  const [historyWidth, setHistoryWidth] = React.useState(320);
   const [libraryOpen, setLibraryOpen] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [systemStatusOpen, setSystemStatusOpen] = React.useState(false);
@@ -350,21 +351,42 @@ export function StudioShell() {
 
   React.useEffect(() => {
     for (const job of trackedJobs) {
-      if (!["completed", "failed"].includes(job.status)) continue;
+      if (!["completed", "failed", "cancelled"].includes(job.status)) continue;
       notifyCompletion({
         id: job.id + ":" + job.status,
         title:
           job.status === "completed"
             ? "Anima 이미지 생성 완료"
+            : job.status === "cancelled"
+              ? "Anima 이미지 생성 취소"
             : "Anima 이미지 생성 실패",
         body:
           job.status === "completed"
             ? "Seed " +
               job.settings.sampling.seed +
               " 결과가 준비되었습니다."
+            : job.status === "cancelled"
+              ? "작업을 취소했습니다."
             : job.error ?? "작업 상세에서 오류를 확인해주세요.",
         tone: job.status === "completed" ? "success" : "error",
       });
+    }
+    const discardedIds = new Set(
+      trackedJobs
+        .filter(
+          (job) =>
+            (job.status === "failed" || job.status === "cancelled") &&
+            job.outputs.length === 0,
+        )
+        .map((job) => job.id),
+    );
+    if (discardedIds.size > 0) {
+      setTrackedJobs((current) =>
+        current.filter((job) => !discardedIds.has(job.id)),
+      );
+      setActiveJob((current) =>
+        current && discardedIds.has(current.id) ? null : current,
+      );
     }
   }, [notifyCompletion, trackedJobs]);
 
@@ -458,6 +480,11 @@ export function StudioShell() {
     setDraft(normalizeGenerationDraft(preferences.draft));
     setHydrated(true);
   }, [preferences.draft, preferencesReady]);
+
+  React.useEffect(() => {
+    if (!preferencesReady) return;
+    setHistoryWidth(preferences.historySidebarWidth ?? 320);
+  }, [preferences.historySidebarWidth, preferencesReady]);
 
   React.useEffect(() => {
     if (!toast || toast.type === "error") return;
@@ -675,7 +702,12 @@ export function StudioShell() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div
+      className="min-h-screen bg-background"
+      style={
+        { "--history-sidebar-width": `${historyWidth}px` } as React.CSSProperties
+      }
+    >
       <a
         href="#studio-main"
         className="fixed left-3 top-3 z-[100] -translate-y-20 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground outline-none transition-transform focus:translate-y-0 focus:ring-2 focus:ring-ring"
@@ -688,6 +720,11 @@ export function StudioShell() {
         onMobileOpenChange={setHistoryOpen}
         desktopCollapsed={historyCollapsed}
         onDesktopCollapsedChange={setHistoryCollapsed}
+        desktopWidth={historyWidth}
+        onDesktopWidthChange={(width, commit) => {
+          setHistoryWidth(width);
+          if (commit) updatePreferences({ historySidebarWidth: width });
+        }}
         activeJob={activeJob}
         trackedJobs={trackedJobs}
         detailRequest={historyDetailRequest}
@@ -718,7 +755,9 @@ export function StudioShell() {
       <div
         className={cn(
           "transition-[padding] duration-200",
-          historyCollapsed ? "xl:pl-0" : "xl:pl-80",
+          historyCollapsed
+            ? "xl:pl-0"
+            : "xl:pl-[var(--history-sidebar-width)]",
         )}
       >
         <div

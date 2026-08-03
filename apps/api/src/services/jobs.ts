@@ -254,6 +254,7 @@ export class JobService {
         message,
         progress: null,
       });
+      await this.storage.deleteJobData(jobId).catch(() => false);
       if (error instanceof JobSubmissionError) throw error;
       throw new JobSubmissionError(message, 502);
     }
@@ -573,7 +574,11 @@ export class JobService {
       message: "작업을 취소했습니다.",
       progress: null,
     });
-    return this.repository.findJob(id)!;
+    const cancelled = this.repository.findJob(id)!;
+    if (cancelled.outputs.length === 0) {
+      await this.storage.deleteJobData(id);
+    }
+    return cancelled;
   }
 
   async delete(id: string): Promise<void> {

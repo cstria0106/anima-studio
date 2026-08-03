@@ -13,6 +13,9 @@ import {
   type HuggingFaceAnimaInstallRequest,
   type HuggingFaceAnimaProviderResponse,
   type JobListResponse,
+  type LibraryFolder,
+  type LibraryImageDeleteResult,
+  type LibraryImageListResponse,
   type LongOperation,
   type LoraOption,
   type ManagedModelInstallation,
@@ -33,6 +36,104 @@ import {
   type TagSuggestion,
   type UiPreferences,
 } from "@/lib/types";
+
+export async function getLibraryFolders(
+  signal?: AbortSignal,
+): Promise<LibraryFolder[]> {
+  const response = await apiFetch<{ folders: LibraryFolder[] }>(
+    "/api/library/folders",
+    { signal },
+  );
+  return response.folders;
+}
+
+export async function createLibraryFolder(
+  name: string,
+  parentId: string | null,
+): Promise<LibraryFolder> {
+  const response = await apiFetch<{ folder: LibraryFolder }>(
+    "/api/library/folders",
+    {
+      method: "POST",
+      body: JSON.stringify({ name, parentId }),
+    },
+  );
+  return response.folder;
+}
+
+export async function updateLibraryFolder(
+  id: string,
+  patch: { name?: string; parentId?: string | null },
+): Promise<LibraryFolder> {
+  const response = await apiFetch<{ folder: LibraryFolder }>(
+    `/api/library/folders/${encodeURIComponent(id)}`,
+    { method: "PATCH", body: JSON.stringify(patch) },
+  );
+  return response.folder;
+}
+
+export async function deleteLibraryFolder(
+  id: string,
+): Promise<{ deletedFolderCount: number; unfiledImageCount: number }> {
+  const response = await apiFetch<{
+    result: { deletedFolderCount: number; unfiledImageCount: number };
+  }>(`/api/library/folders/${encodeURIComponent(id)}`, { method: "DELETE" });
+  return response.result;
+}
+
+export function getLibraryImages(
+  options: {
+    folder?: string;
+    query?: string;
+    cursor?: string;
+    signal?: AbortSignal;
+  } = {},
+): Promise<LibraryImageListResponse> {
+  const query = new URLSearchParams();
+  if (options.folder) query.set("folder", options.folder);
+  if (options.query) query.set("q", options.query);
+  if (options.cursor) query.set("cursor", options.cursor);
+  return apiFetch<LibraryImageListResponse>(
+    `/api/library/images${query.size ? `?${query}` : ""}`,
+    { signal: options.signal },
+  );
+}
+
+export async function moveLibraryImages(
+  ids: string[],
+  folderId: string | null,
+): Promise<number> {
+  let moved = 0;
+  for (let index = 0; index < ids.length; index += 500) {
+    const response = await apiFetch<{ result: { moved: number } }>(
+      "/api/library/images/folder",
+      {
+        method: "PATCH",
+        body: JSON.stringify({ ids: ids.slice(index, index + 500), folderId }),
+      },
+    );
+    moved += response.result.moved;
+  }
+  return moved;
+}
+
+export async function deleteLibraryImages(
+  ids: string[],
+): Promise<LibraryImageDeleteResult> {
+  const result: LibraryImageDeleteResult = { deletedIds: [], blocked: [] };
+  for (let index = 0; index < ids.length; index += 500) {
+    const response = await apiFetch<{ result: LibraryImageDeleteResult }>(
+      "/api/library/images/delete",
+      {
+        method: "POST",
+        body: JSON.stringify({ ids: ids.slice(index, index + 500) }),
+      },
+    );
+    result.deletedIds.push(...response.result.deletedIds);
+    result.blocked.push(...response.result.blocked);
+  }
+  return result;
+}
 
 export async function getUiPreferences(
   signal?: AbortSignal,

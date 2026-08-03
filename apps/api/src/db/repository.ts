@@ -31,6 +31,7 @@ import {
   desc,
   eq,
   inArray,
+  isNull,
   like,
   lt,
   or,
@@ -39,6 +40,7 @@ import {
 import type { DatabaseContext } from "./database";
 import {
   assets,
+  folders,
   jobAssets,
   jobEvents,
   jobs,
@@ -51,6 +53,7 @@ import {
   systemOperations,
   tags,
   type AssetRow,
+  type FolderRow,
   type JobEventRow,
   type JobRow,
   type ManagedModelInstallationRow,
@@ -326,6 +329,28 @@ export interface JobListQuery {
   query?: string;
   before?: string;
   limit?: number;
+}
+
+export interface LibraryImageQuery {
+  folderId?: string | null;
+  allFolders?: boolean;
+  query?: string;
+  beforeCreatedAt?: string;
+  beforeId?: string;
+  limit?: number;
+}
+
+export interface LibraryImageRow {
+  id: string;
+  jobId: string;
+  folderId: string | null;
+  kind: string;
+  filename: string;
+  mimeType: string;
+  byteSize: number;
+  width: number | null;
+  height: number | null;
+  createdAt: string;
 }
 
 export interface NewSystemOperation {
@@ -1390,6 +1415,165 @@ export class StudioRepository {
       .all();
   }
 
+  listFolders(): FolderRow[] {
+    return this.db
+      .select()
+      .from(folders)
+      .orderBy(asc(folders.name), asc(folders.id))
+      .all();
+  }
+
+  findFolder(id: string): FolderRow | null {
+    return this.db.select().from(folders).where(eq(folders.id, id)).get() ?? null;
+  }
+
+  createFolder(input: {
+    id: string;
+    name: string;
+    parentId: string | null;
+    createdAt: string;
+  }): FolderRow {
+    return this.db
+      .insert(folders)
+      .values({
+        id: input.id,
+        name: input.name,
+        parentId: input.parentId,
+        createdAt: input.createdAt,
+        updatedAt: input.createdAt,
+      })
+      .returning()
+      .get();
+  }
+
+  updateFolder(
+    id: string,
+    patch: { name?: string; parentId?: string | null },
+  ): FolderRow | null {
+    const values: { name?: string; parentId?: string | null; updatedAt: string } = {
+      updatedAt: new Date().toISOString(),
+    };
+    if (patch.name !== undefined) values.name = patch.name;
+    if (patch.parentId !== undefined) values.parentId = patch.parentId;
+    return (
+      this.db
+        .update(folders)
+        .set(values)
+        .where(eq(folders.id, id))
+        .returning()
+        .get() ?? null
+    );
+  }
+
+  deleteFolderTree(ids: string[]): void {
+    if (ids.length === 0) return;
+    this.database.sqlite.transaction(() => {
+      this.db
+        .update(outputs)
+        .set({ folderId: null })
+        .where(inArray(outputs.folderId, ids))
+        .run();
+      this.db.delete(folders).where(inArray(folders.id, ids)).run();
+    })();
+  }
+
+  listLibraryImages(query: LibraryImageQuery): LibraryImageRow[] {
+    const clauses = [];
+    if (!query.allFolders) {
+      clauses.push(
+        query.folderId === null || query.folderId === undefined
+          ? isNull(outputs.folderId)
+          : eq(outputs.folderId, query.folderId),
+      );
+    }
+    if (query.query) {
+      const pattern = `%${query.query}%`;
+      clauses.push(
+        or(
+          like(outputs.filename, pattern),
+          like(jobs.configJson, pattern),
+          like(sql`CAST(${jobs.actualSeed} AS TEXT)`, pattern),
+          like(jobs.id, pattern),
+        )!,
+      );
+    }
+    if (query.beforeCreatedAt && query.beforeId) {
+      clauses.push(
+        or(
+          lt(outputs.createdAt, query.beforeCreatedAt),
+          and(
+            eq(outputs.createdAt, query.beforeCreatedAt),
+            lt(outputs.id, query.beforeId),
+          ),
+        )!,
+      );
+    }
+    const limit = Math.min(Math.max(query.limit ?? 30, 1), 100);
+    return this.db
+      .select({
+        id: outputs.id,
+        jobId: outputs.jobId,
+        folderId: outputs.folderId,
+        kind: outputs.kind,
+        filename: outputs.filename,
+        mimeType: outputs.mimeType,
+        byteSize: outputs.byteSize,
+        width: outputs.width,
+        height: outputs.height,
+        createdAt: outputs.createdAt,
+      })
+      .from(outputs)
+      .innerJoin(jobs, eq(outputs.jobId, jobs.id))
+      .where(clauses.length > 0 ? and(...clauses) : undefined)
+      .orderBy(desc(outputs.createdAt), desc(outputs.id))
+      .limit(limit + 1)
+      .all();
+  }
+
+  moveOutputs(ids: string[], folderId: string | null): number {
+    if (ids.length === 0) return 0;
+    return this.db
+      .update(outputs)
+      .set({ folderId })
+      .where(inArray(outputs.id, ids))
+      .returning({ id: outputs.id })
+      .all().length;
+  }
+
+  sourceOutputJobs(outputId: string): JobRow[] {
+    return this.db
+      .select()
+      .from(jobs)
+      .where(eq(jobs.sourceOutputId, outputId))
+      .all();
+  }
+
+  deleteOutputAndClearReferences(id: string): boolean {
+    return this.database.sqlite.transaction(() => {
+      this.db
+        .update(jobs)
+        .set({ sourceOutputId: null, updatedAt: new Date().toISOString() })
+        .where(eq(jobs.sourceOutputId, id))
+        .run();
+      return this.deleteOutputRecord(id);
+    })();
+  }
+
+  listEmptyTerminalJobs(): JobRow[] {
+    return this.db
+      .select()
+      .from(jobs)
+      .leftJoin(outputs, eq(outputs.jobId, jobs.id))
+      .where(
+        and(
+          inArray(jobs.status, ["failed", "cancelled"]),
+          isNull(outputs.id),
+        ),
+      )
+      .all()
+      .map((row) => row.jobs);
+  }
+
   listModelDownloadRows(): ModelDownloadRow[] {
     return this.db
       .select()
@@ -1417,7 +1601,9 @@ export class StudioRepository {
     const jobReferences = this.db
       .select({ id: jobs.id, createdAt: jobs.createdAt })
       .from(jobs)
-      .where(eq(jobs.sourceOutputId, outputId))
+      .where(
+        and(eq(jobs.sourceOutputId, outputId), eq(jobs.status, "uploading")),
+      )
       .all()
       .map((row) => ({
         kind: "job" as const,
@@ -1506,13 +1692,34 @@ export class StudioRepository {
   }
 
   deleteJobRecord(id: string): boolean {
-    return Boolean(
+    return this.database.sqlite.transaction(() => {
+      const now = new Date().toISOString();
+      const outputIds = this.db
+        .select({ id: outputs.id })
+        .from(outputs)
+        .where(eq(outputs.jobId, id))
+        .all()
+        .map((row) => row.id);
       this.db
-        .delete(jobs)
-        .where(eq(jobs.id, id))
-        .returning({ id: jobs.id })
-        .get(),
-    );
+        .update(jobs)
+        .set({ parentJobId: null, updatedAt: now })
+        .where(eq(jobs.parentJobId, id))
+        .run();
+      if (outputIds.length > 0) {
+        this.db
+          .update(jobs)
+          .set({ sourceOutputId: null, updatedAt: now })
+          .where(inArray(jobs.sourceOutputId, outputIds))
+          .run();
+      }
+      return Boolean(
+        this.db
+          .delete(jobs)
+          .where(eq(jobs.id, id))
+          .returning({ id: jobs.id })
+          .get(),
+      );
+    })();
   }
 
   toJobDto(row: JobRow): JobDto {

@@ -78,6 +78,13 @@
       "when": 1785517200000,
       "tag": "0010_civitai_installation_source_url",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1785769432536,
+      "tag": "0011_windy_unicorn",
+      "breakpoints": true
     }
   ]
 }

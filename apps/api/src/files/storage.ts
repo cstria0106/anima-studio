@@ -6,6 +6,7 @@ import {
   rename,
   rm,
   stat,
+  unlink,
   writeFile,
 } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
@@ -245,6 +246,40 @@ export class FileStorage {
       // only a bounded, recoverable staging directory.
       await rm(staged, { recursive: true, force: true }).catch(() => undefined);
     }
+    return true;
+  }
+
+  async deleteOutputData(row: OutputRow): Promise<boolean> {
+    const outputRoot = this.absolute(`outputs/${row.jobId}`);
+    const source = this.absolute(row.storagePath);
+    if (!pathInside(outputRoot, source)) {
+      throw new Error("A stored output is outside its job directory.");
+    }
+    const sourceStats = await lstat(source).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    });
+    if (!sourceStats || !sourceStats.isFile() || sourceStats.isSymbolicLink()) {
+      throw new Error("The stored output is missing or is not a regular file.");
+    }
+
+    const trashRoot = this.absolute(".trash/outputs");
+    const staged = this.absolute(
+      `.trash/outputs/${crypto.randomUUID()}.pending`,
+    );
+    await mkdir(trashRoot, { recursive: true });
+    await rename(source, staged);
+    try {
+      const deleted = this.repository.deleteOutputAndClearReferences(row.id);
+      if (!deleted) {
+        await rename(staged, source);
+        return false;
+      }
+    } catch (error) {
+      await rename(staged, source).catch(() => undefined);
+      throw error;
+    }
+    await unlink(staged).catch(() => undefined);
     return true;
   }
 

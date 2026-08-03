@@ -502,6 +502,11 @@ export class JobTracker {
       message,
       progress: null,
     });
+    if (this.repository.listOutputs(row.id).length === 0) {
+      void this.storage.deleteJobData(row.id).catch((error: unknown) => {
+        this.logger.warn("Could not remove an empty failed job.", error);
+      });
+    }
   }
 
   private async loadHistory(

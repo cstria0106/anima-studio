@@ -209,6 +209,40 @@ export interface OutputDto {
   height: number | null;
 }
 
+export interface LibraryFolderDto {
+  id: string;
+  name: string;
+  parentId: string | null;
+  directImageCount: number;
+  totalImageCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LibraryImageDto {
+  id: string;
+  jobId: string;
+  folderId: string | null;
+  kind: "base" | "upscale";
+  filename: string;
+  mimeType: string;
+  byteSize: number;
+  width: number | null;
+  height: number | null;
+  url: string;
+  createdAt: string;
+}
+
+export interface LibraryImageListDto {
+  images: LibraryImageDto[];
+  nextCursor: string | null;
+}
+
+export interface LibraryImageDeleteResultDto {
+  deletedIds: string[];
+  blocked: Array<{ id: string; reason: string }>;
+}
+
 export interface JobEventDto {
   id: number;
   jobId: string;

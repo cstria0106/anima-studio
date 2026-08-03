@@ -81,6 +81,10 @@ describe("managed model installation migration", () => {
         FOREIGN KEY (operation_id) REFERENCES system_operations(id)
           ON DELETE cascade
       );
+      CREATE TABLE outputs (
+        id text PRIMARY KEY NOT NULL,
+        folder_placeholder text
+      );
       CREATE TABLE tags (
         id integer PRIMARY KEY AUTOINCREMENT NOT NULL,
         tag text NOT NULL,
@@ -202,6 +206,12 @@ describe("managed model installation migration", () => {
            )`,
       )
       .all();
+    const outputColumns = database.sqlite
+      .query("PRAGMA table_info(outputs)")
+      .all() as Array<{ name: string }>;
+    const folderTable = database.sqlite
+      .query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'folders'")
+      .get();
     database.sqlite.exec(`
       INSERT INTO tags(tag, category, count, description, aliases)
       VALUES ('@migration-artist', 'artist', 1, '', '')
@@ -243,6 +253,8 @@ describe("managed model installation migration", () => {
     ).toBeTrue();
     expect(removedTables).toEqual([]);
     expect(categoryMatch?.tag).toBe("@migration-artist");
+    expect(outputColumns.some((column) => column.name === "folder_id")).toBeTrue();
+    expect(folderTable).not.toBeNull();
 
     const operation = repository.createSystemOperation({
       id: "hf-operation",

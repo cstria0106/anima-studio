@@ -600,13 +600,17 @@ describe("Anima Studio API", () => {
     const sectionResponse = await api.app.request("/api/ui-preferences", {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ settingsSection: "runtime" }),
+      body: JSON.stringify({
+        settingsSection: "runtime",
+        historySidebarWidth: 448,
+      }),
     });
     expect(await sectionResponse.json()).toEqual({
       preferences: {
         draft: { prompts: { positive: "red eyes" } },
         blurSensitive: false,
         settingsSection: "runtime",
+        historySidebarWidth: 448,
       },
     });
     expect(
@@ -615,6 +619,7 @@ describe("Anima Studio API", () => {
       draft: { prompts: { positive: "red eyes" } },
       blurSensitive: false,
       settingsSection: "runtime",
+      historySidebarWidth: 448,
     });
   });
 
@@ -1515,6 +1520,149 @@ describe("Anima Studio API", () => {
     expect(api.repository.findAsset(assetId)).not.toBeNull();
   });
 
+  test("creates, reparents, validates, and deletes nested library folders", async () => {
+    const { runtime: api } = await runtime();
+    const create = (name: string, parentId: string | null) =>
+      api.app.request("/api/library/folders", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name, parentId }),
+      });
+    const rootResponse = await create("Characters", null);
+    expect(rootResponse.status).toBe(201);
+    const root = (await rootResponse.json()) as { folder: { id: string } };
+    const childResponse = await create("Heroes", root.folder.id);
+    const child = (await childResponse.json()) as { folder: { id: string } };
+    expect(childResponse.status).toBe(201);
+
+    const duplicate = await create("heroes", root.folder.id);
+    expect(duplicate.status).toBe(409);
+    const cycle = await api.app.request(
+      `/api/library/folders/${root.folder.id}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ parentId: child.folder.id }),
+      },
+    );
+    expect(cycle.status).toBe(409);
+
+    const listed = await api.app.request("/api/library/folders");
+    expect(await listed.json()).toMatchObject({
+      folders: [
+        { id: root.folder.id, parentId: null },
+        { id: child.folder.id, parentId: root.folder.id },
+      ],
+    });
+    const deleted = await api.app.request(
+      `/api/library/folders/${root.folder.id}`,
+      { method: "DELETE" },
+    );
+    expect(await deleted.json()).toEqual({
+      result: { deletedFolderCount: 2, unfiledImageCount: 0 },
+    });
+    expect(api.repository.listFolders()).toEqual([]);
+  });
+
+  test("keeps a library job until its last image is deleted", async () => {
+    const { runtime: api, comfy } = await runtime();
+    const assetId = await uploadReference(api);
+    const config: GenerationConfig = {
+      ...structuredClone(testGenerationConfig),
+      referenceAssetIds: [assetId],
+    };
+    const created = await api.app.request("/api/jobs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ config }),
+    });
+    const job = (await created.json()) as { job: { id: string } };
+    comfy.pending = false;
+    comfy.history = {
+      [comfy.queuedPromptId]: {
+        status: { completed: true, status_str: "success", messages: [] },
+        outputs: {
+          "1": {
+            images: [
+              { filename: "library.png", subfolder: "", type: "output" },
+              {
+                filename: "library-second.png",
+                subfolder: "",
+                type: "output",
+              },
+            ],
+          },
+        },
+      },
+    };
+    await api.tracker.start();
+    const jobOutputs = api.repository.listOutputs(job.job.id);
+    const output = jobOutputs[0]!;
+    const remainingOutput = jobOutputs[1]!;
+    const folderResponse = await api.app.request("/api/library/folders", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Final", parentId: null }),
+    });
+    const folder = (await folderResponse.json()) as { folder: { id: string } };
+    const moved = await api.app.request("/api/library/images/folder", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ids: [output.id], folderId: folder.folder.id }),
+    });
+    expect(await moved.json()).toEqual({ result: { moved: 1 } });
+    const listed = await api.app.request(
+      `/api/library/images?folder=${folder.folder.id}`,
+    );
+    expect(await listed.json()).toMatchObject({
+      images: [{ id: output.id, jobId: job.job.id, folderId: folder.folder.id }],
+    });
+    const search = await api.app.request("/api/library/images?q=library.png");
+    expect(await search.json()).toMatchObject({ images: [{ id: output.id }] });
+    const folderDelete = await api.app.request(
+      `/api/library/folders/${folder.folder.id}`,
+      { method: "DELETE" },
+    );
+    expect(await folderDelete.json()).toEqual({
+      result: { deletedFolderCount: 1, unfiledImageCount: 1 },
+    });
+    const unfiled = await api.app.request("/api/library/images?folder=unfiled");
+    const unfiledBody = (await unfiled.json()) as {
+      images: Array<{ id: string; folderId: string | null }>;
+    };
+    expect(unfiledBody.images).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: output.id, folderId: null }),
+      ]),
+    );
+
+    const deleted = await api.app.request("/api/library/images/delete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ids: [output.id] }),
+    });
+    expect(await deleted.json()).toEqual({
+      result: { deletedIds: [output.id], blocked: [] },
+    });
+    expect(api.repository.findJob(job.job.id)?.outputs).toEqual([
+      expect.objectContaining({ id: remainingOutput.id }),
+    ]);
+    expect(api.repository.assetDependencies(assetId)).toHaveLength(1);
+    await expect(
+      stat(join(api.config.dataDir, output.storagePath)),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    const lastDeleted = await api.app.request("/api/library/images/delete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ids: [remainingOutput.id] }),
+    });
+    expect(await lastDeleted.json()).toEqual({
+      result: { deletedIds: [remainingOutput.id], blocked: [] },
+    });
+    expect(api.repository.findJob(job.job.id)).toBeNull();
+    expect(api.repository.assetDependencies(assetId)).toEqual([]);
+  });
+
   test("serves the latest denoise preview from memory without writing it to disk", async () => {
     const { runtime: api, comfy } = await runtime();
     const assetId = await uploadReference(api);
@@ -1677,6 +1825,30 @@ describe("Anima Studio API", () => {
       { method: "DELETE" },
     );
     expect(sourceDelete.status).toBe(409);
+    api.repository.updateJob(result.job.id, { status: "uploading" });
+    const blockedDelete = await api.app.request("/api/library/images/delete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ids: [sourceOutput.id] }),
+    });
+    expect(await blockedDelete.json()).toMatchObject({
+      result: { deletedIds: [], blocked: [{ id: sourceOutput.id }] },
+    });
+    api.repository.updateJob(result.job.id, { status: "queued" });
+    const imageDelete = await api.app.request("/api/library/images/delete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ids: [sourceOutput.id] }),
+    });
+    expect(await imageDelete.json()).toEqual({
+      result: { deletedIds: [sourceOutput.id], blocked: [] },
+    });
+    expect(api.repository.findJob(source.job.id)).toBeNull();
+    expect(api.jobs.get(result.job.id)).toMatchObject({
+      parentJobId: null,
+      sourceOutputId: null,
+      config: { upscale: { enabled: true } },
+    });
   });
 
   test("removed legacy studio APIs return 404", async () => {

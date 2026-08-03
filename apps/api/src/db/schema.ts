@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  type AnySQLiteColumn,
   index,
   integer,
   primaryKey,
@@ -116,6 +117,28 @@ export const jobEvents = sqliteTable(
   ],
 );
 
+export const folders = sqliteTable(
+  "folders",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    parentId: text("parent_id").references(
+      (): AnySQLiteColumn => folders.id,
+      { onDelete: "cascade" },
+    ),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("folders_parent_id_idx").on(table.parentId),
+    index("folders_name_idx").on(table.name),
+  ],
+);
+
 export const outputs = sqliteTable(
   "outputs",
   {
@@ -134,6 +157,9 @@ export const outputs = sqliteTable(
     comfyFilename: text("comfy_filename").notNull(),
     comfySubfolder: text("comfy_subfolder").notNull().default(""),
     comfyType: text("comfy_type").notNull().default("output"),
+    folderId: text("folder_id").references(() => folders.id, {
+      onDelete: "set null",
+    }),
     createdAt: text("created_at")
       .notNull()
       .default(sql`CURRENT_TIMESTAMP`),
@@ -146,6 +172,7 @@ export const outputs = sqliteTable(
       table.comfySubfolder,
     ),
     index("outputs_job_id_idx").on(table.jobId),
+    index("outputs_folder_id_idx").on(table.folderId),
   ],
 );
 
@@ -361,6 +388,7 @@ export const managedModelInstallations = sqliteTable(
 export type AssetRow = typeof assets.$inferSelect;
 export type JobRow = typeof jobs.$inferSelect;
 export type JobEventRow = typeof jobEvents.$inferSelect;
+export type FolderRow = typeof folders.$inferSelect;
 export type OutputRow = typeof outputs.$inferSelect;
 export type SystemOperationRow = typeof systemOperations.$inferSelect;
 export type SystemOperationEventRow =

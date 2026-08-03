@@ -107,6 +107,7 @@ export interface UiPreferences {
   blurSensitive?: boolean;
   completionNotificationsEnabled?: boolean;
   settingsSection?: SettingsSection;
+  historySidebarWidth?: number;
 }
 
 export const DEFAULT_DRAFT: GenerationDraft = {
@@ -363,6 +364,40 @@ export interface StudioJob {
 export interface JobListResponse {
   jobs: StudioJob[];
   nextCursor?: string;
+}
+
+export interface LibraryFolder {
+  id: string;
+  name: string;
+  parentId: string | null;
+  directImageCount: number;
+  totalImageCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LibraryImage {
+  id: string;
+  jobId: string;
+  folderId: string | null;
+  kind: "base" | "upscale";
+  filename: string;
+  mimeType: string;
+  byteSize: number;
+  width: number | null;
+  height: number | null;
+  url: string;
+  createdAt: string;
+}
+
+export interface LibraryImageListResponse {
+  images: LibraryImage[];
+  nextCursor: string | null;
+}
+
+export interface LibraryImageDeleteResult {
+  deletedIds: string[];
+  blocked: Array<{ id: string; reason: string }>;
 }
 
 export type RuntimeMode = "managed" | "external";

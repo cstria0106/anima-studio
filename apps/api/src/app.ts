@@ -64,6 +64,7 @@ import {
 import { CapabilityService } from "./services/capabilities";
 import { JobEventService } from "./services/job-events";
 import { JobService, JobSubmissionError } from "./services/jobs";
+import { LibraryService } from "./services/library";
 import { ModelDownloadCoordinator } from "./services/model-downloads";
 import { OperationService } from "./services/operations";
 import { StorageInventoryService } from "./services/storage-inventory";
@@ -98,6 +99,7 @@ export interface ApiRuntime {
   events: JobEventService;
   operations: OperationService;
   jobs: JobService;
+  library: LibraryService;
   storageInventory: StorageInventoryService;
   tracker: JobTracker;
   runtimeController: ManagedComfyRuntimeController;
@@ -170,6 +172,7 @@ interface UiPreferences {
   blurSensitive?: boolean;
   completionNotificationsEnabled?: boolean;
   settingsSection?: string;
+  historySidebarWidth?: number;
 }
 
 function uiPreferences(value: unknown): UiPreferences {
@@ -196,6 +199,14 @@ function uiPreferences(value: unknown): UiPreferences {
   ) {
     result.settingsSection = input.settingsSection;
   }
+  if (
+    typeof input.historySidebarWidth === "number" &&
+    Number.isInteger(input.historySidebarWidth) &&
+    input.historySidebarWidth >= 280 &&
+    input.historySidebarWidth <= 560
+  ) {
+    result.historySidebarWidth = input.historySidebarWidth;
+  }
   return result;
 }
 
@@ -212,6 +223,7 @@ function uiPreferencesPatch(value: unknown): UiPreferences {
     "blurSensitive",
     "completionNotificationsEnabled",
     "settingsSection",
+    "historySidebarWidth",
   ]);
   if (Object.keys(input).some((key) => !supported.has(key))) {
     throw new RuntimeRequestError(
@@ -762,6 +774,8 @@ export async function createRuntime(
     modelRoots: [runtimePaths.models],
     loraRoot: join(runtimePaths.models, "loras"),
   });
+  const library = new LibraryService(repository, storage);
+  await library.pruneEmptyTerminalJobs();
   await modelDownloads.reconcileInstallations();
   for (const orphan of repository.listActiveSystemOperations()) {
     operations.fail(
@@ -825,6 +839,7 @@ export async function createRuntime(
     events,
     operations,
     jobs,
+    library,
     storageInventory,
     tracker,
     runtimeController,
@@ -858,6 +873,7 @@ export async function createRuntime(
     events,
     operations,
     jobs,
+    library,
     storageInventory,
     tracker,
     runtimeController,
@@ -889,6 +905,7 @@ interface AppServices {
   events: JobEventService;
   operations: OperationService;
   jobs: JobService;
+  library: LibraryService;
   storageInventory: StorageInventoryService;
   tracker: JobTracker;
   runtimeController: ManagedComfyRuntimeController;
@@ -928,7 +945,7 @@ export function createApp(services: AppServices): Hono {
     cors({
       origin: (origin) => (!origin || isLocalOrigin(origin) ? origin : ""),
       allowHeaders: ["Content-Type", "Last-Event-ID"],
-      allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       exposeHeaders: ["Content-Length"],
       maxAge: 600,
     }),
@@ -1793,6 +1810,53 @@ export function createApp(services: AppServices): Hono {
     }),
   );
 
+  app.get("/api/library/folders", (c) =>
+    c.json({ folders: services.library.folders() }),
+  );
+
+  app.post("/api/library/folders", async (c) =>
+    c.json(
+      { folder: services.library.createFolder(await parseJson(c.req.raw)) },
+      201,
+    ),
+  );
+
+  app.patch("/api/library/folders/:id", async (c) =>
+    c.json({
+      folder: services.library.updateFolder(
+        c.req.param("id"),
+        await parseJson(c.req.raw),
+      ),
+    }),
+  );
+
+  app.delete("/api/library/folders/:id", (c) =>
+    c.json({ result: services.library.deleteFolder(c.req.param("id")) }),
+  );
+
+  app.get("/api/library/images", (c) =>
+    c.json(
+      services.library.images({
+        ...(c.req.query("folder") ? { folder: c.req.query("folder")! } : {}),
+        ...(c.req.query("q") ? { query: c.req.query("q")! } : {}),
+        ...(c.req.query("cursor") ? { cursor: c.req.query("cursor")! } : {}),
+        limit: numberParameter(c.req.query("limit"), 40, 1, 100),
+      }),
+    ),
+  );
+
+  app.patch("/api/library/images/folder", async (c) =>
+    c.json({
+      result: services.library.moveImages(await parseJson(c.req.raw)),
+    }),
+  );
+
+  app.post("/api/library/images/delete", async (c) =>
+    c.json({
+      result: await services.library.deleteImages(await parseJson(c.req.raw)),
+    }),
+  );
+
   app.get("/api/options", async (c) => {
     if (!services.gateway.available) {
       return c.json({
@@ -2113,7 +2177,12 @@ export function createApp(services: AppServices): Hono {
             const event = pending.shift()!;
             queuedIds.delete(event.id);
             cursor = event.id;
-            const status = services.jobs.get(jobId).status;
+            const status =
+              event.phase === "completed" ||
+              event.phase === "failed" ||
+              event.phase === "cancelled"
+                ? event.phase
+                : services.jobs.get(jobId).status;
             await stream.writeSSE({
               id: String(event.id),
               event: "job",

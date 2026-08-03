@@ -261,7 +261,7 @@ export class StorageInventoryService {
           throw new Error("Asset record disappeared during cleanup.");
         }
       } else if (item.kind === "output") {
-        if (!this.repository.deleteOutputRecord(item.id)) {
+        if (!this.repository.deleteOutputAndClearReferences(item.id)) {
           throw new Error("Output record disappeared during cleanup.");
         }
       } else if (item.kind === "instant_lora") {
