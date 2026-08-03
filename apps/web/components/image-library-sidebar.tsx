@@ -994,10 +994,7 @@ export function HistoryView({
         type="button"
         size="icon"
         variant="outline"
-        className={cn(
-          "fixed bottom-4 z-40 hidden size-10 rounded-full bg-background shadow-lg xl:inline-flex",
-          desktopCollapsed ? "left-4" : "left-16",
-        )}
+        className="fixed bottom-4 left-4 z-40 hidden size-10 rounded-full bg-background shadow-lg xl:inline-flex"
         onClick={() => onDesktopCollapsedChange(!desktopCollapsed)}
         aria-label={desktopCollapsed ? "라이브러리 펼치기" : "라이브러리 접기"}
       >
