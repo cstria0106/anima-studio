@@ -20,10 +20,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { ResultActionBar } from "@/components/result-action-bar";
+import { UpscaleSettingsDialog } from "@/components/upscale-settings-dialog";
 import { GenerationQueueList } from "@/components/generation-queue-list";
 import { cancelJob, upscaleJob } from "@/lib/api";
 import type {
   CapabilitiesResponse,
+  GenerationDraft,
   JobStatus,
   StudioJob,
 } from "@/lib/types";
@@ -97,6 +99,7 @@ export function JobPanel({
   );
   const [cancelling, setCancelling] = React.useState(false);
   const [actionError, setActionError] = React.useState("");
+  const [upscaleOpen, setUpscaleOpen] = React.useState(false);
   const [now, setNow] = React.useState(Date.now());
   const jobStatus = job?.status;
   const jobOutputs = job?.outputs;
@@ -117,6 +120,10 @@ export function JobPanel({
       );
     }
   }, [jobOutputs, selectedOutputId]);
+
+  React.useEffect(() => {
+    setUpscaleOpen(false);
+  }, [job?.id]);
 
   const output =
     job?.outputs.find((item) => item.id === selectedOutputId) ??
@@ -158,23 +165,15 @@ export function JobPanel({
     }
   }
 
-  async function handleUpscale() {
+  async function handleUpscale(settings: GenerationDraft["upscale"]) {
     if (!job || !canUpscaleResult) return;
     setActionError("");
-    try {
-      const nextJob = await upscaleJob(
-        job.id,
-        job.settings.upscale,
-        output?.kind === "base" ? output.id : undefined,
-      );
-      onJobUpdate(nextJob);
-    } catch (error) {
-      setActionError(
-        error instanceof Error
-          ? error.message
-          : "업스케일 작업을 시작하지 못했습니다.",
-      );
-    }
+    const nextJob = await upscaleJob(
+      job.id,
+      settings,
+      output?.kind === "base" ? output.id : undefined,
+    );
+    onJobUpdate(nextJob);
   }
 
   return (
@@ -358,7 +357,7 @@ export function JobPanel({
                   canUpscale={canUpscaleResult}
                   onLoadSettings={onLoadSettings}
                   onLoadSeed={onLoadSeed}
-                  onUpscale={async () => handleUpscale()}
+                  onUpscale={() => setUpscaleOpen(true)}
                 />
               ) : null}
 
@@ -444,6 +443,14 @@ export function JobPanel({
           ) : null}
         </div>
       </div>
+      {job ? (
+        <UpscaleSettingsDialog
+          open={upscaleOpen}
+          initialSettings={job.settings.upscale}
+          onOpenChange={setUpscaleOpen}
+          onSubmit={handleUpscale}
+        />
+      ) : null}
     </aside>
   );
 }

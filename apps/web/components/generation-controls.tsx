@@ -10,6 +10,7 @@ import {
 import { useState } from "react";
 import { ImageSizeDialog } from "@/components/image-size-dialog";
 import { SearchableSelect } from "@/components/searchable-select";
+import { UpscaleSettingsFields } from "@/components/upscale-settings-fields";
 import { Field } from "@/components/ui/field";
 import { CommittedNumberField } from "@/components/ui/committed-number-field";
 import { Switch } from "@/components/ui/switch";
@@ -203,50 +204,13 @@ export function GenerationControls({
         </summary>
         <div className="grid gap-4 border-t border-border/60 p-4 md:grid-cols-2 2xl:grid-cols-1">
           {upscale.enabled ? (
-            <>
-              <Field label="방식" htmlFor="upscale-method">
-                <SearchableSelect
-                  id="upscale-method"
-                  value={upscale.method}
-                  options={optionsFromStrings(
-                    options.upscaleMethods.length
-                      ? options.upscaleMethods
-                      : [
-                          "nearest-exact",
-                          "bilinear",
-                          "area",
-                          "bicubic",
-                          "bislerp",
-                        ],
-                  )}
-                  onChange={(method) => patchUpscale({ method })}
-                  placeholder="업스케일 방식"
-                />
-              </Field>
-              <CommittedNumberField
-                label="배율"
-                value={upscale.scale}
-                onChange={(scale) => patchUpscale({ scale })}
-                min={0.01}
-                max={8}
-                step={0.05}
-              />
-              <CommittedNumberField
-                label="2차 Steps"
-                value={upscale.steps}
-                onChange={(steps) => patchUpscale({ steps })}
-                min={1}
-                max={10000}
-              />
-              <CommittedNumberField
-                label="2차 Denoise"
-                value={upscale.denoise}
-                onChange={(denoise) => patchUpscale({ denoise })}
-                min={0}
-                max={1}
-                step={0.01}
-              />
-            </>
+            <UpscaleSettingsFields
+              value={upscale}
+              methods={options.upscaleMethods}
+              onChange={(nextUpscale) =>
+                onChange({ ...value, upscale: nextUpscale })
+              }
+            />
           ) : null}
         </div>
       </details>

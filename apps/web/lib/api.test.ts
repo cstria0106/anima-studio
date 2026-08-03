@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createJob, getJob, getOptions } from "./api";
+import { createJob, getJob, getOptions, upscaleJob } from "./api";
 import { DEFAULT_DRAFT, type GenerationDraft } from "./types";
 
 const originalFetch = globalThis.fetch;
@@ -40,6 +40,52 @@ describe("studio options", () => {
       ],
     });
     expect(requestedUrl).toBe("/api/options");
+  });
+});
+
+describe("upscale submission", () => {
+  test("submits the selected output and one-off upscale settings", async () => {
+    let requestedUrl = "";
+    let requestedMethod = "";
+    let submittedBody: unknown;
+    globalThis.fetch = (async (input, init) => {
+      requestedUrl = input instanceof Request ? input.url : String(input);
+      requestedMethod = init?.method ?? "";
+      submittedBody = JSON.parse(String(init?.body));
+      return new Response(
+        JSON.stringify({
+          job: {
+            id: "upscale-child",
+            settings: DEFAULT_DRAFT,
+          },
+        }),
+        { headers: { "content-type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    await upscaleJob(
+      "source job",
+      {
+        enabled: false,
+        method: "bicubic",
+        scale: 2.25,
+        steps: 18,
+        denoise: 0.31,
+      },
+      "base/output",
+    );
+
+    expect(requestedUrl).toBe("/api/jobs/source%20job/upscale");
+    expect(requestedMethod).toBe("POST");
+    expect(submittedBody).toEqual({
+      outputId: "base/output",
+      upscale: {
+        method: "bicubic",
+        scale: 2.25,
+        steps: 18,
+        denoise: 0.31,
+      },
+    });
   });
 });
 

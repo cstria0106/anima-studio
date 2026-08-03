@@ -5,7 +5,7 @@ import { Copy, Dices, LoaderCircle, Maximize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { StudioJob } from "@/lib/types";
 
-type ActionName = "load" | "seed" | "upscale";
+type ActionName = "load" | "seed";
 
 interface ResultActionBarProps {
   job: StudioJob;
@@ -13,7 +13,7 @@ interface ResultActionBarProps {
   compact?: boolean;
   onLoadSettings: (job: StudioJob) => Promise<void> | void;
   onLoadSeed: (job: StudioJob) => Promise<void> | void;
-  onUpscale?: (job: StudioJob) => Promise<void> | void;
+  onUpscale?: (job: StudioJob) => void;
 }
 
 export function ResultActionBar({
@@ -91,9 +91,9 @@ export function ResultActionBar({
             variant="soft"
             className={compact ? "gap-1 px-1.5 text-[10px]" : undefined}
             disabled={busy !== null}
-            onClick={() => void run("upscale", onUpscale)}
+            onClick={() => onUpscale(job)}
           >
-            {icon("upscale", <Maximize2 />)}
+            <Maximize2 />
             업스케일
           </Button>
         ) : null}

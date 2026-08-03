@@ -25,6 +25,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { ZoomableImageViewer } from "@/components/zoomable-image-viewer";
+import { UpscaleSettingsDialog } from "@/components/upscale-settings-dialog";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -450,7 +451,10 @@ interface HistoryDetailDialogProps {
   onOutputChange: (id: string) => void;
   onLoadSettings: (settings: GenerationDraft) => void;
   onLoadSeed: (seed: number) => void;
-  onUpscale: (job: StudioJob) => Promise<void>;
+  onUpscale: (
+    job: StudioJob,
+    settings: GenerationDraft["upscale"],
+  ) => Promise<void>;
   onRepeatFailed: (job: StudioJob) => Promise<void>;
   onCopyDiagnostics: (job: StudioJob) => Promise<void>;
   onDelete: (job: StudioJob) => Promise<boolean>;
@@ -474,9 +478,11 @@ function HistoryDetailDialog({
   onDelete,
 }: HistoryDetailDialogProps) {
   const [deleteOpen, setDeleteOpen] = React.useState(false);
+  const [upscaleOpen, setUpscaleOpen] = React.useState(false);
 
   React.useEffect(() => {
     setDeleteOpen(false);
+    setUpscaleOpen(false);
   }, [job?.id]);
 
   if (!job) return null;
@@ -550,7 +556,7 @@ function HistoryDetailDialog({
                   size="sm"
                   variant="soft"
                   className="gap-1 px-2 text-[11px]"
-                  onClick={() => void onUpscale(job)}
+                  onClick={() => setUpscaleOpen(true)}
                 >
                   <Maximize2 />
                   업스케일
@@ -812,6 +818,12 @@ function HistoryDetailDialog({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+    <UpscaleSettingsDialog
+      open={upscaleOpen}
+      initialSettings={job.settings.upscale}
+      onOpenChange={setUpscaleOpen}
+      onSubmit={(settings) => onUpscale(job, settings)}
+    />
     </>
   );
 }
@@ -1004,27 +1016,19 @@ export function HistoryView({
     void openJob(detailRequest.job, detailRequest.outputId);
   }, [detailRequest, openJob]);
 
-  async function handleUpscale(job: StudioJob) {
+  async function handleUpscale(
+    job: StudioJob,
+    settings: GenerationDraft["upscale"],
+  ) {
     setActionError("");
-    try {
-      const sourceOutputId = job.outputs.find(
-        (output) => output.kind === "base",
-      )?.id;
-      const nextJob = await upscaleJob(
-        job.id,
-        job.settings.upscale,
-        sourceOutputId,
-      );
-      onTrackJob(nextJob);
-      setJobs((current) => mergeJobs(current, [nextJob]));
-      setActionNotice("업스케일 작업을 시작했습니다.");
-    } catch (requestError) {
-      setActionError(
-        requestError instanceof Error
-          ? requestError.message
-          : "업스케일 작업을 시작하지 못했습니다.",
-      );
-    }
+    setActionNotice("");
+    const sourceOutputId = job.outputs.find(
+      (output) => output.kind === "base",
+    )?.id;
+    const nextJob = await upscaleJob(job.id, settings, sourceOutputId);
+    onTrackJob(nextJob);
+    setJobs((current) => mergeJobs(current, [nextJob]));
+    setActionNotice("업스케일 작업을 시작했습니다.");
   }
 
   async function repeatFailedJob(job: StudioJob) {
