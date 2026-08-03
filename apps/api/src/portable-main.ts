@@ -7,6 +7,7 @@ import {
   EXTRACTED_RESOURCES,
   RESOURCE_CONTENT_HASH,
   STATIC_RESOURCES,
+  TAG_DATA_CONTENT_HASH,
   THIRD_PARTY_NOTICES,
 } from "./generated/resources";
 import { InstanceCoordinator } from "./portable/instance";
@@ -18,6 +19,7 @@ import { extractEmbeddedResources } from "./portable/resources";
 import { EmbeddedStaticSite } from "./portable/static";
 import { GitHubUpdateService } from "./portable/update";
 import {
+  createPortableStartupHandler,
   PORTABLE_APP_PORT,
   startPortableServer,
 } from "./portable/server";
@@ -75,6 +77,20 @@ async function main(): Promise<void> {
   let server: ReturnType<typeof Bun.serve> | null = null;
   try {
     let actualPort = 0;
+    const staticSite = new EmbeddedStaticSite(STATIC_RESOURCES);
+    const startup = createPortableStartupHandler(staticSite);
+    server = startPortableServer((request) => startup.fetch(request));
+    if (!server.port) throw new Error("Windows did not assign a server port.");
+    actualPort = server.port;
+    const url = `http://127.0.0.1:${actualPort}`;
+    await lease.publish(actualPort);
+
+    console.log(`Anima Studio ${APP_VERSION}`);
+    console.log(`URL: ${url}`);
+    console.log(`Data: ${dataDir}`);
+    console.log("Press Ctrl+C to stop Anima Studio.");
+    if (!arguments_.noBrowser) openBrowser(url);
+
     const config = loadConfig({
       host: "127.0.0.1",
       port: PORTABLE_APP_PORT,
@@ -91,6 +107,7 @@ async function main(): Promise<void> {
         resources.tagDataDir,
         "danbooru_tags_cooccurrence.csv",
       ),
+      danbooruTagDataFingerprint: TAG_DATA_CONTENT_HASH,
     });
     runtime = await createRuntime({
       config,
@@ -105,21 +122,11 @@ async function main(): Promise<void> {
           APP_VERSION,
           join(dataDir, "_app", "update-cache.json"),
         ),
-        staticSite: new EmbeddedStaticSite(STATIC_RESOURCES),
+        staticSite,
         thirdPartyNotices: THIRD_PARTY_NOTICES,
       },
     });
-    server = startPortableServer((request) => runtime!.app.fetch(request));
-    if (!server.port) throw new Error("Windows did not assign a server port.");
-    actualPort = server.port;
-    const url = `http://127.0.0.1:${actualPort}`;
-    await lease.publish(actualPort);
-
-    console.log(`Anima Studio ${APP_VERSION}`);
-    console.log(`URL: ${url}`);
-    console.log(`Data: ${dataDir}`);
-    console.log("Press Ctrl+C to stop Anima Studio.");
-    if (!arguments_.noBrowser) openBrowser(url);
+    startup.activate((request) => runtime!.app.fetch(request));
 
     const baseShutdown = createShutdownHandler(server, runtime);
     let shutdownPromise: Promise<void> | null = null;
@@ -139,8 +146,9 @@ async function main(): Promise<void> {
   } catch (error) {
     if (server && runtime) {
       await createShutdownHandler(server, runtime)().catch(() => undefined);
-    } else if (runtime) {
-      await runtime.close().catch(() => undefined);
+    } else {
+      if (server) await server.stop(true).catch(() => undefined);
+      if (runtime) await runtime.close().catch(() => undefined);
     }
     await lease.release();
     throw error;

@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { once } from "node:events";
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import {
   ANIMA_CURATED_TAGS,
@@ -26,6 +25,7 @@ export interface TagDataSource {
   tagsCsvPath: string;
   descriptionsCsvPath: string;
   cooccurrenceCsvPath: string;
+  contentFingerprint?: string;
   minimumCooccurrenceCount: number;
 }
 
@@ -35,30 +35,32 @@ export interface TagIndexInitialization {
   stats: TagIndexStats;
 }
 
+async function fileFingerprint(path: string): Promise<string> {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(path)) hash.update(chunk);
+  return hash.digest("hex");
+}
+
 async function sourceFingerprint(source: TagDataSource): Promise<string> {
-  const [tagsStat, descriptionsStat, cooccurrenceStat] = await Promise.all([
-    stat(source.tagsCsvPath),
-    stat(source.descriptionsCsvPath),
-    stat(source.cooccurrenceCsvPath),
-  ]);
+  let contentFingerprint = source.contentFingerprint;
+  if (contentFingerprint) {
+    if (!/^[a-f0-9]{64}$/.test(contentFingerprint)) {
+      throw new Error("Invalid tag data content fingerprint.");
+    }
+  } else {
+    const fingerprints = await Promise.all([
+      fileFingerprint(source.tagsCsvPath),
+      fileFingerprint(source.descriptionsCsvPath),
+      fileFingerprint(source.cooccurrenceCsvPath),
+    ]);
+    contentFingerprint = createHash("sha256")
+      .update(fingerprints.join("\n"))
+      .digest("hex");
+  }
   const identity = JSON.stringify({
     importFormatVersion,
-    tags: {
-      path: source.tagsCsvPath,
-      bytes: tagsStat.size,
-      modified: tagsStat.mtimeMs,
-    },
-    descriptions: {
-      path: source.descriptionsCsvPath,
-      bytes: descriptionsStat.size,
-      modified: descriptionsStat.mtimeMs,
-    },
-    cooccurrences: {
-      path: source.cooccurrenceCsvPath,
-      bytes: cooccurrenceStat.size,
-      modified: cooccurrenceStat.mtimeMs,
-      minimumCount: source.minimumCooccurrenceCount,
-    },
+    contentFingerprint,
+    minimumCount: source.minimumCooccurrenceCount,
   });
   return createHash("sha256").update(identity).digest("hex");
 }

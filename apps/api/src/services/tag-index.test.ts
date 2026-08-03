@@ -194,6 +194,12 @@ describe("Danbooru tag index", () => {
     ]);
     firstDatabase.close();
 
+    const unchangedTags = await Bun.file(
+      files.source.tagsCsvPath,
+    ).text();
+    await Bun.sleep(10);
+    await Bun.write(files.source.tagsCsvPath, unchangedTags);
+
     const reopenedDatabase = createDatabase(files);
     const reopenedRepository = new StudioRepository(reopenedDatabase);
     const reopened = await initializeDanbooruTagIndex(
@@ -207,6 +213,35 @@ describe("Danbooru tag index", () => {
       cooccurrenceCount: 3,
     });
     reopenedDatabase.close();
+  });
+
+  test("reimports only when tag file contents change", async () => {
+    const files = await fixture();
+    const database = createDatabase(files);
+    const repository = new StudioRepository(database);
+    const first = await initializeDanbooruTagIndex(
+      repository,
+      files.source,
+    );
+    const original = await Bun.file(files.source.tagsCsvPath).text();
+    await Bun.write(
+      files.source.tagsCsvPath,
+      `${original}\nblue_eyes,0,400,azure_eyes`,
+    );
+
+    const changed = await initializeDanbooruTagIndex(
+      repository,
+      files.source,
+    );
+
+    expect(changed.imported).toBe(true);
+    expect(changed.metadata.fingerprint).not.toBe(
+      first.metadata.fingerprint,
+    );
+    expect(repository.searchTags("azure", 1)).toEqual([
+      expect.objectContaining({ tag: "blue eyes" }),
+    ]);
+    database.close();
   });
 
   test("uses multiple prompt tags to rank contextual suggestions", async () => {

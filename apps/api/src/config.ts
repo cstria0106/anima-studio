@@ -29,6 +29,7 @@ export interface AppConfig {
   danbooruTagsCsvPath: string;
   danbooruDescriptionsCsvPath: string;
   danbooruCooccurrenceCsvPath: string;
+  danbooruTagDataFingerprint: string | null;
   danbooruMinimumCooccurrenceCount: number;
 }
 
@@ -89,6 +90,8 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
           "data",
           "danbooru_tags_cooccurrence.csv",
         ),
+    danbooruTagDataFingerprint:
+      overrides.danbooruTagDataFingerprint ?? null,
     danbooruMinimumCooccurrenceCount:
       overrides.danbooruMinimumCooccurrenceCount ?? 5_000,
   };

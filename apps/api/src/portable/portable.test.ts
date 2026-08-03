@@ -6,7 +6,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { portableDataDirectory, assertPortableDataWritable } from "./paths";
 import { extractEmbeddedResources, type EmbeddedResource } from "./resources";
 import { EmbeddedStaticSite } from "./static";
-import { PORTABLE_APP_PORT, startPortableServer } from "./server";
+import {
+  createPortableStartupHandler,
+  PORTABLE_APP_PORT,
+  startPortableServer,
+} from "./server";
 
 const temporaryDirectories: string[] = [];
 
@@ -114,5 +118,27 @@ describe("portable server port", () => {
     } finally {
       await Promise.all([server.stop(true), occupied.stop(true)]);
     }
+  });
+
+  test("serves the startup UI before the runtime API is ready", async () => {
+    const site = new EmbeddedStaticSite([
+      embedded("index.html", "<main>starting</main>"),
+    ]);
+    const startup = createPortableStartupHandler(site);
+    const page = await startup.fetch(new Request("http://127.0.0.1/"));
+    const pending = await startup.fetch(
+      new Request("http://127.0.0.1/api/health"),
+    );
+
+    expect(await page.text()).toContain("starting");
+    expect(pending.status).toBe(503);
+    expect(pending.headers.get("retry-after")).toBe("1");
+
+    startup.activate(() => Response.json({ status: "ok" }));
+    const ready = await startup.fetch(
+      new Request("http://127.0.0.1/api/health"),
+    );
+    expect(ready.status).toBe(200);
+    expect(await ready.json()).toEqual({ status: "ok" });
   });
 });

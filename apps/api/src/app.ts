@@ -494,6 +494,12 @@ export async function createRuntime(
           tagsCsvPath: config.danbooruTagsCsvPath,
           descriptionsCsvPath: config.danbooruDescriptionsCsvPath,
           cooccurrenceCsvPath: config.danbooruCooccurrenceCsvPath,
+          ...(config.danbooruTagDataFingerprint
+            ? {
+                contentFingerprint:
+                  config.danbooruTagDataFingerprint,
+              }
+            : {}),
           minimumCooccurrenceCount:
             config.danbooruMinimumCooccurrenceCount,
         });

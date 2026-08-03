@@ -730,7 +730,13 @@ describe("managed model installations", () => {
   });
 
   test("reconciles stale installation records and interrupted task rows at startup", async () => {
-    const context = await fixture();
+    let hashCalls = 0;
+    const context = await fixture({
+      async sha256() {
+        hashCalls += 1;
+        throw new Error("startup reconciliation must not hash model files");
+      },
+    });
     const validPath = join(context.loraRoot, "valid.safetensors");
     await writeFile(validPath, "valid");
     const validSha256 = await new NodeFileHasher().sha256(validPath);
@@ -792,6 +798,7 @@ describe("managed model installations", () => {
     expect(
       context.repository.findSystemOperation(operation.id),
     ).toBeNull();
+    expect(hashCalls).toBe(0);
   });
 
   test("decorates only current recommended Anima models from installation state", async () => {

@@ -128,14 +128,10 @@ export class ModelDownloadCoordinator {
           installation.destinationRootId,
           installation.relativeDir,
         );
-        const filePath = await this.destinations.verifyFinalFile(
+        await this.destinations.verifyFinalFile(
           destination,
           installation.storagePath,
         );
-        const actualSha256 = await this.hasher.sha256(filePath);
-        if (!sha256Matches(installation.sha256, actualSha256)) {
-          throw new Error("Installed model hash changed.");
-        }
       } catch {
         this.repository.deleteManagedModelInstallation(installation.id);
       }
