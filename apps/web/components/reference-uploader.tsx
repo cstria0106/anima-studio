@@ -12,23 +12,13 @@ import {
 import { Button } from "@/components/ui/button";
 import type { ReferenceAsset } from "@/lib/types";
 import { uploadAsset } from "@/lib/api";
+import { normalizeReferenceAssets } from "@/lib/reference-assets";
 import { cn, uniqueId } from "@/lib/utils";
 
 interface ReferenceUploaderProps {
   assets: ReferenceAsset[];
   onChange: (assets: ReferenceAsset[]) => void;
   disabled?: boolean;
-}
-
-function sortReferenceAssets(values: ReferenceAsset[]): ReferenceAsset[] {
-  return [...values].sort((left, right) => {
-    const leftHash = left.sha256;
-    const rightHash = right.sha256;
-    if (leftHash && rightHash) return leftHash.localeCompare(rightHash);
-    if (leftHash) return -1;
-    if (rightHash) return 1;
-    return left.id.localeCompare(right.id);
-  });
 }
 
 export function ReferenceUploader({
@@ -40,19 +30,19 @@ export function ReferenceUploader({
   const assetsRef = React.useRef(assets);
   const [draggingOver, setDraggingOver] = React.useState(false);
   const displayedAssets = React.useMemo(
-    () => sortReferenceAssets(assets),
+    () => normalizeReferenceAssets(assets),
     [assets],
   );
 
   React.useEffect(() => {
-    assetsRef.current = sortReferenceAssets(assets);
+    assetsRef.current = normalizeReferenceAssets(assets);
   }, [assets]);
 
   const commit = React.useCallback(
     (next: ReferenceAsset[]) => {
-      const sorted = sortReferenceAssets(next);
-      assetsRef.current = sorted;
-      onChange(sorted);
+      const normalized = normalizeReferenceAssets(next);
+      assetsRef.current = normalized;
+      onChange(normalized);
     },
     [onChange],
   );
