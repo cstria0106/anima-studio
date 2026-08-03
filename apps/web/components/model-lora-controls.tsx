@@ -11,6 +11,7 @@ import {
   Sparkle,
   Trash2,
 } from "lucide-react";
+import { HoverThumbnailPreview } from "@/components/hover-thumbnail-preview";
 import { SearchableSelect } from "@/components/searchable-select";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -222,13 +223,16 @@ function LoraFinder({
                   setOpen(false);
                 }}
               >
-                <div className="relative grid size-10 shrink-0 place-items-center overflow-hidden rounded-md border border-border bg-muted text-muted-foreground">
+                <HoverThumbnailPreview
+                  src={option.thumbnailUrl}
+                  className="relative grid size-10 shrink-0 place-items-center overflow-hidden rounded-md border border-border bg-muted text-muted-foreground"
+                >
                   <LoraThumbnail
                     src={option.thumbnailUrl}
                     size={40}
                     fallback={<Sparkle className="size-4" />}
                   />
-                </div>
+                </HoverThumbnailPreview>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{option.name}</p>
                   <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
@@ -409,7 +413,10 @@ export function ModelLoraControls({
                   key={lora.id}
                   className="overflow-hidden rounded-xl border border-border/75 bg-background/35"
                 >
-                  <div className="relative grid aspect-[4/3] w-full place-items-center overflow-hidden bg-muted text-muted-foreground">
+                  <HoverThumbnailPreview
+                    src={thumbnailUrl}
+                    className="relative grid aspect-[4/3] w-full place-items-center overflow-hidden bg-muted text-muted-foreground"
+                  >
                     {sourceUrl ? (
                       <a
                         href={sourceUrl}
@@ -485,7 +492,7 @@ export function ModelLoraControls({
                     >
                       <Trash2 />
                     </Button>
-                  </div>
+                  </HoverThumbnailPreview>
 
                   <div className="space-y-1 px-2.5 py-2">
                     {loraStrengthsLinked ? (
