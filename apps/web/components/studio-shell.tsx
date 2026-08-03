@@ -32,7 +32,6 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -918,6 +917,7 @@ export function StudioShell() {
 
       <Dialog open={libraryOpen} onOpenChange={setLibraryOpen}>
         <DialogContent
+          aria-describedby={undefined}
           className="flex h-[100dvh] w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:h-[calc(100dvh-2rem)] sm:w-[calc(100vw-2rem)] sm:max-w-[1400px] sm:rounded-xl sm:border"
           onCloseAutoFocus={(event) => {
             event.preventDefault();
@@ -926,9 +926,6 @@ export function StudioShell() {
         >
           <DialogHeader className="shrink-0 border-b border-border px-4 py-4 pr-14 sm:px-6">
             <DialogTitle>Library</DialogTitle>
-            <DialogDescription className="sr-only">
-              모델을 설치하거나 제거합니다.
-            </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-6">
             <LibraryView
@@ -941,6 +938,7 @@ export function StudioShell() {
 
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
         <DialogContent
+          aria-describedby={undefined}
           className="flex h-[100dvh] w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:h-[calc(100dvh-2rem)] sm:w-[calc(100vw-2rem)] sm:max-w-[1400px] sm:rounded-xl sm:border"
           onCloseAutoFocus={(event) => {
             event.preventDefault();
@@ -949,9 +947,6 @@ export function StudioShell() {
         >
           <DialogHeader className="shrink-0 border-b border-border px-4 py-4 pr-14 sm:px-6">
             <DialogTitle>Settings</DialogTitle>
-            <DialogDescription className="sr-only">
-              엔진, 알림, 저장공간 설정을 관리합니다.
-            </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-hidden p-3 sm:p-6">
             <SettingsView

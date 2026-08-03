@@ -49,7 +49,6 @@ import { Input } from "@/components/ui/input";
 import {
   Sheet,
   SheetContent,
-  SheetDescription,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
@@ -1049,10 +1048,13 @@ export function HistoryView({
       </Button>
 
       <Sheet open={mobileOpen} onOpenChange={onMobileOpenChange}>
-        <SheetContent side="left" className="w-[min(100vw,400px)] p-0 sm:max-w-[400px] xl:hidden">
+        <SheetContent
+          aria-describedby={undefined}
+          side="left"
+          className="w-[min(100vw,400px)] p-0 sm:max-w-[400px] xl:hidden"
+        >
           <SheetHeader className="sr-only">
             <SheetTitle>이미지 라이브러리</SheetTitle>
-            <SheetDescription>생성 이미지를 선택하고 폴더로 정리합니다.</SheetDescription>
           </SheetHeader>
           {content}
         </SheetContent>

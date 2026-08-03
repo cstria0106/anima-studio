@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -72,6 +71,7 @@ export function UpscaleSettingsDialog({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
+        aria-describedby={undefined}
         className="max-h-[calc(100dvh-2rem)] max-w-md overflow-y-auto p-0"
         showClose={!submitting}
         onEscapeKeyDown={(event) => {
@@ -87,9 +87,6 @@ export function UpscaleSettingsDialog({
               <Maximize2 className="size-4 text-violet-300" />
               업스케일 설정
             </DialogTitle>
-            <DialogDescription>
-              원본 이미지를 확대하고 2차 샘플링할 설정을 선택합니다.
-            </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-4 px-5 py-5 sm:grid-cols-2">

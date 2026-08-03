@@ -24,7 +24,6 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
-  AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
@@ -1027,12 +1026,9 @@ export function LibraryView({
           if (!open) setPendingCivitaiRemoval(null);
         }}
       >
-        <AlertDialogContent>
+        <AlertDialogContent aria-describedby={undefined}>
           <AlertDialogHeader>
             <AlertDialogTitle>모델을 제거할까요?</AlertDialogTitle>
-            <AlertDialogDescription>
-              설치된 파일의 SHA-256이 일치할 때만 안전하게 제거합니다.
-            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>취소</AlertDialogCancel>

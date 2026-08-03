@@ -33,7 +33,6 @@ import {
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -111,7 +110,10 @@ export function HistoryDetailDialog({
   return (
     <>
       <Dialog open onOpenChange={onOpenChange}>
-        <DialogContent className="flex h-[100dvh] w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:h-[calc(100dvh-2rem)] sm:w-[calc(100vw-2rem)] sm:max-w-[1400px] sm:rounded-xl sm:border">
+        <DialogContent
+          aria-describedby={undefined}
+          className="flex h-[100dvh] w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:h-[calc(100dvh-2rem)] sm:w-[calc(100vw-2rem)] sm:max-w-[1400px] sm:rounded-xl sm:border"
+        >
           <DialogHeader className="shrink-0 border-b border-border px-4 py-3 pr-14 sm:px-5">
             <div className="flex flex-wrap items-center gap-2">
               <DialogTitle>생성 상세</DialogTitle>
@@ -122,9 +124,6 @@ export function HistoryDetailDialog({
                 {job.id.slice(0, 8)}
               </span>
             </div>
-            <DialogDescription className="sr-only">
-              선택한 이미지와 생성 설정을 확인하고 복원합니다.
-            </DialogDescription>
           </DialogHeader>
 
           <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2 sm:px-5">
