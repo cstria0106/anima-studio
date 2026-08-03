@@ -422,7 +422,7 @@ export function ModelLoraControls({
                       );
                     }
                   }}
-                  className="group overflow-hidden rounded-xl border border-border/75 outline-none transition focus-visible:ring-2 focus-visible:ring-primary/40"
+                  className="group overflow-hidden rounded-xl outline-none transition focus-visible:ring-2 focus-visible:ring-primary/40"
                   aria-label={`${lora.name}. Delete 키로 제거`}
                 >
                   <HoverThumbnailPreview
