@@ -4,12 +4,46 @@ import { ChevronDown, Sparkles, Wand2 } from "lucide-react";
 import { CommittedNumberField } from "@/components/ui/committed-number-field";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { StrengthSlider } from "@/components/ui/strength-slider";
 import { Switch } from "@/components/ui/switch";
 import type { GenerationDraft } from "@/lib/types";
 
 interface InstantReferenceControlsProps {
   value: GenerationDraft;
   onChange: (value: GenerationDraft) => void;
+}
+
+export function InstantReferenceStrengthControls({
+  value,
+  onChange,
+}: InstantReferenceControlsProps) {
+  const active = value.referenceAssets.some(
+    (asset) => asset.status === "ready",
+  );
+  const patchInstant = (patch: Partial<GenerationDraft["instantLora"]>) =>
+    onChange({
+      ...value,
+      instantLora: { ...value.instantLora, ...patch },
+    });
+
+  return (
+    <div className="space-y-2 rounded-lg border border-border/70 bg-black/20 p-3">
+      <StrengthSlider
+        id="instant-lora-model-strength"
+        label="Model"
+        value={value.instantLora.modelStrength}
+        onChange={(modelStrength) => patchInstant({ modelStrength })}
+        disabled={!active}
+      />
+      <StrengthSlider
+        id="instant-lora-clip-strength"
+        label="CLIP"
+        value={value.instantLora.clipStrength}
+        onChange={(clipStrength) => patchInstant({ clipStrength })}
+        disabled={!active}
+      />
+    </div>
+  );
 }
 
 export function InstantReferenceControls({
@@ -45,22 +79,6 @@ export function InstantReferenceControls({
         className="space-y-5 border-t border-border/60 p-4 disabled:opacity-50"
       >
         <div className="grid gap-4 md:grid-cols-2">
-          <CommittedNumberField
-            label="Model strength"
-            value={instantLora.modelStrength}
-            onChange={(modelStrength) => patchInstant({ modelStrength })}
-            min={-10}
-            max={10}
-            step={0.05}
-          />
-          <CommittedNumberField
-            label="CLIP strength"
-            value={instantLora.clipStrength}
-            onChange={(clipStrength) => patchInstant({ clipStrength })}
-            min={-10}
-            max={10}
-            step={0.05}
-          />
           <CommittedNumberField
             label="Training steps"
             value={instantLora.trainingSteps}

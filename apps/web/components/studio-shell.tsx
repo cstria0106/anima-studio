@@ -14,7 +14,10 @@ import {
 } from "lucide-react";
 import { GenerationControls } from "@/components/generation-controls";
 import { HistoryView } from "@/components/image-library-sidebar";
-import { InstantReferenceControls } from "@/components/instant-reference-controls";
+import {
+  InstantReferenceControls,
+  InstantReferenceStrengthControls,
+} from "@/components/instant-reference-controls";
 import { InpaintEditorDialog } from "@/components/inpaint-editor-dialog";
 import { InpaintSourceCard } from "@/components/inpaint-source-card";
 import { JobPanel } from "@/components/job-panel";
@@ -291,6 +294,10 @@ function CreateWorkspace({
                     onChange={(referenceAssets) =>
                       onDraftChange({ ...draft, referenceAssets })
                     }
+                  />
+                  <InstantReferenceStrengthControls
+                    value={draft}
+                    onChange={onDraftChange}
                   />
                   <InstantReferenceControls
                     value={draft}
