@@ -23,6 +23,7 @@ interface InpaintSourceCardProps {
   value: InpaintWorkspaceDraft;
   onChange: (value: InpaintWorkspaceDraft) => void;
   onEditMask: () => void;
+  onUploadReady: (value: InpaintWorkspaceDraft) => void;
 }
 
 function loadFileImage(file: File): Promise<HTMLImageElement> {
@@ -64,6 +65,7 @@ export function InpaintSourceCard({
   value,
   onChange,
   onEditMask,
+  onUploadReady,
 }: InpaintSourceCardProps) {
   const inputRef = React.useRef<HTMLInputElement>(null);
   const operationRef = React.useRef(0);
@@ -173,11 +175,13 @@ export function InpaintSourceCard({
           new File([blob], "inpaint-source.png", { type: "image/png" }),
         ).finally(() => URL.revokeObjectURL(previewUrl));
         if (operation !== operationRef.current) return;
-        onChange({
+        const readyWorkspace = {
           ...emptyInpaintWorkspace(),
           source: { type: "asset", asset: uploaded, crop },
-          sourceStatus: "ready",
-        });
+          sourceStatus: "ready" as const,
+        };
+        onChange(readyWorkspace);
+        onUploadReady(readyWorkspace);
       } catch (error) {
         if (operation !== operationRef.current) return;
         onChange({
@@ -188,7 +192,7 @@ export function InpaintSourceCard({
         });
       }
     },
-    [onChange, value.maskAsset],
+    [onChange, onUploadReady, value.maskAsset],
   );
 
   const clear = () => {

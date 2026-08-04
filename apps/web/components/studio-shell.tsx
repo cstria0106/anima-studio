@@ -91,6 +91,11 @@ import {
   type PreflightIssue,
 } from "@/lib/studio-ux";
 
+interface InpaintEditorSession {
+  workspace: InpaintWorkspaceDraft;
+  draftOnSave?: GenerationDraft;
+}
+
 function CreateWorkspace({
   draft,
   onDraftChange,
@@ -110,6 +115,7 @@ function CreateWorkspace({
   onInpaint,
   onInpaintChange,
   onEditInpaintMask,
+  onInpaintUploadReady,
   submitting,
 }: {
   draft: GenerationDraft;
@@ -130,6 +136,7 @@ function CreateWorkspace({
   onInpaint: (job: StudioJob, outputId: string) => void;
   onInpaintChange: (value: InpaintWorkspaceDraft) => void;
   onEditInpaintMask: () => void;
+  onInpaintUploadReady: (value: InpaintWorkspaceDraft) => void;
   submitting: boolean;
 }) {
   const preflightIssues = React.useMemo(
@@ -308,6 +315,7 @@ function CreateWorkspace({
                     value={inpaint}
                     onChange={onInpaintChange}
                     onEditMask={onEditInpaintMask}
+                    onUploadReady={onInpaintUploadReady}
                   />
                 </CardContent>
               </Card>
@@ -436,7 +444,8 @@ export function StudioShell() {
   const [inpaint, setInpaint] = React.useState<InpaintWorkspaceDraft>(() =>
     emptyInpaintWorkspace(),
   );
-  const [inpaintEditorOpen, setInpaintEditorOpen] = React.useState(false);
+  const [inpaintEditorSession, setInpaintEditorSession] =
+    React.useState<InpaintEditorSession | null>(null);
   const [toast, setToast] = React.useState<{
     type: "success" | "error";
     message: string;
@@ -829,12 +838,6 @@ export function StudioShell() {
       setToast({ type: "error", message: "선택한 원본 이미지를 찾지 못했습니다." });
       return;
     }
-    if (
-      inpaint.maskAsset &&
-      !window.confirm("현재 인페인트 원본과 저장된 마스크를 선택한 결과로 교체할까요?")
-    ) {
-      return;
-    }
     const workspace = inpaintWorkspaceFromOutput(job, output);
     if (
       workspace.source?.crop.cropped ||
@@ -850,17 +853,18 @@ export function StudioShell() {
     }
     setHistoryOpen(false);
     const restored = initialInpaintDraft(draft, job);
-    setDraft({
-      ...restored,
-      sampling: {
-        ...restored.sampling,
-        width: output.width ?? restored.sampling.width,
-        height: output.height ?? restored.sampling.height,
+    setInpaintEditorSession({
+      workspace,
+      draftOnSave: {
+        ...restored,
+        sampling: {
+          ...restored.sampling,
+          width: output.width ?? restored.sampling.width,
+          height: output.height ?? restored.sampling.height,
+        },
+        upscale: { ...restored.upscale, enabled: false },
       },
-      upscale: { ...restored.upscale, enabled: false },
     });
-    setInpaint(workspace);
-    setInpaintEditorOpen(true);
   }
 
   function updateInpaint(next: InpaintWorkspaceDraft) {
@@ -1139,7 +1143,12 @@ export function StudioShell() {
             }
             onInpaint={openInpaint}
             onInpaintChange={updateInpaint}
-            onEditInpaintMask={() => setInpaintEditorOpen(true)}
+            onEditInpaintMask={() =>
+              setInpaintEditorSession({ workspace: inpaint })
+            }
+            onInpaintUploadReady={(workspace) =>
+              setInpaintEditorSession({ workspace })
+            }
             submitting={submitting}
           />
         </main>
@@ -1166,18 +1175,21 @@ export function StudioShell() {
         </DialogContent>
       </Dialog>
 
-      {inpaintEditorOpen && inpaint.source ? (
+      {inpaintEditorSession?.workspace.source ? (
         <InpaintEditorDialog
-          source={inpaint.source}
-          maskAsset={inpaint.maskAsset}
-          growMaskBy={inpaint.growMaskBy}
-          onClose={() => setInpaintEditorOpen(false)}
+          source={inpaintEditorSession.workspace.source}
+          maskAsset={inpaintEditorSession.workspace.maskAsset}
+          growMaskBy={inpaintEditorSession.workspace.growMaskBy}
+          onClose={() => setInpaintEditorSession(null)}
           onSave={({ maskAsset, growMaskBy }) => {
-            setInpaint((current) => ({
-              ...current,
+            setInpaint({
+              ...inpaintEditorSession.workspace,
               maskAsset,
               growMaskBy,
-            }));
+            });
+            if (inpaintEditorSession.draftOnSave) {
+              setDraft(inpaintEditorSession.draftOnSave);
+            }
             setToast({
               type: "success",
               message: "인페인트 마스크를 저장했습니다. 생성 버튼으로 실행할 수 있습니다.",
