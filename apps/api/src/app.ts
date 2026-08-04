@@ -1503,9 +1503,17 @@ export function createApp(services: AppServices): Hono {
     });
   });
 
-  app.get("/api/capabilities", async (c) =>
-    c.json(await services.capabilities.report()),
-  );
+  app.get("/api/capabilities", async (c) => {
+    const feature = c.req.query("feature");
+    if (feature && feature !== "inpaint") {
+      throw new JobSubmissionError(`Unknown capability feature: ${feature}`, 400);
+    }
+    return c.json(
+      await services.capabilities.report(
+        feature === "inpaint" ? "inpaint" : undefined,
+      ),
+    );
+  });
 
   app.get("/api/operations", (c) => {
     const limit = numberParameter(c.req.query("limit"), 30, 1, 100);
@@ -2195,6 +2203,17 @@ export function createApp(services: AppServices): Hono {
       }
       throw error;
     }
+  });
+
+  app.post("/api/jobs/inpaint", async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      throw new JobSubmissionError("Request body must be valid JSON.", 400);
+    }
+    const job = await services.jobs.inpaint(body);
+    return c.json({ job }, 202);
   });
 
   app.post("/api/jobs/:id/upscale", async (c) => {

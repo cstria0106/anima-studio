@@ -9,7 +9,8 @@ export interface ComfyPromptNode {
 
 export type ComfyPrompt = Record<string, ComfyPromptNode>;
 
-export type OutputKind = "base" | "upscale";
+export type OutputKind = "base" | "upscale" | "inpaint";
+export type WorkflowFeature = "inpaint";
 
 export type WorkflowNodePhase = Extract<
   JobPhase,
@@ -30,6 +31,7 @@ export interface BuiltWorkflow {
   outputNodeIds: {
     base?: string;
     upscale?: string;
+    inpaint?: string;
   };
   autoTagsNodeId: string | null;
   autoTagsSource: ComfyLink | null;
@@ -43,6 +45,7 @@ export interface WorkflowBuildOptions {
   randomSeed?: () => number;
   baseFilenamePrefix?: string;
   upscaleFilenamePrefix?: string;
+  inpaintFilenamePrefix?: string;
   autoTagsFilenamePrefix?: string;
 }
 
@@ -52,6 +55,7 @@ export interface ManifestNodeContract {
   optionalInputs?: string[];
   flexibleInputs?: string[];
   outputs: string[];
+  feature?: WorkflowFeature;
 }
 
 export interface ManifestPackage {

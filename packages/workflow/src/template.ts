@@ -57,6 +57,10 @@ export const SANITIZED_ANIMA_TEMPLATE = Object.freeze({
     sampler: "SamplerCustomAdvanced",
     latentUpscale: "LatentUpscaleBy",
     encode: "VAEEncode",
+    inpaintEncode: "VAEEncodeForInpaint",
+    repeatLatent: "RepeatLatentBatch",
+    repeatImage: "RepeatImageBatch",
+    imageCompositeMasked: "ImageCompositeMasked",
     decode: "VAEDecode",
     saveImage: "SaveImage",
     saveText: "SaveText",
@@ -90,6 +94,12 @@ export const NODE_IDS = Object.freeze({
   upscaleSave: "25",
   upscaleSourceLoad: "26",
   upscaleSourceEncode: "27",
+  inpaintSourceLoad: "28",
+  inpaintMaskLoad: "29",
+  inpaintEncode: "30",
+  inpaintRepeatLatent: "31",
+  inpaintRepeatImage: "32",
+  inpaintComposite: "33",
 });
 
 const REFERENCE_LOAD_NODE_START = 1000;

@@ -1,5 +1,6 @@
 export {
   buildWorkflow,
+  buildInpaintWorkflow,
   buildUpscaleWorkflow,
   createRandomSeed,
   resolveSeed,
@@ -8,6 +9,8 @@ export {
   inspectCapabilities,
   manifest,
   REQUIRED_NODE_CONTRACTS,
+  featureNodeContracts,
+  requiredNodesForFeature,
   requiredNodes,
 } from "./manifest";
 export {
@@ -37,6 +40,7 @@ export type {
   PortabilityViolation,
   WorkflowBuildOptions,
   WorkflowCapabilityInspection,
+  WorkflowFeature,
   WorkflowManifest,
   WorkflowNodePhase,
 } from "./types";

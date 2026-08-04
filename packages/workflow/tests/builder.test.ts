@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { GenerationConfig } from "@anima/shared";
 
 import {
+  buildInpaintWorkflow,
   buildUpscaleWorkflow,
   buildWorkflow,
   loraLoaderNodeId,
@@ -621,6 +622,88 @@ describe("buildWorkflow", () => {
     expect(result.prompt[NODE_IDS.upscaleNoise]?.inputs.noise_seed).toBe(
       123456,
     );
+  });
+
+  test("inpaints from source and mask, repeats batches, and composites only the raw mask", () => {
+    const config = makeConfig({
+      image: {
+        width: 768,
+        height: 1024,
+        batchSize: 3,
+        preset: "768x1024",
+      },
+    });
+    const result = buildInpaintWorkflow(
+      config,
+      ["a.png", "b.png", "c.png"],
+      "anima-studio/inpaint/source.png",
+      "anima-studio/inpaint/mask.png",
+      6,
+    );
+
+    expect(result.prompt[NODE_IDS.emptyLatent]).toBeUndefined();
+    expect(result.prompt[NODE_IDS.inpaintSourceLoad]).toEqual({
+      class_type: "LoadImage",
+      inputs: { image: "anima-studio/inpaint/source.png" },
+    });
+    expect(result.prompt[NODE_IDS.inpaintMaskLoad]).toEqual({
+      class_type: "LoadImage",
+      inputs: { image: "anima-studio/inpaint/mask.png" },
+    });
+    expect(result.prompt[NODE_IDS.inpaintEncode]).toEqual({
+      class_type: "VAEEncodeForInpaint",
+      inputs: {
+        pixels: [NODE_IDS.inpaintSourceLoad, 0],
+        vae: [NODE_IDS.vaeLoader, 0],
+        mask: [NODE_IDS.inpaintMaskLoad, 1],
+        grow_mask_by: 6,
+      },
+    });
+    expect(result.prompt[NODE_IDS.inpaintRepeatLatent]?.inputs).toEqual({
+      samples: [NODE_IDS.inpaintEncode, 0],
+      amount: 3,
+    });
+    expect(result.prompt[NODE_IDS.baseSampler]?.inputs.latent_image).toEqual([
+      NODE_IDS.inpaintRepeatLatent,
+      0,
+    ]);
+    expect(result.prompt[NODE_IDS.inpaintRepeatImage]?.inputs).toEqual({
+      image: [NODE_IDS.inpaintSourceLoad, 0],
+      amount: 3,
+    });
+    expect(result.prompt[NODE_IDS.inpaintComposite]?.inputs).toEqual({
+      destination: [NODE_IDS.inpaintRepeatImage, 0],
+      source: [NODE_IDS.baseDecode, 0],
+      x: 0,
+      y: 0,
+      resize_source: false,
+      mask: [NODE_IDS.inpaintMaskLoad, 1],
+    });
+    expect(result.prompt[NODE_IDS.baseSave]?.inputs.images).toEqual([
+      NODE_IDS.inpaintComposite,
+      0,
+    ]);
+    expect(result.outputKinds).toEqual({ [NODE_IDS.baseSave]: "inpaint" });
+    expect(result.outputNodeIds).toEqual({ inpaint: NODE_IDS.baseSave });
+  });
+
+  test("rejects invalid inpaint paths, mask growth, and enabled upscale", () => {
+    const config = makeConfig();
+    expect(() =>
+      buildInpaintWorkflow(config, ["a.png", "b.png", "c.png"], "../source.png", "mask.png", 6),
+    ).toThrow("ComfyUI-relative");
+    expect(() =>
+      buildInpaintWorkflow(config, ["a.png", "b.png", "c.png"], "source.png", "mask.png", 65),
+    ).toThrow("growMaskBy");
+    expect(() =>
+      buildInpaintWorkflow(
+        makeConfig({ upscale: { ...config.upscale, enabled: true } }),
+        ["a.png", "b.png", "c.png"],
+        "source.png",
+        "mask.png",
+        6,
+      ),
+    ).toThrow("upscale must be disabled");
   });
 
   test("rejects mismatched references, traversal, and invalid CFG ranges", () => {

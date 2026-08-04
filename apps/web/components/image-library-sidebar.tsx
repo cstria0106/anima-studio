@@ -18,6 +18,7 @@ import {
   Maximize2,
   PanelLeftClose,
   PanelLeftOpen,
+  Paintbrush,
   Pencil,
   RefreshCw,
   Search,
@@ -98,6 +99,7 @@ interface HistoryViewProps {
   } | null;
   onRepeatJob?: (job: StudioJob) => Promise<void>;
   onDeleteJob?: (jobId: string) => void;
+  onInpaint: (job: StudioJob, outputId: string) => void;
 }
 
 interface VisibleFolder extends LibraryFolder {
@@ -192,6 +194,7 @@ export function HistoryView({
   desktopWidth,
   onDesktopWidthChange,
   detailRequest,
+  onInpaint,
 }: HistoryViewProps) {
   const [folders, setFolders] = React.useState<LibraryFolder[]>([]);
   const [images, setImages] = React.useState<LibraryImage[]>([]);
@@ -956,6 +959,11 @@ export function HistoryView({
                       <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent px-2.5 pb-2 pt-8 text-[10px] text-white/90 [text-shadow:0_1px_3px_rgb(0_0_0/0.9)]">
                         {formatDate(image.createdAt)}
                       </span>
+                      {image.kind === "inpaint" ? (
+                        <span className="absolute left-2 top-2 rounded-full border border-pink-300/30 bg-pink-950/80 px-2 py-1 text-[9px] font-medium text-pink-100 backdrop-blur">
+                          인페인트
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                 );
@@ -1116,7 +1124,10 @@ export function HistoryView({
                       )
                     }
                   >
-                    <Settings2 /> 설정 불러오기
+                    <Settings2 />
+                    {menuImage.kind === "inpaint"
+                      ? "설정만 생성 화면에 불러오기"
+                      : "설정 불러오기"}
                   </button>
                   <button
                     type="button"
@@ -1130,7 +1141,21 @@ export function HistoryView({
                   >
                     <Dices /> 시드 불러오기
                   </button>
-                  {menuImage.kind === "base" ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs hover:bg-accent"
+                    onClick={() =>
+                      void runImageAction(menuImage, (job) => {
+                        onInpaint(job, menuImage.id);
+                        setMenu(null);
+                      })
+                    }
+                  >
+                    <Paintbrush />
+                    {menuImage.kind === "inpaint" ? "마스크·설정 재편집" : "인페인트"}
+                  </button>
+                  {menuImage.kind === "base" || menuImage.kind === "inpaint" ? (
                     <button
                       type="button"
                       role="menuitem"
@@ -1230,6 +1255,7 @@ export function HistoryView({
           }
         }}
         onDelete={(outputId) => performDeleteImages([outputId])}
+        onInpaint={onInpaint}
       />
 
       <UpscaleSettingsDialog

@@ -11,6 +11,7 @@ import {
   ExternalLink,
   ImageIcon,
   LoaderCircle,
+  Paintbrush,
   Play,
   RotateCcw,
 } from "lucide-react";
@@ -63,6 +64,7 @@ export interface MobileExecutionDockProps {
   job: StudioJob | null;
   queueJobs: StudioJob[];
   health: HealthResponse | null;
+  generationMode?: "generation" | "inpaint";
   canGenerate: boolean;
   validationMessage?: string;
   submitting: boolean;
@@ -70,12 +72,14 @@ export interface MobileExecutionDockProps {
   onJobUpdate: (job: StudioJob) => void;
   preflightIssues?: PreflightIssue[];
   onResolveIssue?: (issue: PreflightIssue) => void;
+  onInpaint: (job: StudioJob, outputId: string) => void;
 }
 
 export function MobileExecutionDock({
   job,
   queueJobs,
   health,
+  generationMode = "generation",
   canGenerate,
   validationMessage,
   submitting,
@@ -83,6 +87,7 @@ export function MobileExecutionDock({
   onJobUpdate,
   preflightIssues = [],
   onResolveIssue,
+  onInpaint,
 }: MobileExecutionDockProps) {
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [cancelling, setCancelling] = React.useState(false);
@@ -102,9 +107,15 @@ export function MobileExecutionDock({
     job?.outputs[0];
   const preview = active ? job?.preview : undefined;
   const stageLabel = job
-    ? (STAGE_LABELS[job.stage ?? ""] ?? STATUS_LABELS[job.status])
+    ? job.kind === "inpaint" && job.stage === "uploading"
+      ? "원본·마스크 업로드"
+      : job.kind === "inpaint" && job.stage === "sampling"
+        ? "인페인트 샘플링"
+        : (STAGE_LABELS[job.stage ?? ""] ?? STATUS_LABELS[job.status])
     : canGenerate
-      ? "생성 준비 완료"
+      ? generationMode === "inpaint"
+        ? "인페인트 준비 완료"
+        : "생성 준비 완료"
       : connected
         ? "설정을 확인해 주세요"
         : "ComfyUI 오프라인";
@@ -263,7 +274,7 @@ export function MobileExecutionDock({
                   disabled={!canGenerate || submitting}
                   onClick={onGenerate}
                   aria-keyshortcuts="Control+Enter"
-                  title="생성 (Ctrl+Enter)"
+                  title={`${generationMode === "inpaint" ? "인페인트 생성" : "생성"} (Ctrl+Enter)`}
                 >
                   {submitting ? (
                     <LoaderCircle className="animate-spin" />
@@ -272,7 +283,11 @@ export function MobileExecutionDock({
                   ) : (
                     <Play />
                   )}
-                  {job ? "다시 생성" : "생성"}
+                  {generationMode === "inpaint"
+                    ? "인페인트 생성"
+                    : job
+                      ? "다시 생성"
+                      : "생성"}
                 </Button>
               )}
             </div>
@@ -456,6 +471,8 @@ export function MobileExecutionDock({
                         {selectedOutput.kind === "upscale" ||
                         selectedOutput.kind === "upscaled"
                           ? "업스케일"
+                          : selectedOutput.kind === "inpaint"
+                            ? "인페인트"
                           : "기본"}
                       </p>
                     </div>
@@ -473,6 +490,18 @@ export function MobileExecutionDock({
                         <Download />
                         다운로드
                       </a>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="soft"
+                      className="min-h-11 flex-1"
+                      onClick={() => {
+                        if (!job) return;
+                        setSheetOpen(false);
+                        onInpaint(job, selectedOutput.id);
+                      }}
+                    >
+                      <Paintbrush /> 인페인트
                     </Button>
                     <Button asChild variant="ghost" size="icon">
                       <a
@@ -540,7 +569,7 @@ export function MobileExecutionDock({
                   onGenerate();
                 }}
                 aria-keyshortcuts="Control+Enter"
-                title="생성 (Ctrl+Enter)"
+                title={`${generationMode === "inpaint" ? "인페인트 생성" : "생성"} (Ctrl+Enter)`}
               >
                 {submitting ? (
                   <LoaderCircle className="animate-spin" />
@@ -549,7 +578,11 @@ export function MobileExecutionDock({
                 ) : (
                   <Play />
                 )}
-                {active ? "대기열 추가" : "생성"}
+                {active
+                  ? "대기열 추가"
+                  : generationMode === "inpaint"
+                    ? "인페인트 생성"
+                    : "생성"}
               </Button>
             </div>
           </div>

@@ -312,7 +312,7 @@ export interface TagSuggestion {
 
 export interface JobOutput {
   id: string;
-  kind: "base" | "upscale" | string;
+  kind: "base" | "upscale" | "inpaint" | string;
   url?: string;
   width?: number;
   height?: number;
@@ -350,7 +350,7 @@ export interface StudioJob {
   id: string;
   parentJobId?: string;
   sourceOutputId?: string;
-  kind?: "generation" | "upscale" | string;
+  kind?: "generation" | "upscale" | "inpaint" | string;
   status: JobStatus;
   stage?: string;
   progress?: number;
@@ -365,6 +365,12 @@ export interface StudioJob {
   preview?: JobPreview;
   autoTags?: string[];
   elapsedMs?: number;
+  inpaint?: {
+    inputSourceAsset: ReferenceAsset;
+    rootSourceAsset: ReferenceAsset;
+    maskAsset: ReferenceAsset;
+    growMaskBy: number;
+  };
 }
 
 export interface JobListResponse {
@@ -386,7 +392,7 @@ export interface LibraryImage {
   id: string;
   jobId: string;
   folderId: string | null;
-  kind: "base" | "upscale";
+  kind: "base" | "upscale" | "inpaint";
   filename: string;
   mimeType: string;
   byteSize: number;

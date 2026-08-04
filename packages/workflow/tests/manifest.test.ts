@@ -6,7 +6,9 @@ import {
   inspectCapabilities,
   manifest,
   REQUIRED_NODE_CONTRACTS,
+  featureNodeContracts,
   requiredNodes,
+  requiredNodesForFeature,
   SANITIZED_ANIMA_TEMPLATE,
 } from "../src";
 import type { ComfyObjectInfo } from "../src";
@@ -74,10 +76,42 @@ describe("custom-node contract manifest", () => {
     expect(manifest.schemaVersion).toBe(1);
     expect(requiredNodes).toEqual(
       manifest.packages.flatMap((entry) =>
-        entry.nodes.map((node) => node.classType),
+        entry.nodes.filter((node) => !node.feature).map((node) => node.classType),
       ),
     );
     expect(new Set(requiredNodes).size).toBe(requiredNodes.length);
+  });
+
+  test("checks inpaint nodes only for the inpaint feature", () => {
+    const contracts = featureNodeContracts("inpaint");
+    const objectInfo = Object.fromEntries(
+      contracts.map((contract) => [
+        contract.classType,
+        {
+          input: {
+            required: Object.fromEntries(
+              contract.requiredInputs.map((name) => [name, ["ANY"]]),
+            ),
+            optional: Object.fromEntries(
+              (contract.optionalInputs ?? []).map((name) => [name, ["ANY"]]),
+            ),
+          },
+          output: contract.outputs,
+        },
+      ]),
+    );
+    expect(inspectCapabilities(objectInfo)).toMatchObject({ compatible: true });
+    expect(inspectCapabilities(objectInfo, "inpaint")).toMatchObject({
+      compatible: true,
+      available: requiredNodesForFeature("inpaint"),
+    });
+
+    delete objectInfo.VAEEncodeForInpaint;
+    expect(inspectCapabilities(objectInfo)).toMatchObject({ compatible: true });
+    expect(inspectCapabilities(objectInfo, "inpaint")).toMatchObject({
+      compatible: false,
+      missing: [{ classType: "VAEEncodeForInpaint" }],
+    });
   });
 
   test("accepts matching /object_info contracts", () => {

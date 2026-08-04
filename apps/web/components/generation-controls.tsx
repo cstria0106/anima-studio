@@ -20,6 +20,7 @@ interface GenerationControlsProps {
   value: GenerationDraft;
   options: StudioOptions;
   onChange: (value: GenerationDraft) => void;
+  variant?: "generation" | "inpaint";
 }
 
 function optionsFromStrings(values: string[]): ModelOption[] {
@@ -30,6 +31,7 @@ export function GenerationControls({
   value,
   options,
   onChange,
+  variant = "generation",
 }: GenerationControlsProps) {
   const { sampling, upscale } = value;
   const [upscaleOpen, setUpscaleOpen] = useState(false);
@@ -59,14 +61,23 @@ export function GenerationControls({
   );
   return (
     <div className="space-y-5">
-      <div>
-        <ImageSizeDialog
-          width={sampling.width}
-          height={sampling.height}
-          extraPresets={extraPresets}
-          onChange={(size) => patchSampling(size)}
-        />
-      </div>
+      {variant === "inpaint" ? (
+        <div className="rounded-lg border border-border/70 bg-background/30 px-4 py-3">
+          <p className="text-[11px] text-muted-foreground">출력 크기 · 원본 고정</p>
+          <p className="mt-1 text-sm font-medium tabular-nums">
+            {sampling.width} × {sampling.height}
+          </p>
+        </div>
+      ) : (
+        <div>
+          <ImageSizeDialog
+            width={sampling.width}
+            height={sampling.height}
+            extraPresets={extraPresets}
+            onChange={(size) => patchSampling(size)}
+          />
+        </div>
+      )}
 
       <CommittedNumberField
         label={
@@ -172,7 +183,7 @@ export function GenerationControls({
         </div>
       </details>
 
-      <details
+      {variant === "generation" ? <details
         open={upscale.enabled && upscaleOpen}
         onToggle={(event) =>
           setUpscaleOpen(upscale.enabled && event.currentTarget.open)
@@ -213,7 +224,7 @@ export function GenerationControls({
             />
           ) : null}
         </div>
-      </details>
+      </details> : null}
 
       <div className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-background/30 px-4 py-3">
         <div className="min-w-0">

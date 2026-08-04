@@ -6,6 +6,7 @@ import type {
 } from "@anima/shared";
 import {
   generationConfigSchema,
+  inpaintJobRequestSchema,
   upscaleJobRequestSchema,
   upscaleSettingsSchema,
 } from "@anima/shared";
@@ -14,7 +15,7 @@ import type { ComfyClientLike } from "../comfy/client";
 import { ComfyHttpError } from "../comfy/client";
 import type { JobListQuery } from "../db/repository";
 import { StudioRepository } from "../db/repository";
-import type { AssetRow } from "../db/schema";
+import type { AssetRow, OutputRow } from "../db/schema";
 import { FileStorage } from "../files/storage";
 import type {
   WorkflowBuildResult,
@@ -121,6 +122,27 @@ function errorMessage(error: unknown): string {
     return error.message;
   }
   return error instanceof Error ? error.message : String(error);
+}
+
+function inpaintDimensions(row: {
+  width: number | null;
+  height: number | null;
+}): { width: number; height: number } {
+  const { width, height } = row;
+  if (
+    width === null ||
+    height === null ||
+    width < 64 ||
+    height < 64 ||
+    width % 8 !== 0 ||
+    height % 8 !== 0
+  ) {
+    throw new JobSubmissionError(
+      "Inpaint sources must be at least 64 pixels and use dimensions divisible by 8.",
+      422,
+    );
+  }
+  return { width, height };
 }
 
 export class JobService {
@@ -392,7 +414,7 @@ export class JobService {
     if (!source) throw new JobSubmissionError("Job not found.", 404);
     if (source.status !== "completed") {
       throw new JobSubmissionError(
-        "Only a completed base generation can be upscaled.",
+        "Only a completed generation or inpaint result can be upscaled.",
         409,
       );
     }
@@ -410,19 +432,21 @@ export class JobService {
       );
     }
 
-    const baseOutputs = this.repository
+    const sourceOutputs = this.repository
       .listOutputs(sourceJobId)
-      .filter((output) => output.kind === "base");
+      .filter(
+        (output) => output.kind === "base" || output.kind === "inpaint",
+      );
     const sourceOutput = parsedRequest.data.outputId
-      ? baseOutputs.find(
+      ? sourceOutputs.find(
           (output) => output.id === parsedRequest.data.outputId,
         )
-      : baseOutputs[0];
+      : sourceOutputs[0];
     if (!sourceOutput) {
       throw new JobSubmissionError(
         parsedRequest.data.outputId
-          ? "The selected base output does not belong to this job."
-          : "The completed job has no preserved base image.",
+          ? "The selected output does not belong to this job."
+          : "The completed job has no preserved source image.",
         422,
       );
     }
@@ -520,6 +544,248 @@ export class JobService {
     });
   }
 
+  async inpaint(rawRequest: unknown): Promise<JobDto> {
+    const parsedRequest = inpaintJobRequestSchema.safeParse(rawRequest);
+    if (!parsedRequest.success) {
+      throw new JobSubmissionError(
+        "Inpaint settings are invalid.",
+        422,
+        parsedRequest.error.flatten(),
+      );
+    }
+    const request = parsedRequest.data;
+    const maskAsset = this.repository.findAsset(request.maskAssetId);
+    if (!maskAsset) {
+      throw new JobSubmissionError("The inpaint mask asset was not found.", 404);
+    }
+    if (maskAsset.mimeType !== "image/png") {
+      throw new JobSubmissionError("The inpaint mask must be a PNG image.", 422);
+    }
+
+    let sourceAsset: AssetRow | null = null;
+    let sourceOutput: OutputRow | null = null;
+    let parentJobId: string | null = null;
+    if (request.source.type === "asset") {
+      sourceAsset = this.repository.findAsset(request.source.assetId);
+      if (!sourceAsset) {
+        throw new JobSubmissionError("The inpaint source asset was not found.", 404);
+      }
+    } else {
+      sourceOutput = this.repository.findOutput(request.source.outputId);
+      if (!sourceOutput) {
+        throw new JobSubmissionError("The inpaint source output was not found.", 404);
+      }
+      const parent = this.repository.findJobRow(sourceOutput.jobId);
+      if (!parent || parent.status !== "completed") {
+        throw new JobSubmissionError(
+          "Only an output from a completed job can be inpainted.",
+          409,
+        );
+      }
+      parentJobId = parent.id;
+    }
+
+    let rootSourceAsset: AssetRow | null = null;
+    if (request.revisionOfJobId) {
+      const revisionJob = this.repository.findJobRow(request.revisionOfJobId);
+      const revision = revisionJob
+        ? this.repository.findJobInpaint(revisionJob.id)
+        : null;
+      if (
+        !revisionJob ||
+        revisionJob.kind !== "inpaint" ||
+        revisionJob.status !== "completed" ||
+        !revision
+      ) {
+        throw new JobSubmissionError(
+          "Only a completed inpaint job can be revised.",
+          409,
+        );
+      }
+      if (sourceOutput && sourceOutput.jobId !== revisionJob.id) {
+        throw new JobSubmissionError(
+          "The selected result does not belong to the inpaint revision.",
+          422,
+        );
+      }
+      if (
+        sourceAsset &&
+        sourceAsset.id !== revision.rootSourceAssetId &&
+        sourceAsset.id !== revision.inputSourceAssetId
+      ) {
+        throw new JobSubmissionError(
+          "The selected source does not belong to the inpaint revision.",
+          422,
+        );
+      }
+      rootSourceAsset = this.repository.findAsset(revision.rootSourceAssetId);
+      if (!rootSourceAsset) {
+        throw new JobSubmissionError(
+          "The preserved original for this inpaint revision is unavailable.",
+          409,
+        );
+      }
+      parentJobId = revisionJob.id;
+    }
+
+    const sourceDimensions = inpaintDimensions(sourceAsset ?? sourceOutput!);
+    if (
+      maskAsset.width !== sourceDimensions.width ||
+      maskAsset.height !== sourceDimensions.height
+    ) {
+      throw new JobSubmissionError(
+        "The inpaint mask must have the same dimensions as the source image.",
+        422,
+        {
+          source: sourceDimensions,
+          mask: { width: maskAsset.width, height: maskAsset.height },
+        },
+      );
+    }
+
+    const sanitizedRequestConfig = generationConfigSchema.parse({
+      ...request.config,
+      image: {
+        ...request.config.image,
+        width: sourceDimensions.width,
+        height: sourceDimensions.height,
+        preset: `${sourceDimensions.width}x${sourceDimensions.height}`,
+      },
+      upscale: { enabled: false },
+    });
+    const [initial] = await this.validateBatch([sanitizedRequestConfig]);
+    let config = initial!.config;
+    let assetRows = initial!.assetRows;
+    ({ config, assetRows } = canonicalizeGeneration(config, assetRows));
+
+    const report = await this.capabilities.report("inpaint");
+    if (!report.compatible) {
+      throw new JobSubmissionError(
+        "The connected ComfyUI does not support the required inpaint nodes.",
+        409,
+        report,
+      );
+    }
+    validateInstalledSelections(config, await this.capabilities.options());
+    const preflightSeed =
+      config.seed.mode === "fixed" ? config.seed.value : 0;
+    try {
+      this.workflow.buildInpaint(
+        config,
+        assetRows.map(
+          (_asset, index) => `anima-studio/preflight-reference-${index}.png`,
+        ),
+        "anima-studio/preflight-source.png",
+        "anima-studio/preflight-mask.png",
+        request.options.growMaskBy,
+        preflightSeed,
+      );
+    } catch (error) {
+      throw new JobSubmissionError(
+        "Inpaint workflow settings are invalid.",
+        422,
+        { message: errorMessage(error) },
+      );
+    }
+
+    if (sourceOutput) {
+      sourceAsset = await this.storage.preserveOutputAsAsset(sourceOutput);
+    }
+    if (!sourceAsset) {
+      throw new JobSubmissionError(
+        "The inpaint source could not be preserved.",
+        500,
+      );
+    }
+    rootSourceAsset ??= sourceAsset;
+    const rootDimensions = inpaintDimensions(rootSourceAsset);
+    if (
+      rootDimensions.width !== sourceDimensions.width ||
+      rootDimensions.height !== sourceDimensions.height
+    ) {
+      throw new JobSubmissionError(
+        "The preserved original and selected source must have the same dimensions.",
+        422,
+      );
+    }
+
+    const actualSeed = resolveSeed(config);
+    const jobId = crypto.randomUUID();
+    const createdAt = new Date().toISOString();
+    this.repository.createJob({
+      id: jobId,
+      kind: "inpaint",
+      parentJobId,
+      sourceOutputId: sourceOutput?.id ?? null,
+      clientId: this.clientId,
+      config,
+      actualSeed,
+      assetIds: config.referenceAssetIds,
+      inpaint: {
+        inputSourceAssetId: sourceAsset.id,
+        rootSourceAssetId: rootSourceAsset.id,
+        maskAssetId: maskAsset.id,
+        growMaskBy: request.options.growMaskBy,
+      },
+      createdAt,
+    });
+    this.events.append({
+      jobId,
+      phase: "preparing",
+      message: "인페인트 원본과 마스크를 확인했습니다.",
+      progress: 0,
+      payload: {
+        parentJobId,
+        sourceOutputId: sourceOutput?.id ?? null,
+        inputSourceAssetId: sourceAsset.id,
+        rootSourceAssetId: rootSourceAsset.id,
+        maskAssetId: maskAsset.id,
+      },
+    });
+
+    return this.submitCreatedJob({
+      jobId,
+      actualSeed,
+      assetRows,
+      build: async (inputNames) => {
+        const uploadedSource = await this.storage.uploadAssetToComfy(
+          sourceAsset,
+          this.comfy,
+        );
+        this.events.append({
+          jobId,
+          phase: "uploading",
+          message: "인페인트 원본 이미지를 업로드했습니다.",
+          progress: null,
+        });
+        const uploadedMask = await this.storage.uploadAssetToComfy(
+          maskAsset,
+          this.comfy,
+        );
+        this.events.append({
+          jobId,
+          phase: "uploading",
+          message: "인페인트 마스크를 업로드했습니다.",
+          progress: 100,
+        });
+        return this.workflow.buildInpaint(
+          config,
+          inputNames,
+          uploadedSource.inputName,
+          uploadedMask.inputName,
+          request.options.growMaskBy,
+          actualSeed,
+        );
+      },
+      extraData: {
+        kind: "inpaint",
+        parentJobId,
+        sourceOutputId: sourceOutput?.id ?? null,
+        rootSourceAssetId: rootSourceAsset.id,
+      },
+    });
+  }
+
   get(id: string): JobDto {
     const job = this.repository.findJob(id);
     if (!job) throw new JobSubmissionError("Job not found.", 404);
@@ -598,7 +864,7 @@ export class JobService {
     const dependencies = this.repository.jobDependencies(id);
     if (dependencies.length > 0) {
       throw new JobSubmissionError(
-        "이 결과를 사용하는 업스케일 기록을 먼저 삭제해 주세요.",
+        "이 결과를 사용하는 파생 작업을 먼저 삭제해 주세요.",
         409,
         { dependencies },
       );

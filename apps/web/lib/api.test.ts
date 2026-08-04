@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createJob, getJob, getOptions, upscaleJob } from "./api";
+import { createInpaintJob, createJob, getJob, getOptions, upscaleJob } from "./api";
 import { DEFAULT_DRAFT, type GenerationDraft } from "./types";
 
 const originalFetch = globalThis.fetch;
@@ -85,6 +85,44 @@ describe("upscale submission", () => {
         steps: 18,
         denoise: 0.31,
       },
+    });
+  });
+});
+
+describe("inpaint submission", () => {
+  test("submits source, mask, growth and forces upscale off", async () => {
+    let requestedUrl = "";
+    let submittedBody: Record<string, unknown> = {};
+    globalThis.fetch = (async (input, init) => {
+      requestedUrl = input instanceof Request ? input.url : String(input);
+      submittedBody = JSON.parse(String(init?.body));
+      return new Response(
+        JSON.stringify({
+          job: { id: "inpaint-child", settings: DEFAULT_DRAFT },
+        }),
+        { headers: { "content-type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    const draft: GenerationDraft = {
+      ...structuredClone(DEFAULT_DRAFT),
+      upscale: { ...DEFAULT_DRAFT.upscale, enabled: true },
+    };
+    await createInpaintJob({
+      source: { type: "output", outputId: "source/output" },
+      maskAssetId: "mask/asset",
+      growMaskBy: 12,
+      revisionOfJobId: "previous/inpaint",
+      draft,
+    });
+
+    expect(requestedUrl).toBe("/api/jobs/inpaint");
+    expect(submittedBody).toMatchObject({
+      source: { type: "output", outputId: "source/output" },
+      maskAssetId: "mask/asset",
+      revisionOfJobId: "previous/inpaint",
+      options: { growMaskBy: 12 },
+      config: { upscale: { enabled: false } },
     });
   });
 });

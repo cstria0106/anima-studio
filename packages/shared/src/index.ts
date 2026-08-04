@@ -64,7 +64,9 @@ export const jobPhases = [
   "cancelled",
 ] as const;
 
-export const jobKinds = ["generation", "upscale"] as const;
+export const jobKinds = ["generation", "upscale", "inpaint"] as const;
+
+export const outputKinds = ["base", "upscale", "inpaint"] as const;
 
 export const loraSelectionSchema = z.object({
   name: z.string().min(1),
@@ -185,6 +187,23 @@ export const generationConfigSchema = z.object({
   upscale: upscaleSettingsSchema.default({}),
 });
 
+export const inpaintJobRequestSchema = z
+  .object({
+    source: z.discriminatedUnion("type", [
+      z.object({ type: z.literal("output"), outputId: z.string().min(1) }),
+      z.object({ type: z.literal("asset"), assetId: z.string().min(1) }),
+    ]),
+    maskAssetId: z.string().min(1),
+    revisionOfJobId: z.string().min(1).optional(),
+    options: z
+      .object({
+        growMaskBy: z.number().int().min(0).max(64).default(6),
+      })
+      .default({}),
+    config: generationConfigSchema,
+  })
+  .strict();
+
 export type GenerationConfig = z.infer<typeof generationConfigSchema>;
 export type GlobalUpscaleSettings = z.infer<
   typeof globalUpscaleSettingsSchema
@@ -193,7 +212,9 @@ export type LoraSelection = z.infer<typeof loraSelectionSchema>;
 export type JobStatus = (typeof jobStatuses)[number];
 export type JobPhase = (typeof jobPhases)[number];
 export type JobKind = (typeof jobKinds)[number];
+export type OutputKind = (typeof outputKinds)[number];
 export type UpscaleJobRequest = z.infer<typeof upscaleJobRequestSchema>;
+export type InpaintJobRequest = z.infer<typeof inpaintJobRequestSchema>;
 
 export interface AssetDto {
   id: string;
@@ -208,7 +229,7 @@ export interface AssetDto {
 
 export interface OutputDto {
   id: string;
-  kind: "base" | "upscale";
+  kind: OutputKind;
   filename: string;
   mimeType: string;
   url: string;
@@ -230,7 +251,7 @@ export interface LibraryImageDto {
   id: string;
   jobId: string;
   folderId: string | null;
-  kind: "base" | "upscale";
+  kind: OutputKind;
   filename: string;
   mimeType: string;
   byteSize: number;
@@ -271,6 +292,13 @@ export interface JobPreviewDto {
   updatedAt: string;
 }
 
+export interface InpaintJobDto {
+  inputSourceAsset: AssetDto;
+  rootSourceAsset: AssetDto;
+  maskAsset: AssetDto;
+  growMaskBy: number;
+}
+
 export interface JobDto {
   id: string;
   kind: JobKind;
@@ -291,6 +319,7 @@ export interface JobDto {
   outputs: OutputDto[];
   latestEvent?: JobEventDto;
   preview?: JobPreviewDto;
+  inpaint?: InpaintJobDto;
 }
 
 export const storageItemKinds = [

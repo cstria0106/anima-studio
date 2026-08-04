@@ -66,6 +66,7 @@ interface JobPanelProps {
   job: StudioJob | null;
   queueJobs: StudioJob[];
   capabilities: CapabilitiesResponse | null;
+  generationMode?: "generation" | "inpaint";
   submitting: boolean;
   canGenerate: boolean;
   validationMessage?: string;
@@ -76,12 +77,14 @@ interface JobPanelProps {
   onLoadSettings: (job: StudioJob, outputId: string) => void;
   onLoadSeed: (job: StudioJob) => void;
   onOpenDetail: (job: StudioJob, outputId?: string) => void;
+  onInpaint: (job: StudioJob, outputId: string) => void;
 }
 
 export function JobPanel({
   job,
   queueJobs,
   capabilities,
+  generationMode = "generation",
   submitting,
   canGenerate,
   validationMessage,
@@ -92,6 +95,7 @@ export function JobPanel({
   onLoadSettings,
   onLoadSeed,
   onOpenDetail,
+  onInpaint,
 }: JobPanelProps) {
   const latestEvent = useJobTracker(job, onJobUpdate);
   const [selectedOutputId, setSelectedOutputId] = React.useState<string | null>(
@@ -131,14 +135,16 @@ export function JobPanel({
   const active =
     job && ["uploading", "queued", "running"].includes(job.status);
   const preview = active ? job.preview : undefined;
-  const hasBaseOutput = job?.outputs.some((item) => item.kind === "base");
+  const hasSourceOutput = job?.outputs.some(
+    (item) => item.kind === "base" || item.kind === "inpaint",
+  );
   const hasUpscaleOutput = job?.outputs.some(
     (item) => item.kind === "upscale" || item.kind === "upscaled",
   );
   const canUpscaleResult =
     job?.status === "completed" &&
     job.settings.upscale.enabled === false &&
-    hasBaseOutput &&
+    hasSourceOutput &&
     !hasUpscaleOutput;
   const elapsed = job
     ? job.elapsedMs ??
@@ -147,6 +153,12 @@ export function JobPanel({
           new Date(job.startedAt).getTime()
         : 0)
     : 0;
+  const currentStageLabel =
+    job?.kind === "inpaint" && job.stage === "uploading"
+      ? "원본·마스크 업로드"
+      : job?.kind === "inpaint" && job.stage === "sampling"
+        ? "인페인트 샘플링"
+        : stageLabels[job?.stage ?? ""] ?? "작업 진행 중";
 
   async function handleCancel() {
     if (!job || !active) return;
@@ -171,7 +183,9 @@ export function JobPanel({
     const nextJob = await upscaleJob(
       job.id,
       settings,
-      output?.kind === "base" ? output.id : undefined,
+      output?.kind === "base" || output?.kind === "inpaint"
+        ? output.id
+        : undefined,
     );
     onJobUpdate(nextJob);
   }
@@ -232,7 +246,7 @@ export function JobPanel({
                     </span>
                   </div>
                   <p className="text-sm font-medium">
-                    {stageLabels[job.stage ?? ""] ?? "작업 진행 중"}
+                    {currentStageLabel}
                   </p>
                 </>
               ) : (
@@ -291,8 +305,9 @@ export function JobPanel({
                       <AlertTriangle className="size-4 shrink-0 text-red-300" />
                     )}
                     <p className="truncate text-xs font-medium">
-                      {stageLabels[job.stage ?? ""] ??
-                        statusMeta[job.status].label}
+                      {job.stage
+                        ? currentStageLabel
+                        : statusMeta[job.status].label}
                     </p>
                   </div>
                   <Badge variant={statusMeta[job.status].variant}>
@@ -360,6 +375,9 @@ export function JobPanel({
                   }}
                   onLoadSeed={onLoadSeed}
                   onUpscale={() => setUpscaleOpen(true)}
+                  onInpaint={() => {
+                    if (output) onInpaint(job, output.id);
+                  }}
                 />
               ) : null}
 
@@ -409,7 +427,7 @@ export function JobPanel({
               disabled={!canGenerate || submitting}
               onClick={onGenerate}
               aria-keyshortcuts="Control+Enter"
-              title="생성 (Ctrl+Enter)"
+              title={`${generationMode === "inpaint" ? "인페인트 생성" : "생성"} (Ctrl+Enter)`}
             >
               {submitting ? (
                 <LoaderCircle className="animate-spin" />
@@ -420,7 +438,11 @@ export function JobPanel({
               ) : (
                 <Play />
               )}
-              {active ? "대기열 추가" : "생성"}
+              {active
+                ? "대기열 추가"
+                : generationMode === "inpaint"
+                  ? "인페인트 생성"
+                  : "생성"}
             </Button>
           </div>
 

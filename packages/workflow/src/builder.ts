@@ -231,6 +231,10 @@ function validateBuildInput(
     options.autoTagsFilenamePrefix ?? "AnimaStudio/tags",
     "autoTagsFilenamePrefix",
   );
+  assertOutputPrefix(
+    options.inpaintFilenamePrefix ?? "AnimaStudio/inpaint",
+    "inpaintFilenamePrefix",
+  );
 }
 
 function joinPromptFields(fields: readonly string[]): string {
@@ -665,7 +669,7 @@ export function buildWorkflow(
     "기본 이미지 저장",
   );
 
-  const outputKinds: Record<string, "base" | "upscale"> = {
+  const outputKinds: Record<string, "base" | "upscale" | "inpaint"> = {
     [NODE_IDS.baseSave]: "base",
   };
   const outputNodeIds: BuiltWorkflow["outputNodeIds"] = {
@@ -825,5 +829,121 @@ export function buildUpscaleWorkflow(
   }
   delete built.outputNodeIds.base;
 
+  return built;
+}
+
+/**
+ * Reuses the standard model, prompt, LoRA and sampling graph while replacing
+ * the empty latent with a masked source-image latent.
+ */
+export function buildInpaintWorkflow(
+  config: GenerationConfig,
+  uploadedInputNames: string[],
+  sourceImageInputName: string,
+  maskImageInputName: string,
+  growMaskBy: number,
+  options: WorkflowBuildOptions = {},
+): BuiltWorkflow {
+  assertPortableSelection(sourceImageInputName, "sourceImageInputName");
+  assertPortableSelection(maskImageInputName, "maskImageInputName");
+  assertIntegerRange(growMaskBy, "growMaskBy", 0, 64);
+  if (config.upscale.enabled) {
+    throw new Error("upscale must be disabled for an inpaint workflow");
+  }
+
+  const built = buildWorkflow(config, uploadedInputNames, options);
+  const accumulator = {
+    prompt: built.prompt,
+    phases: built.nodePhases,
+    labels: built.nodeLabels,
+  };
+
+  addNode(
+    accumulator,
+    NODE_IDS.inpaintSourceLoad,
+    classes.referenceImage,
+    { image: sourceImageInputName },
+    "encoding",
+    "인페인트 원본 이미지 로드",
+  );
+  addNode(
+    accumulator,
+    NODE_IDS.inpaintMaskLoad,
+    classes.referenceImage,
+    { image: maskImageInputName },
+    "encoding",
+    "인페인트 마스크 로드",
+  );
+  addNode(
+    accumulator,
+    NODE_IDS.inpaintEncode,
+    classes.inpaintEncode,
+    {
+      pixels: link(NODE_IDS.inpaintSourceLoad, 0),
+      vae: link(NODE_IDS.vaeLoader, 0),
+      mask: link(NODE_IDS.inpaintMaskLoad, 1),
+      grow_mask_by: growMaskBy,
+    },
+    "encoding",
+    "인페인트 잠재 이미지 인코드",
+  );
+  addNode(
+    accumulator,
+    NODE_IDS.inpaintRepeatLatent,
+    classes.repeatLatent,
+    {
+      samples: link(NODE_IDS.inpaintEncode, 0),
+      amount: config.image.batchSize,
+    },
+    "sampling",
+    "인페인트 잠재 배치 구성",
+  );
+
+  const sampler = built.prompt[NODE_IDS.baseSampler];
+  const save = built.prompt[NODE_IDS.baseSave];
+  if (!sampler || !save) {
+    throw new Error("base sampling branch was not constructed");
+  }
+  sampler.inputs.latent_image = link(NODE_IDS.inpaintRepeatLatent, 0);
+  built.nodeLabels[NODE_IDS.baseSampler] = "인페인트 샘플링";
+  built.nodeLabels[NODE_IDS.baseDecode] = "인페인트 이미지 디코드";
+  built.nodeLabels[NODE_IDS.baseSave] = "인페인트 결과 저장";
+
+  addNode(
+    accumulator,
+    NODE_IDS.inpaintRepeatImage,
+    classes.repeatImage,
+    {
+      image: link(NODE_IDS.inpaintSourceLoad, 0),
+      amount: config.image.batchSize,
+    },
+    "saving",
+    "원본 이미지 배치 구성",
+  );
+  addNode(
+    accumulator,
+    NODE_IDS.inpaintComposite,
+    classes.imageCompositeMasked,
+    {
+      destination: link(NODE_IDS.inpaintRepeatImage, 0),
+      source: link(NODE_IDS.baseDecode, 0),
+      x: 0,
+      y: 0,
+      resize_source: false,
+      mask: link(NODE_IDS.inpaintMaskLoad, 1),
+    },
+    "saving",
+    "마스크 영역을 원본 이미지에 합성",
+  );
+  save.inputs.filename_prefix =
+    options.inpaintFilenamePrefix ?? "AnimaStudio/inpaint";
+  save.inputs.images = link(NODE_IDS.inpaintComposite, 0);
+
+  delete built.prompt[NODE_IDS.emptyLatent];
+  delete built.nodePhases[NODE_IDS.emptyLatent];
+  delete built.nodeLabels[NODE_IDS.emptyLatent];
+  built.outputKinds[NODE_IDS.baseSave] = "inpaint";
+  delete built.outputNodeIds.base;
+  built.outputNodeIds.inpaint = NODE_IDS.baseSave;
   return built;
 }

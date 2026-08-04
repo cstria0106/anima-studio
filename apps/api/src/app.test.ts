@@ -246,6 +246,33 @@ class FakeWorkflow implements WorkflowEngine {
     };
   }
 
+  buildInpaint(
+    config: GenerationConfig,
+    uploadedInputNames: string[],
+    sourceImageInputName: string,
+    maskImageInputName: string,
+    _growMaskBy: number,
+    actualSeed: number,
+  ): WorkflowBuildResult {
+    expect(uploadedInputNames).toHaveLength(config.referenceAssetIds.length);
+    expect(sourceImageInputName).toContain("anima-studio/");
+    expect(maskImageInputName).toContain("anima-studio/");
+    return {
+      prompt: {
+        "5": {
+          class_type: "SaveImage",
+          inputs: { filename_prefix: "inpaint", images: ["4", 0] },
+        },
+      },
+      actualSeed,
+      nodePhases: { "4": "sampling", "5": "saving" },
+      nodeLabels: { "4": "Inpaint image", "5": "Save inpaint" },
+      outputKinds: { "5": "inpaint" },
+      autoTagsNodeId: null,
+      autoTagsOutputIndex: null,
+    };
+  }
+
   capabilities(
     _objectInfo: ComfyObjectInfo,
     comfyUrl: string,

@@ -94,6 +94,30 @@ export const jobAssets = sqliteTable(
   ],
 );
 
+export const jobInpaints = sqliteTable(
+  "job_inpaints",
+  {
+    jobId: text("job_id")
+      .primaryKey()
+      .references(() => jobs.id, { onDelete: "cascade" }),
+    inputSourceAssetId: text("input_source_asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "restrict" }),
+    rootSourceAssetId: text("root_source_asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "restrict" }),
+    maskAssetId: text("mask_asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "restrict" }),
+    growMaskBy: integer("grow_mask_by").notNull().default(6),
+  },
+  (table) => [
+    index("job_inpaints_input_source_asset_id_idx").on(table.inputSourceAssetId),
+    index("job_inpaints_root_source_asset_id_idx").on(table.rootSourceAssetId),
+    index("job_inpaints_mask_asset_id_idx").on(table.maskAssetId),
+  ],
+);
+
 export const jobEvents = sqliteTable(
   "job_events",
   {
@@ -387,6 +411,7 @@ export const managedModelInstallations = sqliteTable(
 
 export type AssetRow = typeof assets.$inferSelect;
 export type JobRow = typeof jobs.$inferSelect;
+export type JobInpaintRow = typeof jobInpaints.$inferSelect;
 export type JobEventRow = typeof jobEvents.$inferSelect;
 export type FolderRow = typeof folders.$inferSelect;
 export type OutputRow = typeof outputs.$inferSelect;

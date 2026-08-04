@@ -5,13 +5,16 @@ import type {
   JobPhase,
 } from "@anima/shared";
 import {
+  buildInpaintWorkflow,
   buildUpscaleWorkflow,
   buildWorkflow,
   inspectCapabilities,
   manifest,
   requiredNodes,
+  requiredNodesForFeature,
   type BuiltWorkflow,
   type ComfyObjectInfo as WorkflowObjectInfo,
+  type WorkflowFeature,
 } from "@anima/workflow";
 import type { ComfyObjectInfo, ComfyPrompt } from "../comfy/types";
 
@@ -20,7 +23,7 @@ export interface WorkflowBuildResult {
   actualSeed: number;
   nodePhases: Record<string, JobPhase>;
   nodeLabels: Record<string, string>;
-  outputKinds: Record<string, "base" | "upscale">;
+  outputKinds: Record<string, "base" | "upscale" | "inpaint">;
   autoTagsNodeId: string | null;
   autoTagsOutputIndex: number | null;
 }
@@ -37,9 +40,18 @@ export interface WorkflowEngine {
     baseImageInputName: string,
     actualSeed: number,
   ): WorkflowBuildResult;
+  buildInpaint(
+    config: GenerationConfig,
+    uploadedInputNames: string[],
+    sourceImageInputName: string,
+    maskImageInputName: string,
+    growMaskBy: number,
+    actualSeed: number,
+  ): WorkflowBuildResult;
   capabilities(
     objectInfo: ComfyObjectInfo,
     comfyUrl: string,
+    feature?: WorkflowFeature,
   ): CapabilityReport;
 }
 
@@ -127,14 +139,41 @@ export class PortableWorkflowEngine implements WorkflowEngine {
     return this.result(built);
   }
 
+  buildInpaint(
+    config: GenerationConfig,
+    uploadedInputNames: string[],
+    sourceImageInputName: string,
+    maskImageInputName: string,
+    growMaskBy: number,
+    actualSeed: number,
+  ): WorkflowBuildResult {
+    const built = buildInpaintWorkflow(
+      config,
+      uploadedInputNames,
+      sourceImageInputName,
+      maskImageInputName,
+      growMaskBy,
+      {
+        randomSeed: () => actualSeed,
+        inpaintFilenamePrefix: "AnimaStudio/inpaint",
+        autoTagsFilenamePrefix: "AnimaStudio/tags",
+      },
+    );
+    return this.result(built);
+  }
+
   capabilities(
     objectInfo: ComfyObjectInfo,
     comfyUrl: string,
+    feature?: WorkflowFeature,
   ): CapabilityReport {
     const result = inspectCapabilities(
       objectInfo as unknown as WorkflowObjectInfo,
+      feature,
     );
-    const required = [...requiredNodes];
+    const required = feature
+      ? [...requiredNodesForFeature(feature)]
+      : [...requiredNodes];
     const missing = [
       ...result.missing.map(issueFromInspection),
       ...result.incompatible.map(issueFromInspection),

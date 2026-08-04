@@ -5,17 +5,34 @@ import type {
   ManifestNodeContract,
   NodeCapabilityIssue,
   WorkflowCapabilityInspection,
+  WorkflowFeature,
   WorkflowManifest,
 } from "./types";
 
 export const manifest = rawManifest as WorkflowManifest;
 
 export const REQUIRED_NODE_CONTRACTS: readonly ManifestNodeContract[] =
-  manifest.packages.flatMap((entry) => entry.nodes);
+  manifest.packages
+    .flatMap((entry) => entry.nodes)
+    .filter((contract) => !contract.feature);
+
+export function featureNodeContracts(
+  feature: WorkflowFeature,
+): readonly ManifestNodeContract[] {
+  return manifest.packages
+    .flatMap((entry) => entry.nodes)
+    .filter((contract) => !contract.feature || contract.feature === feature);
+}
 
 export const requiredNodes: readonly string[] = Object.freeze(
   REQUIRED_NODE_CONTRACTS.map((contract) => contract.classType),
 );
+
+export function requiredNodesForFeature(
+  feature: WorkflowFeature,
+): readonly string[] {
+  return featureNodeContracts(feature).map((contract) => contract.classType);
+}
 
 function hasOwn(record: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, key);
@@ -84,8 +101,13 @@ function inspectContract(
  */
 export function inspectCapabilities(
   objectInfo: ComfyObjectInfo,
+  feature?: WorkflowFeature,
 ): WorkflowCapabilityInspection {
-  const issues = REQUIRED_NODE_CONTRACTS.map((contract) =>
+  const contracts = feature
+    ? featureNodeContracts(feature)
+    : REQUIRED_NODE_CONTRACTS;
+  const inspectedNodes = contracts.map((contract) => contract.classType);
+  const issues = contracts.map((contract) =>
     inspectContract(objectInfo, contract),
   ).filter((issue): issue is NodeCapabilityIssue => issue !== null);
 
@@ -95,7 +117,9 @@ export function inspectCapabilities(
 
   return {
     compatible: issues.length === 0,
-    available: requiredNodes.filter((classType) => !unavailable.has(classType)),
+    available: inspectedNodes.filter(
+      (classType) => !unavailable.has(classType),
+    ),
     missing,
     incompatible,
   };

@@ -6,8 +6,14 @@ import type {
   StudioJob,
   StudioOptions,
 } from "@/lib/types";
+import type { InpaintWorkspaceDraft } from "@/lib/inpaint";
 
-export type CreateStepId = "reference" | "prompt" | "models" | "generation";
+export type CreateStepId =
+  | "reference"
+  | "inpaint"
+  | "prompt"
+  | "models"
+  | "generation";
 
 export interface PreflightIssue {
   code:
@@ -15,6 +21,10 @@ export interface PreflightIssue {
     | "capabilities_missing"
     | "options_loading"
     | "reference_uploading"
+    | "inpaint_source_uploading"
+    | "inpaint_source_error"
+    | "inpaint_mask_required"
+    | "inpaint_capabilities_missing"
     | "diffusion_required"
     | "clip_required"
     | "vae_required"
@@ -34,6 +44,8 @@ interface PreflightInput {
   optionsLoading: boolean;
   health: HealthResponse | null;
   capabilities: CapabilitiesResponse | null;
+  inpaint?: InpaintWorkspaceDraft;
+  inpaintCapabilities?: CapabilitiesResponse | null;
 }
 
 function normalizedModel(value: string) {
@@ -100,8 +112,13 @@ export function buildPreflightIssues({
   optionsLoading,
   health,
   capabilities,
+  inpaint,
+  inpaintCapabilities,
 }: PreflightInput): PreflightIssue[] {
   const issues: PreflightIssue[] = [];
+  const inpaintActive = Boolean(
+    inpaint && (inpaint.source !== null || inpaint.sourceStatus !== "idle"),
+  );
   const connected = Boolean(
     health?.comfyui || (health?.ok && health.comfyui !== false),
   );
@@ -114,11 +131,23 @@ export function buildPreflightIssues({
       severity: "error",
     });
   }
-  if (capabilities && !capabilities.ready) {
+  const activeCapabilities = inpaintActive ? inpaintCapabilities : capabilities;
+  if (activeCapabilities && !activeCapabilities.ready) {
     issues.push({
-      code: "capabilities_missing",
-      message: "필수 노드 또는 모델을 먼저 설치해주세요.",
-      stepId: "models",
+      code: inpaintActive
+        ? "inpaint_capabilities_missing"
+        : "capabilities_missing",
+      message: inpaintActive
+        ? "연결된 ComfyUI가 인페인트 코어 노드를 지원하지 않습니다."
+        : "필수 노드 또는 모델을 먼저 설치해주세요.",
+      stepId: inpaintActive ? "inpaint" : "models",
+      severity: "error",
+    });
+  } else if (inpaintActive && !activeCapabilities) {
+    issues.push({
+      code: "inpaint_capabilities_missing",
+      message: "인페인트 지원 여부를 확인하고 있습니다.",
+      stepId: "inpaint",
       severity: "error",
     });
   }
@@ -136,6 +165,40 @@ export function buildPreflightIssues({
       code: "reference_uploading",
       message: "참조 이미지 업로드가 끝날 때까지 기다려주세요.",
       stepId: "reference",
+      severity: "error",
+    });
+  }
+
+  if (
+    inpaintActive &&
+    (inpaint?.sourceStatus === "preparing" ||
+      inpaint?.sourceStatus === "uploading")
+  ) {
+    issues.push({
+      code: "inpaint_source_uploading",
+      message: "인페인트 원본 준비가 끝날 때까지 기다려주세요.",
+      stepId: "inpaint",
+      severity: "error",
+    });
+  }
+  if (inpaintActive && inpaint?.sourceStatus === "error") {
+    issues.push({
+      code: "inpaint_source_error",
+      message: inpaint.sourceError ?? "인페인트 원본을 다시 선택해주세요.",
+      stepId: "inpaint",
+      severity: "error",
+    });
+  }
+  if (
+    inpaintActive &&
+    inpaint?.sourceStatus === "ready" &&
+    !inpaint.maskAsset
+  ) {
+    issues.push({
+      code: "inpaint_mask_required",
+      message: "마스크 편집에서 수정할 영역을 저장해주세요.",
+      stepId: "inpaint",
+      fieldId: "inpaint-mask-edit",
       severity: "error",
     });
   }

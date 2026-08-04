@@ -347,7 +347,7 @@ export class LibraryService {
       ) {
         result.blocked.push({
           id,
-          reason: "업스케일 입력을 업로드하는 동안에는 삭제할 수 없습니다.",
+          reason: "파생 작업에서 원본을 준비하는 동안에는 삭제할 수 없습니다.",
         });
         continue;
       }

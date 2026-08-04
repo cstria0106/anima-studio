@@ -8,6 +8,7 @@ import {
   ImageIcon,
   LoaderCircle,
   Maximize2,
+  Paintbrush,
   Settings2,
   Trash2,
 } from "lucide-react";
@@ -53,6 +54,7 @@ export interface HistoryDetailDialogProps {
     outputId: string,
   ) => Promise<void>;
   onDelete: (outputId: string) => Promise<boolean>;
+  onInpaint: (job: StudioJob, outputId: string) => void;
 }
 
 function SettingRow({ label, value }: { label: string; value: React.ReactNode }) {
@@ -77,6 +79,7 @@ export function HistoryDetailDialog({
   onLoadSeed,
   onUpscale,
   onDelete,
+  onInpaint,
 }: HistoryDetailDialogProps) {
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [upscaleOpen, setUpscaleOpen] = React.useState(false);
@@ -92,7 +95,7 @@ export function HistoryDetailDialog({
   const canUpscale =
     job.status === "completed" &&
     job.settings.upscale.enabled === false &&
-    output?.kind === "base";
+    (output?.kind === "base" || output?.kind === "inpaint");
 
   return (
     <>
@@ -120,7 +123,8 @@ export function HistoryDetailDialog({
                 onOpenChange(false);
               }}
             >
-              <Settings2 /> 설정 불러오기
+              <Settings2 />
+              {job.kind === "inpaint" ? "설정만 생성 화면에 불러오기" : "설정 불러오기"}
             </Button>
             <Button
               type="button"
@@ -136,6 +140,20 @@ export function HistoryDetailDialog({
             {canUpscale ? (
               <Button type="button" size="sm" onClick={() => setUpscaleOpen(true)}>
                 <Maximize2 /> 업스케일
+              </Button>
+            ) : null}
+            {output ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  onInpaint(job, output.id);
+                  onOpenChange(false);
+                }}
+              >
+                <Paintbrush />
+                {job.kind === "inpaint" ? "마스크·설정 재편집" : "인페인트"}
               </Button>
             ) : null}
             {output ? (
@@ -210,6 +228,16 @@ export function HistoryDetailDialog({
                 </CardHeader>
                 <CardContent>
                   <SettingRow label="생성 시각" value={formatDate(job.createdAt)} />
+                  <SettingRow
+                    label="작업 종류"
+                    value={
+                      job.kind === "inpaint"
+                        ? "인페인트"
+                        : job.kind === "upscale"
+                          ? "업스케일"
+                          : "이미지 생성"
+                    }
+                  />
                   <SettingRow label="시드" value={job.settings.sampling.seed} />
                   <SettingRow
                     label="크기"
@@ -228,8 +256,69 @@ export function HistoryDetailDialog({
                         : "사용 안 함"
                     }
                   />
+                  {job.inpaint ? (
+                    <>
+                      <SettingRow label="마스크 확장" value={`${job.inpaint.growMaskBy}px`} />
+                      <SettingRow
+                        label="보존된 최초 원본"
+                        value={
+                          <a
+                            href={outputUrl(job.inpaint.rootSourceAsset.url)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-primary hover:underline"
+                          >
+                            {job.inpaint.rootSourceAsset.name}
+                          </a>
+                        }
+                      />
+                      <SettingRow
+                        label="이번 입력"
+                        value={
+                          job.inpaint.inputSourceAsset.id ===
+                          job.inpaint.rootSourceAsset.id ? (
+                            "최초 원본과 동일"
+                          ) : (
+                            <a
+                              href={outputUrl(job.inpaint.inputSourceAsset.url)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-primary hover:underline"
+                            >
+                              {job.inpaint.inputSourceAsset.name}
+                            </a>
+                          )
+                        }
+                      />
+                      {job.parentJobId ? (
+                        <SettingRow
+                          label="상위 작업"
+                          value={<span className="font-mono">{job.parentJobId.slice(0, 8)}</span>}
+                        />
+                      ) : null}
+                    </>
+                  ) : null}
                 </CardContent>
               </Card>
+
+              {job.inpaint ? (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">인페인트 마스크</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="relative aspect-video overflow-hidden rounded-lg border border-border bg-[linear-gradient(45deg,#202026_25%,transparent_25%),linear-gradient(-45deg,#202026_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#202026_75%),linear-gradient(-45deg,transparent_75%,#202026_75%)] bg-[length:16px_16px]">
+                      <Image
+                        src={outputUrl(job.inpaint.maskAsset.url)}
+                        alt="인페인트 마스크"
+                        fill
+                        unoptimized
+                        className="object-contain"
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : null}
 
               <Card>
                 <CardHeader className="pb-2">

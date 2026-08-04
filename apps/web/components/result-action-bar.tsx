@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Copy, Dices, LoaderCircle, Maximize2 } from "lucide-react";
+import { Copy, Dices, LoaderCircle, Maximize2, Paintbrush } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { StudioJob } from "@/lib/types";
 
@@ -14,6 +14,7 @@ interface ResultActionBarProps {
   onLoadSettings: (job: StudioJob) => Promise<void> | void;
   onLoadSeed: (job: StudioJob) => Promise<void> | void;
   onUpscale?: (job: StudioJob) => void;
+  onInpaint?: (job: StudioJob) => void;
 }
 
 export function ResultActionBar({
@@ -23,6 +24,7 @@ export function ResultActionBar({
   onLoadSettings,
   onLoadSeed,
   onUpscale,
+  onInpaint,
 }: ResultActionBarProps) {
   const [busy, setBusy] = React.useState<ActionName | null>(null);
   const [error, setError] = React.useState("");
@@ -56,9 +58,7 @@ export function ResultActionBar({
         aria-label="결과 빠른 작업"
         className={
           compact
-            ? canUpscale && onUpscale
-              ? "grid grid-cols-3 gap-1.5"
-              : "grid grid-cols-2 gap-2"
+            ? "grid grid-cols-2 gap-1.5"
             : "flex flex-wrap items-center gap-2"
         }
       >
@@ -71,7 +71,7 @@ export function ResultActionBar({
           onClick={() => void run("load", onLoadSettings)}
         >
           {icon("load", <Copy />)}
-          설정 불러오기
+          {job.kind === "inpaint" ? "설정만 불러오기" : "설정 불러오기"}
         </Button>
         <Button
           type="button"
@@ -95,6 +95,19 @@ export function ResultActionBar({
           >
             <Maximize2 />
             업스케일
+          </Button>
+        ) : null}
+        {onInpaint ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="soft"
+            className={compact ? "gap-1 px-1.5 text-[10px]" : undefined}
+            disabled={busy !== null}
+            onClick={() => onInpaint(job)}
+          >
+            <Paintbrush />
+            {job.kind === "inpaint" ? "마스크·설정 재편집" : "인페인트"}
           </Button>
         ) : null}
       </div>

@@ -15,6 +15,8 @@ import {
 import { GenerationControls } from "@/components/generation-controls";
 import { HistoryView } from "@/components/image-library-sidebar";
 import { InstantReferenceControls } from "@/components/instant-reference-controls";
+import { InpaintEditorDialog } from "@/components/inpaint-editor-dialog";
+import { InpaintSourceCard } from "@/components/inpaint-source-card";
 import { JobPanel } from "@/components/job-panel";
 import { LibraryView } from "@/components/library-view";
 import { MobileExecutionDock } from "@/components/mobile-execution-dock";
@@ -50,6 +52,7 @@ import {
 import { SectionHeading } from "@/components/ui/field";
 import {
   cleanupStorage,
+  createInpaintJob,
   createJob,
   getCapabilities,
   getHealth,
@@ -59,6 +62,13 @@ import {
   getRecognizedTags,
   getStorage,
 } from "@/lib/api";
+import {
+  emptyInpaintWorkspace,
+  initialInpaintDraft,
+  inpaintWorkspaceFromOutput,
+  preparedInpaintSubmission,
+  type InpaintWorkspaceDraft,
+} from "@/lib/inpaint";
 import {
   type CapabilitiesResponse,
   DEFAULT_DRAFT,
@@ -87,6 +97,8 @@ function CreateWorkspace({
   optionsLoading,
   health,
   capabilities,
+  inpaintCapabilities,
+  inpaint,
   activeJob,
   queueJobs,
   onJobUpdate,
@@ -94,6 +106,9 @@ function CreateWorkspace({
   onLoadJobSettings,
   onLoadJobSeed,
   onOpenJobDetail,
+  onInpaint,
+  onInpaintChange,
+  onEditInpaintMask,
   submitting,
 }: {
   draft: GenerationDraft;
@@ -102,6 +117,8 @@ function CreateWorkspace({
   optionsLoading: boolean;
   health: HealthResponse | null;
   capabilities: CapabilitiesResponse | null;
+  inpaintCapabilities: CapabilitiesResponse | null;
+  inpaint: InpaintWorkspaceDraft;
   activeJob: StudioJob | null;
   queueJobs: StudioJob[];
   onJobUpdate: (job: StudioJob) => void;
@@ -109,6 +126,9 @@ function CreateWorkspace({
   onLoadJobSettings: (job: StudioJob, outputId: string) => void;
   onLoadJobSeed: (job: StudioJob) => void;
   onOpenJobDetail: (job: StudioJob, outputId?: string) => void;
+  onInpaint: (job: StudioJob, outputId: string) => void;
+  onInpaintChange: (value: InpaintWorkspaceDraft) => void;
+  onEditInpaintMask: () => void;
   submitting: boolean;
 }) {
   const preflightIssues = React.useMemo(
@@ -119,9 +139,24 @@ function CreateWorkspace({
         optionsLoading,
         health,
         capabilities,
+        inpaint,
+        inpaintCapabilities,
       }),
-    [capabilities, draft, health, options, optionsLoading],
+    [
+      capabilities,
+      draft,
+      health,
+      inpaint,
+      inpaintCapabilities,
+      options,
+      optionsLoading,
+    ],
   );
+  const inpaintActive =
+    inpaint.source !== null || inpaint.sourceStatus !== "idle";
+  const activeCapabilities = inpaintActive
+    ? inpaintCapabilities
+    : capabilities;
   const validationMessage = preflightIssues[0]?.message ?? "";
   const selectionIssue =
     preflightIssues.find(
@@ -237,30 +272,52 @@ function CreateWorkspace({
           </Card>
 
           <div className="grid items-start gap-4 lg:grid-cols-2">
-            <Card id="create-section-reference">
-              <CardHeader className="pb-3">
-                <SectionHeading title="참조 이미지" />
-              </CardHeader>
-              <CardContent className="space-y-5">
-                <ReferenceUploader
-                  assets={draft.referenceAssets}
-                  onChange={(referenceAssets) =>
-                    onDraftChange({ ...draft, referenceAssets })
-                  }
-                />
-                <InstantReferenceControls
-                  value={draft}
-                  onChange={onDraftChange}
-                />
-                <RecognizedTags
-                  tags={recognizedTags}
-                  prompts={draft.prompts}
-                  onChange={(prompts) =>
-                    onDraftChange({ ...draft, prompts })
-                  }
-                />
-              </CardContent>
-            </Card>
+            <div className="space-y-4">
+              <Card id="create-section-reference">
+                <CardHeader className="pb-3">
+                  <SectionHeading title="참조 이미지" />
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <ReferenceUploader
+                    assets={draft.referenceAssets}
+                    onChange={(referenceAssets) =>
+                      onDraftChange({ ...draft, referenceAssets })
+                    }
+                  />
+                  <InstantReferenceControls
+                    value={draft}
+                    onChange={onDraftChange}
+                  />
+                  <RecognizedTags
+                    tags={recognizedTags}
+                    prompts={draft.prompts}
+                    onChange={(prompts) =>
+                      onDraftChange({ ...draft, prompts })
+                    }
+                  />
+                </CardContent>
+              </Card>
+
+              <Card id="create-section-inpaint">
+                <CardHeader className="pb-3">
+                  <SectionHeading
+                    title="인페인트"
+                    action={
+                      inpaintActive ? (
+                        <Badge variant="secondary">활성</Badge>
+                      ) : null
+                    }
+                  />
+                </CardHeader>
+                <CardContent>
+                  <InpaintSourceCard
+                    value={inpaint}
+                    onChange={onInpaintChange}
+                    onEditMask={onEditInpaintMask}
+                  />
+                </CardContent>
+              </Card>
+            </div>
 
             <Card id="create-section-models">
               <CardHeader className="pb-3">
@@ -297,7 +354,8 @@ function CreateWorkspace({
           <JobPanel
             job={activeJob}
             queueJobs={queueJobs}
-            capabilities={capabilities}
+            capabilities={activeCapabilities}
+            generationMode={inpaintActive ? "inpaint" : "generation"}
             submitting={submitting}
             canGenerate={canGenerate}
             validationMessage={validationMessage}
@@ -308,6 +366,7 @@ function CreateWorkspace({
             onLoadSettings={onLoadJobSettings}
             onLoadSeed={onLoadJobSeed}
             onOpenDetail={onOpenJobDetail}
+            onInpaint={onInpaint}
           />
 
           <Card id="create-section-generation">
@@ -316,6 +375,7 @@ function CreateWorkspace({
             </CardHeader>
             <CardContent>
               <GenerationControls
+                variant={inpaintActive ? "inpaint" : "generation"}
                 value={draft}
                 options={options}
                 onChange={onDraftChange}
@@ -327,6 +387,7 @@ function CreateWorkspace({
           job={activeJob}
           queueJobs={queueJobs}
           health={health}
+          generationMode={inpaintActive ? "inpaint" : "generation"}
           submitting={submitting}
           canGenerate={canGenerate}
           validationMessage={validationMessage}
@@ -334,6 +395,7 @@ function CreateWorkspace({
           onResolveIssue={resolveIssue}
           onGenerate={onGenerate}
           onJobUpdate={onJobUpdate}
+          onInpaint={onInpaint}
         />
       </div>
     </div>
@@ -361,6 +423,8 @@ export function StudioShell() {
   const [health, setHealth] = React.useState<HealthResponse | null>(null);
   const [capabilities, setCapabilities] =
     React.useState<CapabilitiesResponse | null>(null);
+  const [inpaintCapabilities, setInpaintCapabilities] =
+    React.useState<CapabilitiesResponse | null>(null);
   const [options, setOptions] = React.useState<StudioOptions>(EMPTY_OPTIONS);
   const [storage, setStorage] = React.useState<StorageInventory | null>(null);
   const [storageLoading, setStorageLoading] = React.useState(true);
@@ -375,6 +439,10 @@ export function StudioShell() {
     outputId?: string;
   } | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
+  const [inpaint, setInpaint] = React.useState<InpaintWorkspaceDraft>(() =>
+    emptyInpaintWorkspace(),
+  );
+  const [inpaintEditorOpen, setInpaintEditorOpen] = React.useState(false);
   const [toast, setToast] = React.useState<{
     type: "success" | "error";
     message: string;
@@ -573,11 +641,13 @@ export function StudioShell() {
     const [
       healthResult,
       capabilityResult,
+      inpaintCapabilityResult,
       optionsResult,
       storageResult,
     ] = await Promise.allSettled([
       getHealth(),
       getCapabilities(),
+      getCapabilities(undefined, "inpaint"),
       getOptions(),
       getStorage(),
     ]);
@@ -588,6 +658,11 @@ export function StudioShell() {
       setCapabilities(capabilityResult.value);
     } else {
       setCapabilities(null);
+    }
+    if (inpaintCapabilityResult.status === "fulfilled") {
+      setInpaintCapabilities(inpaintCapabilityResult.value);
+    } else {
+      setInpaintCapabilities(null);
     }
     if (optionsResult.status === "fulfilled") {
       setOptions(optionsResult.value);
@@ -664,11 +739,24 @@ export function StudioShell() {
   async function handleGenerate() {
     setSubmitting(true);
     try {
-      const job = await createJob(draft);
+      const inpaintActive =
+        inpaint.source !== null || inpaint.sourceStatus !== "idle";
+      let job: StudioJob;
+      if (inpaintActive) {
+        const submission = preparedInpaintSubmission(inpaint);
+        job = await createInpaintJob({
+          ...submission,
+          draft,
+        });
+      } else {
+        job = await createJob(draft);
+      }
       trackSubmittedJob(job);
       setToast({
         type: "success",
-        message: "작업을 ComfyUI 대기열에 추가했습니다.",
+        message: inpaintActive
+          ? "인페인트 작업을 ComfyUI 대기열에 추가했습니다."
+          : "작업을 ComfyUI 대기열에 추가했습니다.",
       });
     } catch (error) {
       setToast({
@@ -716,6 +804,61 @@ export function StudioShell() {
       type: "success",
       message: "히스토리 설정을 생성 화면에 불러왔습니다.",
     });
+  }
+
+  function openInpaint(job: StudioJob, outputId: string) {
+    const output = job.outputs.find((item) => item.id === outputId);
+    if (!output) {
+      setToast({ type: "error", message: "선택한 원본 이미지를 찾지 못했습니다." });
+      return;
+    }
+    if (
+      inpaint.maskAsset &&
+      !window.confirm("현재 인페인트 원본과 저장된 마스크를 선택한 결과로 교체할까요?")
+    ) {
+      return;
+    }
+    const workspace = inpaintWorkspaceFromOutput(job, output);
+    if (
+      workspace.source?.crop.cropped ||
+      !workspace.source ||
+      workspace.source.crop.width < 64 ||
+      workspace.source.crop.height < 64
+    ) {
+      setToast({
+        type: "error",
+        message: "이 결과는 크기가 8의 배수가 아니거나 너무 작아 인페인트할 수 없습니다.",
+      });
+      return;
+    }
+    setHistoryOpen(false);
+    const restored = initialInpaintDraft(draft, job);
+    setDraft({
+      ...restored,
+      sampling: {
+        ...restored.sampling,
+        width: output.width ?? restored.sampling.width,
+        height: output.height ?? restored.sampling.height,
+      },
+      upscale: { ...restored.upscale, enabled: false },
+    });
+    setInpaint(workspace);
+    setInpaintEditorOpen(true);
+  }
+
+  function updateInpaint(next: InpaintWorkspaceDraft) {
+    setInpaint(next);
+    if (next.source?.crop) {
+      setDraft((current) => ({
+        ...current,
+        sampling: {
+          ...current.sampling,
+          width: next.source!.crop.width,
+          height: next.source!.crop.height,
+        },
+        upscale: { ...current.upscale, enabled: false },
+      }));
+    }
   }
 
   function loadSeed(seed: number) {
@@ -813,6 +956,7 @@ export function StudioShell() {
               "로 업스케일 작업을 시작했습니다.",
           });
         }}
+        onInpaint={openInpaint}
       />
 
       <div
@@ -961,6 +1105,8 @@ export function StudioShell() {
             optionsLoading={loadingSystem}
             health={health}
             capabilities={capabilities}
+            inpaintCapabilities={inpaintCapabilities}
+            inpaint={inpaint}
             activeJob={activeJob}
             queueJobs={trackedJobs}
             onJobUpdate={updateTrackedJob}
@@ -974,6 +1120,9 @@ export function StudioShell() {
                 outputId,
               }))
             }
+            onInpaint={openInpaint}
+            onInpaintChange={updateInpaint}
+            onEditInpaintMask={() => setInpaintEditorOpen(true)}
             submitting={submitting}
           />
         </main>
@@ -999,6 +1148,26 @@ export function StudioShell() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {inpaintEditorOpen && inpaint.source ? (
+        <InpaintEditorDialog
+          source={inpaint.source}
+          maskAsset={inpaint.maskAsset}
+          growMaskBy={inpaint.growMaskBy}
+          onClose={() => setInpaintEditorOpen(false)}
+          onSave={({ maskAsset, growMaskBy }) => {
+            setInpaint((current) => ({
+              ...current,
+              maskAsset,
+              growMaskBy,
+            }));
+            setToast({
+              type: "success",
+              message: "인페인트 마스크를 저장했습니다. 생성 버튼으로 실행할 수 있습니다.",
+            });
+          }}
+        />
+      ) : null}
 
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
         <DialogContent

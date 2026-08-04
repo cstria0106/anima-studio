@@ -5,6 +5,10 @@ import {
   loadSeedIntoDraft,
   restoreImageSettings,
 } from "./studio-ux";
+import {
+  emptyInpaintWorkspace,
+  inpaintWorkspaceFromOutput,
+} from "./inpaint";
 import { DEFAULT_DRAFT, EMPTY_OPTIONS } from "./types";
 
 const readyDraft = {
@@ -72,6 +76,58 @@ describe("studio UX readiness", () => {
     });
 
     expect(issues).toEqual([]);
+  });
+
+  test("requires a saved mask and inpaint capability only while the card is active", () => {
+    const output = { id: "output-1", kind: "base", width: 512, height: 768 };
+    const job = {
+      settings: structuredClone(readyDraft),
+    } as Parameters<typeof inpaintWorkspaceFromOutput>[0];
+    const inpaint = inpaintWorkspaceFromOutput(job, output);
+    const issues = buildPreflightIssues({
+      draft: readyDraft,
+      options,
+      optionsLoading: false,
+      health: { ok: true, comfyui: true },
+      capabilities: { ready: true, missingNodes: [] },
+      inpaint,
+      inpaintCapabilities: null,
+    });
+
+    expect(issues.map((issue) => [issue.code, issue.stepId])).toEqual([
+      ["inpaint_capabilities_missing", "inpaint"],
+      ["inpaint_mask_required", "inpaint"],
+    ]);
+    expect(
+      buildPreflightIssues({
+        draft: readyDraft,
+        options,
+        optionsLoading: false,
+        health: { ok: true, comfyui: true },
+        capabilities: { ready: true, missingNodes: [] },
+        inpaint: emptyInpaintWorkspace(),
+        inpaintCapabilities: null,
+      }),
+    ).toEqual([]);
+  });
+
+  test("blocks generation while an inpaint source is being prepared", () => {
+    const issues = buildPreflightIssues({
+      draft: readyDraft,
+      options,
+      optionsLoading: false,
+      health: { ok: true, comfyui: true },
+      capabilities: { ready: true, missingNodes: [] },
+      inpaint: {
+        ...emptyInpaintWorkspace(),
+        sourceStatus: "uploading",
+      },
+      inpaintCapabilities: { ready: true, missingNodes: [] },
+    });
+
+    expect(issues.map((issue) => issue.code)).toEqual([
+      "inpaint_source_uploading",
+    ]);
   });
 });
 

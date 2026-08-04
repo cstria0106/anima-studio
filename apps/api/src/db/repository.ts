@@ -43,6 +43,7 @@ import {
   folders,
   jobAssets,
   jobEvents,
+  jobInpaints,
   jobs,
   managedModelInstallations,
   modelDownloads,
@@ -55,6 +56,7 @@ import {
   type AssetRow,
   type FolderRow,
   type JobEventRow,
+  type JobInpaintRow,
   type JobRow,
   type ManagedModelInstallationRow,
   type ModelDownloadRow,
@@ -129,7 +131,10 @@ export function assetToDto(row: AssetRow): AssetDto {
 export function outputToDto(row: OutputRow): OutputDto {
   return {
     id: row.id,
-    kind: row.kind === "upscale" ? "upscale" : "base",
+    kind:
+      row.kind === "upscale" || row.kind === "inpaint"
+        ? row.kind
+        : "base",
     filename: row.filename,
     mimeType: row.mimeType,
     url: `/api/outputs/${encodeURIComponent(row.id)}`,
@@ -276,6 +281,12 @@ export interface NewJob {
   config: GenerationConfig;
   actualSeed: number;
   assetIds: string[];
+  inpaint?: {
+    inputSourceAssetId: string;
+    rootSourceAssetId: string;
+    maskAssetId: string;
+    growMaskBy: number;
+  };
   createdAt: string;
 }
 
@@ -287,7 +298,7 @@ export interface JobUpdate {
   workflow?: Record<string, unknown> | null;
   nodePhases?: Record<string, JobPhase> | null;
   nodeLabels?: Record<string, string> | null;
-  outputKinds?: Record<string, "base" | "upscale"> | null;
+  outputKinds?: Record<string, "base" | "upscale" | "inpaint"> | null;
   autoTagsNodeId?: string | null;
   autoTags?: string;
   error?: string | null;
@@ -309,7 +320,7 @@ export interface NewEvent {
 export interface NewOutput {
   id: string;
   jobId: string;
-  kind: "base" | "upscale";
+  kind: "base" | "upscale" | "inpaint";
   nodeId: string;
   filename: string;
   mimeType: string;
@@ -1197,6 +1208,19 @@ export class StudioRepository {
           )
           .run();
       }
+
+      if (input.inpaint) {
+        this.db
+          .insert(jobInpaints)
+          .values({
+            jobId: input.id,
+            inputSourceAssetId: input.inpaint.inputSourceAssetId,
+            rootSourceAssetId: input.inpaint.rootSourceAssetId,
+            maskAssetId: input.inpaint.maskAssetId,
+            growMaskBy: input.inpaint.growMaskBy,
+          })
+          .run();
+      }
     })();
 
     return this.findJobRow(input.id)!;
@@ -1242,6 +1266,16 @@ export class StudioRepository {
 
   findJobRow(id: string): JobRow | null {
     return this.db.select().from(jobs).where(eq(jobs.id, id)).get() ?? null;
+  }
+
+  findJobInpaint(jobId: string): JobInpaintRow | null {
+    return (
+      this.db
+        .select()
+        .from(jobInpaints)
+        .where(eq(jobInpaints.jobId, jobId))
+        .get() ?? null
+    );
   }
 
   hasJobs(): boolean {
@@ -1638,7 +1672,7 @@ export class StudioRepository {
   }
 
   assetDependencies(assetId: string): RepositoryDependency[] {
-    const jobReferences = this.db
+    const referenceJobs = this.db
       .select({ id: jobs.id, createdAt: jobs.createdAt })
       .from(jobAssets)
       .innerJoin(jobs, eq(jobAssets.jobId, jobs.id))
@@ -1647,9 +1681,32 @@ export class StudioRepository {
       .map((row) => ({
         kind: "job" as const,
         id: row.id,
-        label: `Generation from ${toIso(row.createdAt) ?? row.createdAt}`,
+        label: `Job from ${toIso(row.createdAt) ?? row.createdAt}`,
       }));
-    return jobReferences;
+    const inpaintJobs = this.db
+      .select({ id: jobs.id, createdAt: jobs.createdAt })
+      .from(jobInpaints)
+      .innerJoin(jobs, eq(jobInpaints.jobId, jobs.id))
+      .where(
+        or(
+          eq(jobInpaints.inputSourceAssetId, assetId),
+          eq(jobInpaints.rootSourceAssetId, assetId),
+          eq(jobInpaints.maskAssetId, assetId),
+        ),
+      )
+      .all()
+      .map((row) => ({
+        kind: "job" as const,
+        id: row.id,
+        label: `Inpaint from ${toIso(row.createdAt) ?? row.createdAt}`,
+      }));
+    const unique = new Map(
+      [...referenceJobs, ...inpaintJobs].map((dependency) => [
+        dependency.id,
+        dependency,
+      ]),
+    );
+    return [...unique.values()];
   }
 
   outputDependencies(outputId: string): RepositoryDependency[] {
@@ -1657,13 +1714,16 @@ export class StudioRepository {
       .select({ id: jobs.id, createdAt: jobs.createdAt })
       .from(jobs)
       .where(
-        and(eq(jobs.sourceOutputId, outputId), eq(jobs.status, "uploading")),
+        and(
+          eq(jobs.sourceOutputId, outputId),
+          inArray(jobs.status, ["uploading", "queued", "running"]),
+        ),
       )
       .all()
       .map((row) => ({
         kind: "job" as const,
         id: row.id,
-        label: `Upscale from ${toIso(row.createdAt) ?? row.createdAt}`,
+        label: `Derived job from ${toIso(row.createdAt) ?? row.createdAt}`,
       }));
     return jobReferences;
   }
@@ -1677,7 +1737,7 @@ export class StudioRepository {
       .map((row) => ({
         kind: "job" as const,
         id: row.id,
-        label: `Upscale from ${toIso(row.createdAt) ?? row.createdAt}`,
+        label: `Derived job from ${toIso(row.createdAt) ?? row.createdAt}`,
       }));
   }
 
@@ -1784,7 +1844,10 @@ export class StudioRepository {
     const event = this.latestEvent(row.id);
     const dto: JobDto = {
       id: row.id,
-      kind: row.kind === "upscale" ? "upscale" : "generation",
+      kind:
+        row.kind === "upscale" || row.kind === "inpaint"
+          ? row.kind
+          : "generation",
       parentJobId: row.parentJobId,
       sourceOutputId: row.sourceOutputId,
       status: row.status as JobStatus,
@@ -1801,6 +1864,24 @@ export class StudioRepository {
       assets: this.getJobAssets(row.id).map(assetToDto),
       outputs: this.listOutputs(row.id).map(outputToDto),
     };
+    if (row.kind === "inpaint") {
+      const inpaint = this.findJobInpaint(row.id);
+      const maskAsset = inpaint
+        ? this.findAsset(inpaint.maskAssetId)
+        : null;
+      if (inpaint && maskAsset) {
+        const inputSourceAsset = this.findAsset(inpaint.inputSourceAssetId);
+        const rootSourceAsset = this.findAsset(inpaint.rootSourceAssetId);
+        if (inputSourceAsset && rootSourceAsset) {
+          dto.inpaint = {
+            inputSourceAsset: assetToDto(inputSourceAsset),
+            rootSourceAsset: assetToDto(rootSourceAsset),
+            maskAsset: assetToDto(maskAsset),
+            growMaskBy: inpaint.growMaskBy,
+          };
+        }
+      }
+    }
     if (event) dto.latestEvent = eventToDto(event);
     const preview = this.latestPreview(row.id);
     if (preview) dto.preview = preview;
@@ -2213,8 +2294,11 @@ export class StudioRepository {
     return parseJson<Record<string, JobPhase>>(row.nodePhasesJson, {});
   }
 
-  parseOutputKinds(row: JobRow): Record<string, "base" | "upscale"> {
-    return parseJson<Record<string, "base" | "upscale">>(
+  parseOutputKinds(row: JobRow): Record<
+    string,
+    "base" | "upscale" | "inpaint"
+  > {
+    return parseJson<Record<string, "base" | "upscale" | "inpaint">>(
       row.outputKindsJson,
       {},
     );

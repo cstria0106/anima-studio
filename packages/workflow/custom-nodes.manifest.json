@@ -85,6 +85,37 @@
           "outputs": ["LATENT"]
         },
         {
+          "classType": "VAEEncodeForInpaint",
+          "requiredInputs": ["pixels", "vae", "mask", "grow_mask_by"],
+          "outputs": ["LATENT"],
+          "feature": "inpaint"
+        },
+        {
+          "classType": "RepeatLatentBatch",
+          "requiredInputs": ["samples", "amount"],
+          "outputs": ["LATENT"],
+          "feature": "inpaint"
+        },
+        {
+          "classType": "RepeatImageBatch",
+          "requiredInputs": ["image", "amount"],
+          "outputs": ["IMAGE"],
+          "feature": "inpaint"
+        },
+        {
+          "classType": "ImageCompositeMasked",
+          "requiredInputs": [
+            "destination",
+            "source",
+            "x",
+            "y",
+            "resize_source"
+          ],
+          "optionalInputs": ["mask"],
+          "outputs": ["IMAGE"],
+          "feature": "inpaint"
+        },
+        {
           "classType": "SaveImage",
           "requiredInputs": ["filename_prefix", "images"],
           "outputs": []

@@ -145,7 +145,16 @@ export class FileStorage {
   }
 
   async storeAsset(file: File): Promise<AssetDto> {
-    const { bytes, metadata, sha256 } = await this.validateAsset(file);
+    const validated = await this.validateAsset(file);
+    return assetToDto(
+      await this.persistAsset(validated, cleanFilename(file.name)),
+    );
+  }
+
+  private async persistAsset(
+    { bytes, metadata, sha256 }: ValidatedAssetUpload,
+    originalName: string,
+  ): Promise<AssetRow> {
     const existing = this.repository.findAssetByHash(sha256);
     if (existing) {
       try {
@@ -156,7 +165,7 @@ export class FileStorage {
         });
         await writeFile(this.absolute(existing.storagePath), bytes);
       }
-      return assetToDto(existing);
+      return existing;
     }
 
     const storagePath = `assets/${sha256.slice(0, 2)}/${sha256}.${metadata.extension}`;
@@ -173,7 +182,7 @@ export class FileStorage {
     const row = this.repository.createAsset({
       id: crypto.randomUUID(),
       sha256,
-      originalName: cleanFilename(file.name),
+      originalName,
       mimeType: metadata.mimeType,
       byteSize: bytes.byteLength,
       width: metadata.width,
@@ -181,7 +190,23 @@ export class FileStorage {
       storagePath,
       createdAt: new Date().toISOString(),
     });
-    return assetToDto(row);
+    return row;
+  }
+
+  async preserveOutputAsAsset(row: OutputRow): Promise<AssetRow> {
+    const stored = await this.readOutput(row);
+    const metadata = inspectImage(stored.bytes);
+    if (!metadata) {
+      throw new FileValidationError(
+        "The source output is not a supported image.",
+        422,
+      );
+    }
+    const sha256 = createHash("sha256").update(stored.bytes).digest("hex");
+    return this.persistAsset(
+      { bytes: stored.bytes, metadata, sha256 },
+      cleanFilename(row.filename),
+    );
   }
 
   async readAsset(row: AssetRow): Promise<StoredFile> {
@@ -357,7 +382,7 @@ export class FileStorage {
 
   async storeOutput(input: {
     jobId: string;
-    kind: "base" | "upscale";
+    kind: "base" | "upscale" | "inpaint";
     nodeId: string;
     comfyFilename: string;
     comfySubfolder: string;

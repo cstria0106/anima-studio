@@ -270,11 +270,38 @@ interface ApiJobDto {
   }>;
   outputs: Array<{
     id: string;
-    kind: "base" | "upscale";
+    kind: "base" | "upscale" | "inpaint";
     url: string;
     width: number | null;
     height: number | null;
   }>;
+  inpaint?: {
+    inputSourceAsset: {
+      id: string;
+      sha256: string;
+      name: string;
+      url: string;
+      width: number | null;
+      height: number | null;
+    };
+    rootSourceAsset: {
+      id: string;
+      sha256: string;
+      name: string;
+      url: string;
+      width: number | null;
+      height: number | null;
+    };
+    maskAsset: {
+      id: string;
+      sha256: string;
+      name: string;
+      url: string;
+      width: number | null;
+      height: number | null;
+    };
+    growMaskBy: number;
+  };
   preview?:
     | JobPreview
     | string
@@ -471,7 +498,10 @@ export async function getHealth(signal?: AbortSignal) {
   } satisfies HealthResponse;
 }
 
-export async function getCapabilities(signal?: AbortSignal) {
+export async function getCapabilities(
+  signal?: AbortSignal,
+  feature?: "inpaint",
+) {
   const value = await apiFetch<
     CapabilitiesResponse & {
       compatible?: boolean;
@@ -490,7 +520,7 @@ export async function getCapabilities(signal?: AbortSignal) {
         installUrl?: string;
       }>;
     }
-  >("/api/capabilities", {
+  >(`/api/capabilities${feature ? `?feature=${feature}` : ""}`, {
     signal,
   });
   return {
@@ -685,6 +715,34 @@ export async function createJob(draft: GenerationDraft): Promise<StudioJob> {
   >("/api/jobs", {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+  return normalizeJob(raw);
+}
+
+export async function createInpaintJob(input: {
+  source:
+    | { type: "output"; outputId: string }
+    | { type: "asset"; assetId: string };
+  maskAssetId: string;
+  growMaskBy: number;
+  revisionOfJobId?: string;
+  draft: GenerationDraft;
+}): Promise<StudioJob> {
+  const config = draftToConfig(input.draft);
+  config.upscale.enabled = false;
+  const raw = await apiFetch<
+    ApiJobDto | StudioJob | { job: ApiJobDto | StudioJob }
+  >("/api/jobs/inpaint", {
+    method: "POST",
+    body: JSON.stringify({
+      source: input.source,
+      maskAssetId: input.maskAssetId,
+      ...(input.revisionOfJobId
+        ? { revisionOfJobId: input.revisionOfJobId }
+        : {}),
+      options: { growMaskBy: input.growMaskBy },
+      config,
+    }),
   });
   return normalizeJob(raw);
 }
@@ -963,6 +1021,29 @@ function normalizeJob(
           .map((tag) => tag.trim())
           .filter(Boolean)
       : [],
+    inpaint: value.inpaint
+      ? {
+          inputSourceAsset: {
+            ...value.inpaint.inputSourceAsset,
+            width: value.inpaint.inputSourceAsset.width ?? undefined,
+            height: value.inpaint.inputSourceAsset.height ?? undefined,
+            status: "ready" as const,
+          },
+          rootSourceAsset: {
+            ...value.inpaint.rootSourceAsset,
+            width: value.inpaint.rootSourceAsset.width ?? undefined,
+            height: value.inpaint.rootSourceAsset.height ?? undefined,
+            status: "ready" as const,
+          },
+          maskAsset: {
+            ...value.inpaint.maskAsset,
+            width: value.inpaint.maskAsset.width ?? undefined,
+            height: value.inpaint.maskAsset.height ?? undefined,
+            status: "ready" as const,
+          },
+          growMaskBy: value.inpaint.growMaskBy,
+        }
+      : undefined,
   } satisfies StudioJob;
 }
 

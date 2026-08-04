@@ -85,6 +85,12 @@ describe("managed model installation migration", () => {
         id text PRIMARY KEY NOT NULL,
         folder_placeholder text
       );
+      CREATE TABLE assets (
+        id text PRIMARY KEY NOT NULL
+      );
+      CREATE TABLE jobs (
+        id text PRIMARY KEY NOT NULL
+      );
       CREATE TABLE tags (
         id integer PRIMARY KEY AUTOINCREMENT NOT NULL,
         tag text NOT NULL,
@@ -212,6 +218,12 @@ describe("managed model installation migration", () => {
     const folderTable = database.sqlite
       .query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'folders'")
       .get();
+    const inpaintColumns = database.sqlite
+      .query("PRAGMA table_info(job_inpaints)")
+      .all() as Array<{ name: string; notnull: number }>;
+    const inpaintForeignKeys = database.sqlite
+      .query("PRAGMA foreign_key_list(job_inpaints)")
+      .all() as Array<{ table: string; from: string; on_delete: string }>;
     database.sqlite.exec(`
       INSERT INTO tags(tag, category, count, description, aliases)
       VALUES ('@migration-artist', 'artist', 1, '', '')
@@ -255,6 +267,21 @@ describe("managed model installation migration", () => {
     expect(categoryMatch?.tag).toBe("@migration-artist");
     expect(outputColumns.some((column) => column.name === "folder_id")).toBeTrue();
     expect(folderTable).not.toBeNull();
+    expect(inpaintColumns.map((column) => column.name)).toEqual([
+      "job_id",
+      "input_source_asset_id",
+      "root_source_asset_id",
+      "mask_asset_id",
+      "grow_mask_by",
+    ]);
+    expect(inpaintForeignKeys).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ table: "jobs", from: "job_id", on_delete: "CASCADE" }),
+        expect.objectContaining({ table: "assets", from: "input_source_asset_id", on_delete: "RESTRICT" }),
+        expect.objectContaining({ table: "assets", from: "root_source_asset_id", on_delete: "RESTRICT" }),
+        expect.objectContaining({ table: "assets", from: "mask_asset_id", on_delete: "RESTRICT" }),
+      ]),
+    );
 
     const operation = repository.createSystemOperation({
       id: "hf-operation",
@@ -284,5 +311,62 @@ describe("managed model installation migration", () => {
       modelVersionId: null,
     });
     database.close();
+  });
+
+  test("upgrades the original inpaint metadata to preserved input and root assets", () => {
+    const legacy = new Database(":memory:", { create: true });
+    legacy.exec(`
+      PRAGMA foreign_keys = ON;
+      CREATE TABLE __drizzle_migrations (
+        id integer PRIMARY KEY AUTOINCREMENT,
+        hash text NOT NULL,
+        created_at numeric
+      );
+      INSERT INTO __drizzle_migrations (hash, created_at)
+      VALUES ('original-inpaint-migration', 1785853101684);
+      CREATE TABLE assets (id text PRIMARY KEY NOT NULL);
+      CREATE TABLE jobs (id text PRIMARY KEY NOT NULL);
+      CREATE TABLE job_inpaints (
+        job_id text PRIMARY KEY NOT NULL,
+        source_asset_id text,
+        mask_asset_id text NOT NULL,
+        grow_mask_by integer DEFAULT 6 NOT NULL,
+        FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE cascade,
+        FOREIGN KEY (source_asset_id) REFERENCES assets(id) ON DELETE restrict,
+        FOREIGN KEY (mask_asset_id) REFERENCES assets(id) ON DELETE restrict
+      );
+      CREATE INDEX job_inpaints_source_asset_id_idx
+        ON job_inpaints(source_asset_id);
+      CREATE INDEX job_inpaints_mask_asset_id_idx
+        ON job_inpaints(mask_asset_id);
+      INSERT INTO assets (id) VALUES ('source'), ('mask');
+      INSERT INTO jobs (id) VALUES ('inpaint-job');
+      INSERT INTO job_inpaints (
+        job_id, source_asset_id, mask_asset_id, grow_mask_by
+      ) VALUES ('inpaint-job', 'source', 'mask', 9);
+    `);
+    const db = drizzle(legacy, { schema });
+
+    migrate(db, {
+      migrationsFolder: join(import.meta.dir, "../../drizzle"),
+    });
+
+    expect(
+      legacy.query("PRAGMA table_info(job_inpaints)").all(),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "input_source_asset_id", notnull: 1 }),
+        expect.objectContaining({ name: "root_source_asset_id", notnull: 1 }),
+      ]),
+    );
+    expect(
+      legacy.query("SELECT * FROM job_inpaints WHERE job_id = 'inpaint-job'").get(),
+    ).toMatchObject({
+      input_source_asset_id: "source",
+      root_source_asset_id: "source",
+      mask_asset_id: "mask",
+      grow_mask_by: 9,
+    });
+    legacy.close();
   });
 });
