@@ -5,8 +5,10 @@ import {
   stripPromptComments,
 } from "@anima/shared";
 import {
+  appendPromptTag,
   getTagAtCursor,
   isAutocompleteCommitKey,
+  promptHasTag,
   replaceTagAtCursor,
   tagComparisonKey,
 } from "./utils";
@@ -134,6 +136,32 @@ describe("tag prompt editing", () => {
       tagComparisonKey("phoebe (wuthering_waves)"),
     );
     expect(tagComparisonKey("score_7")).toBe("score_7");
+  });
+
+  test("recognizes equivalent tags already present in the prompt", () => {
+    expect(promptHasTag("blue_eyes, long hair", "Blue Eyes")).toBeTrue();
+    expect(promptHasTag("blue eyes // long hair", "long hair")).toBeFalse();
+  });
+
+  test("appends a recognized tag using the prompt's comma convention", () => {
+    expect(appendPromptTag("blue eyes", "long hair")).toBe(
+      "blue eyes, long hair, ",
+    );
+    expect(appendPromptTag("blue eyes, ", "long hair")).toBe(
+      "blue eyes, long hair, ",
+    );
+  });
+
+  test("does not append a duplicate recognized tag", () => {
+    expect(appendPromptTag("blue_eyes, ", "Blue Eyes")).toBe(
+      "blue_eyes, ",
+    );
+  });
+
+  test("places a recognized tag after a trailing prompt comment", () => {
+    expect(appendPromptTag("blue eyes // keep this", "long hair")).toBe(
+      "blue eyes // keep this\nlong hair, ",
+    );
   });
 });
 

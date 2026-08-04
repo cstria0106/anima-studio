@@ -12,6 +12,7 @@ import {
   huggingFaceAnimaDownloadCreateSchema,
   modelDownloadCreateSchema,
   runtimeConfigSchema,
+  taggingOptionsSchema,
   type JobStatus,
   type RuntimeConfig,
   type RuntimeDto,
@@ -2054,6 +2055,38 @@ export function createApp(services: AppServices): Hono {
         "content-disposition": inlineDisposition(file.filename),
         "cache-control": "private, max-age=31536000, immutable",
       },
+    });
+  });
+
+  app.post("/api/recognized-tags", async (c) => {
+    const body = await parseJson(c.req.raw);
+    if (!body || typeof body !== "object") {
+      throw new JobSubmissionError("Request body must be a JSON object.", 400);
+    }
+    const input = body as { assetIds?: unknown; tagging?: unknown };
+    if (
+      !Array.isArray(input.assetIds) ||
+      input.assetIds.length === 0 ||
+      input.assetIds.length > 32 ||
+      input.assetIds.some(
+        (assetId) => typeof assetId !== "string" || assetId.length === 0,
+      )
+    ) {
+      throw new JobSubmissionError(
+        "assetIds must contain between 1 and 32 asset IDs.",
+        400,
+      );
+    }
+    const tagging = taggingOptionsSchema.safeParse(input.tagging);
+    if (!tagging.success) {
+      throw new JobSubmissionError("Tagging settings are invalid.", 400);
+    }
+
+    return c.json({
+      tags: services.repository.findRecognizedTags(
+        input.assetIds as string[],
+        tagging.data,
+      ),
     });
   });
 

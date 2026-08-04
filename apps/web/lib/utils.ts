@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { getPromptCommentRanges } from "@anima/shared";
+import { getPromptCommentRanges, stripPromptComments } from "@anima/shared";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -127,6 +127,27 @@ export function tagComparisonKey(value: string) {
     .toLowerCase();
   if (/^score_[1-9]$/.test(unescaped)) return unescaped;
   return unescaped.replaceAll("_", " ").replace(/\s+/g, " ").trim();
+}
+
+export function promptHasTag(value: string, tag: string) {
+  const target = tagComparisonKey(tag);
+  return extractTags(stripPromptComments(value)).some(
+    (current) => tagComparisonKey(current) === target,
+  );
+}
+
+export function appendPromptTag(value: string, tag: string) {
+  if (promptHasTag(value, tag)) return value;
+
+  const prompt = value.trimEnd();
+  if (!prompt) return `${tag}, `;
+
+  const trailingComment = getPromptCommentRanges(prompt).some(
+    (range) => range.end === prompt.length,
+  );
+  if (trailingComment) return `${prompt}\n${tag}, `;
+
+  return `${prompt}${prompt.endsWith(",") ? " " : ", "}${tag}, `;
 }
 
 export function uniqueId(prefix = "id") {

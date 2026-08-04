@@ -650,6 +650,34 @@ export async function uploadAsset(
   };
 }
 
+export async function getRecognizedTags(
+  draft: Pick<GenerationDraft, "referenceAssets" | "tagging">,
+  signal?: AbortSignal,
+) {
+  const assetIds = draft.referenceAssets
+    .filter((asset) => asset.status === "ready")
+    .map((asset) => asset.id);
+  if (assetIds.length === 0) return [];
+
+  const raw = await apiFetch<{ tags: string[] }>("/api/recognized-tags", {
+    method: "POST",
+    body: JSON.stringify({
+      assetIds,
+      tagging: {
+        generalThreshold: draft.tagging.threshold,
+        characterThreshold: draft.tagging.characterThreshold,
+        prependTags: draft.tagging.prependTags,
+        appendTags: draft.tagging.appendTags,
+        excludeTags: draft.tagging.excludeTags,
+        replaceTags: draft.tagging.replaceTags,
+        removeUnderscore: draft.tagging.removeUnderscore,
+      },
+    }),
+    signal,
+  });
+  return raw.tags;
+}
+
 export async function createJob(draft: GenerationDraft): Promise<StudioJob> {
   const payload = { config: draftToConfig(draft) };
   const raw = await apiFetch<

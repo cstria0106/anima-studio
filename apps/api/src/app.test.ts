@@ -1471,6 +1471,29 @@ describe("Anima Studio API", () => {
         outputs: [{ kind: "base", width: 1, height: 1 }],
       },
     });
+
+    const cached = await api.app.request("/api/recognized-tags", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        assetIds: [assetId],
+        tagging: config.instantLora.tagging,
+      }),
+    });
+    expect(cached.status).toBe(200);
+    expect(await cached.json()).toEqual({
+      tags: ["1girl", "solo", "red eyes"],
+    });
+
+    const changedTagging = await api.app.request("/api/recognized-tags", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        assetIds: [assetId],
+        tagging: { ...config.instantLora.tagging, generalThreshold: 0.9 },
+      }),
+    });
+    expect(await changedTagging.json()).toEqual({ tags: [] });
   });
 
   test("deletes a terminal job together with its stored outputs", async () => {

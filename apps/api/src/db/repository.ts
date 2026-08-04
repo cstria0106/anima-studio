@@ -1294,6 +1294,61 @@ export class StudioRepository {
       .all();
   }
 
+  findRecognizedTags(
+    assetIds: readonly string[],
+    tagging: GenerationConfig["instantLora"]["tagging"],
+  ): string[] {
+    const canonicalAssetIds = [...new Set(assetIds)].sort();
+    if (canonicalAssetIds.length === 0) return [];
+
+    const candidates = this.db
+      .select({
+        id: jobs.id,
+        configJson: jobs.configJson,
+        autoTags: jobs.autoTags,
+      })
+      .from(jobs)
+      .innerJoin(jobAssets, eq(jobAssets.jobId, jobs.id))
+      .where(
+        and(
+          sql`${jobs.autoTags} <> ''`,
+          inArray(jobAssets.assetId, canonicalAssetIds),
+        ),
+      )
+      .groupBy(jobs.id)
+      .having(sql`count(${jobAssets.assetId}) = ${canonicalAssetIds.length}`)
+      .orderBy(desc(jobs.updatedAt), desc(jobs.id))
+      .all();
+
+    const taggingKey = JSON.stringify(tagging);
+    for (const candidate of candidates) {
+      const parsed = generationConfigSchema.safeParse(
+        parseJson<unknown>(candidate.configJson, {}),
+      );
+      if (!parsed.success) continue;
+
+      const candidateAssetIds = [...parsed.data.referenceAssetIds].sort();
+      const sameAssets =
+        candidateAssetIds.length === canonicalAssetIds.length &&
+        candidateAssetIds.every(
+          (assetId, index) => assetId === canonicalAssetIds[index],
+        );
+      if (
+        !sameAssets ||
+        JSON.stringify(parsed.data.instantLora.tagging) !== taggingKey
+      ) {
+        continue;
+      }
+
+      return candidate.autoTags
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean);
+    }
+
+    return [];
+  }
+
   getJobAssets(jobId: string): AssetRow[] {
     return this.db
       .select({

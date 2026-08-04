@@ -20,6 +20,7 @@ import { LibraryView } from "@/components/library-view";
 import { MobileExecutionDock } from "@/components/mobile-execution-dock";
 import { ModelLoraControls } from "@/components/model-lora-controls";
 import { PromptEditor } from "@/components/prompt-editor";
+import { RecognizedTags } from "@/components/recognized-tags";
 import { ReferenceUploader } from "@/components/reference-uploader";
 import { RuntimeStartupGate } from "@/components/runtime-startup-gate";
 import { SettingsView } from "@/components/settings-view";
@@ -54,6 +55,7 @@ import {
   getJob,
   getJobs,
   getOptions,
+  getRecognizedTags,
   getStorage,
 } from "@/lib/api";
 import {
@@ -128,6 +130,53 @@ function CreateWorkspace({
         issue.stepId === "models" && issue.code !== "options_loading",
     );
   const canGenerate = preflightIssues.length === 0;
+  const [cachedRecognizedTags, setCachedRecognizedTags] = React.useState<
+    string[]
+  >([]);
+  const activeRecognizedTags = React.useMemo(() => {
+    if (!activeJob?.autoTags?.length) return [];
+    const currentReferences = draft.referenceAssets
+      .filter((asset) => asset.status === "ready")
+      .map((asset) => asset.id)
+      .sort();
+    const jobReferences = activeJob.settings.referenceAssets
+      .filter((asset) => asset.status === "ready")
+      .map((asset) => asset.id)
+      .sort();
+
+    return currentReferences.length === jobReferences.length &&
+      currentReferences.every((id, index) => id === jobReferences[index])
+      ? activeJob.autoTags
+      : [];
+  }, [activeJob, draft.referenceAssets]);
+  const referenceAssets = draft.referenceAssets;
+  const tagging = draft.tagging;
+
+  React.useEffect(() => {
+    const readyReferences = referenceAssets.filter(
+      (asset) => asset.status === "ready",
+    );
+    if (readyReferences.length === 0) {
+      setCachedRecognizedTags([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    setCachedRecognizedTags([]);
+    void getRecognizedTags({ referenceAssets, tagging }, controller.signal)
+      .then(setCachedRecognizedTags)
+      .catch((error) => {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setCachedRecognizedTags([]);
+        }
+      });
+    return () => controller.abort();
+  }, [referenceAssets, tagging]);
+
+  const recognizedTags =
+    activeRecognizedTags.length > 0
+      ? activeRecognizedTags
+      : cachedRecognizedTags;
 
   React.useEffect(() => {
     function generateFromShortcut(event: KeyboardEvent) {
@@ -200,6 +249,13 @@ function CreateWorkspace({
                 <InstantReferenceControls
                   value={draft}
                   onChange={onDraftChange}
+                />
+                <RecognizedTags
+                  tags={recognizedTags}
+                  prompts={draft.prompts}
+                  onChange={(prompts) =>
+                    onDraftChange({ ...draft, prompts })
+                  }
                 />
               </CardContent>
             </Card>
