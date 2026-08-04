@@ -178,8 +178,8 @@ export function InpaintSourceCard({
         const readyWorkspace = {
           ...emptyInpaintWorkspace(),
           source: { type: "asset", asset: uploaded, crop },
-          sourceStatus: "ready" as const,
-        };
+          sourceStatus: "ready",
+        } satisfies InpaintWorkspaceDraft;
         onChange(readyWorkspace);
         onUploadReady(readyWorkspace);
       } catch (error) {
