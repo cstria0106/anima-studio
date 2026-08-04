@@ -1,10 +1,12 @@
 "use client";
 
 import * as React from "react";
+import { globalUpscaleSettingsSchema } from "@anima/shared";
 import { getUiPreferences, updateUiPreferences } from "@/lib/api";
 import {
   DEFAULT_DRAFT,
   type GenerationDraft,
+  type GlobalUpscaleSettings,
   type SettingsSection,
   type UiPreferences,
 } from "@/lib/types";
@@ -38,6 +40,23 @@ function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+export function normalizeGlobalUpscaleSettings(
+  value: unknown,
+): GlobalUpscaleSettings {
+  const parsed = globalUpscaleSettingsSchema.safeParse(record(value));
+  return parsed.success
+    ? parsed.data
+    : globalUpscaleSettingsSchema.parse({});
+}
+
+export function resolveGlobalUpscaleSettings(
+  preferences: UiPreferences,
+): GlobalUpscaleSettings {
+  return normalizeGlobalUpscaleSettings(
+    preferences.upscaleSettings ?? preferences.draft?.upscale,
+  );
 }
 
 export function normalizeGenerationDraft(

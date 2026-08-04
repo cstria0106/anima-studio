@@ -73,7 +73,7 @@ interface JobPanelProps {
   onResolveIssue?: (issue: PreflightIssue) => void;
   onGenerate: () => void;
   onJobUpdate: (job: StudioJob) => void;
-  onLoadSettings: (job: StudioJob) => void;
+  onLoadSettings: (job: StudioJob, outputId: string) => void;
   onLoadSeed: (job: StudioJob) => void;
   onOpenDetail: (job: StudioJob, outputId?: string) => void;
 }
@@ -355,7 +355,9 @@ export function JobPanel({
                   job={job}
                   compact
                   canUpscale={canUpscaleResult}
-                  onLoadSettings={onLoadSettings}
+                  onLoadSettings={(selectedJob) => {
+                    if (output) onLoadSettings(selectedJob, output.id);
+                  }}
                   onLoadSeed={onLoadSeed}
                   onUpscale={() => setUpscaleOpen(true)}
                 />
@@ -446,7 +448,6 @@ export function JobPanel({
       {job ? (
         <UpscaleSettingsDialog
           open={upscaleOpen}
-          initialSettings={job.settings.upscale}
           onOpenChange={setUpscaleOpen}
           onSubmit={handleUpscale}
         />

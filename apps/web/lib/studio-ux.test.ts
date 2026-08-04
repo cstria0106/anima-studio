@@ -3,6 +3,7 @@ import {
   buildPreflightIssues,
   clearModelAndLoraSelections,
   loadSeedIntoDraft,
+  restoreImageSettings,
 } from "./studio-ux";
 import { DEFAULT_DRAFT, EMPTY_OPTIONS } from "./types";
 
@@ -115,5 +116,62 @@ describe("seed loading", () => {
     expect(loaded.prompts).toEqual(draft.prompts);
     expect(loaded.models).toEqual(draft.models);
     expect(loaded.referenceAssets).toEqual(draft.referenceAssets);
+  });
+});
+
+describe("image settings restoration", () => {
+  const job = {
+    id: "job-1",
+    status: "completed" as const,
+    createdAt: "2026-08-04T00:00:00.000Z",
+    settings: {
+      ...structuredClone(readyDraft),
+      upscale: {
+        enabled: true,
+        method: "bicubic",
+        scale: 2,
+        steps: 18,
+        denoise: 0.45,
+      },
+    },
+    outputs: [
+      { id: "base-1", kind: "base" },
+      { id: "upscale-1", kind: "upscale" },
+    ],
+  };
+  const globalUpscale = {
+    method: "area",
+    scale: 1.75,
+    steps: 22,
+    denoise: 0.35,
+  };
+
+  test("disables upscale and applies global fields for a base image", () => {
+    const restored = restoreImageSettings(job, "base-1", globalUpscale);
+
+    expect(restored.upscale).toEqual({
+      ...globalUpscale,
+      enabled: false,
+    });
+    expect(job.settings.upscale).toEqual({
+      enabled: true,
+      method: "bicubic",
+      scale: 2,
+      steps: 18,
+      denoise: 0.45,
+    });
+  });
+
+  test("restores and enables the settings used by an upscale image", () => {
+    const restored = restoreImageSettings(job, "upscale-1", globalUpscale);
+
+    expect(restored.upscale).toEqual(job.settings.upscale);
+    expect(restored.upscale.enabled).toBeTrue();
+  });
+
+  test("rejects an output that does not belong to the job", () => {
+    expect(() =>
+      restoreImageSettings(job, "missing", globalUpscale),
+    ).toThrow("선택한 이미지의 생성 설정을 찾지 못했습니다.");
   });
 });

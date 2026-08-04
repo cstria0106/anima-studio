@@ -7,6 +7,7 @@ import type {
 import {
   generationConfigSchema,
   upscaleJobRequestSchema,
+  upscaleSettingsSchema,
 } from "@anima/shared";
 import { resolveSeed } from "@anima/workflow";
 import type { ComfyClientLike } from "../comfy/client";
@@ -58,6 +59,9 @@ function canonicalizeGeneration(
     config: {
       ...config,
       referenceAssetIds: canonicalAssets.map((asset) => asset.id),
+      upscale: config.upscale.enabled
+        ? config.upscale
+        : upscaleSettingsSchema.parse({ enabled: false }),
     },
     assetRows: canonicalAssets,
   };

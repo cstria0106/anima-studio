@@ -68,8 +68,6 @@ import {
   selectLibraryItem,
 } from "@/lib/library-selection";
 import {
-  DEFAULT_DRAFT,
-  type GenerationDraft,
   type LibraryFolder,
   type LibraryImage,
   type StudioJob,
@@ -82,7 +80,7 @@ type DragPayload =
   | { type: "folder"; ids: string[]; folderId: string };
 
 interface HistoryViewProps {
-  onLoadSettings: (settings: GenerationDraft) => void;
+  onLoadSettings: (job: StudioJob, outputId: string) => void;
   onLoadSeed: (seed: number) => void;
   onTrackJob: (job: StudioJob) => void;
   activeJob?: StudioJob | null;
@@ -1114,7 +1112,7 @@ export function HistoryView({
                     className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs hover:bg-accent"
                     onClick={() =>
                       void runImageAction(menuImage, (job) =>
-                        onLoadSettings(structuredClone(job.settings)),
+                        onLoadSettings(job, menuImage.id),
                       )
                     }
                   >
@@ -1236,9 +1234,6 @@ export function HistoryView({
 
       <UpscaleSettingsDialog
         open={Boolean(upscaleTarget)}
-        initialSettings={
-          upscaleTarget?.job.settings.upscale ?? DEFAULT_DRAFT.upscale
-        }
         onOpenChange={(open) => {
           if (!open) setUpscaleTarget(null);
         }}

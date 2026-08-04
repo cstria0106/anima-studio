@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_DRAFT } from "@/lib/types";
-import { normalizeGenerationDraft } from "./ui-preferences-provider";
+import {
+  normalizeGenerationDraft,
+  resolveGlobalUpscaleSettings,
+} from "./ui-preferences-provider";
 
 describe("normalizeGenerationDraft", () => {
   test("restores saved fields while filling new fields from defaults", () => {
@@ -37,5 +40,44 @@ describe("normalizeGenerationDraft", () => {
     expect(draft.loras).toEqual([]);
     expect(draft.referenceAssets.map((asset) => asset.id)).toEqual(["saved"]);
     expect(draft.loraOptimizer.enabled).toBeTrue();
+  });
+});
+
+describe("global upscale settings", () => {
+  test("falls back to the saved generation draft until a global value exists", () => {
+    const draft = structuredClone(DEFAULT_DRAFT);
+    draft.upscale = {
+      enabled: true,
+      method: "bicubic",
+      scale: 2,
+      steps: 18,
+      denoise: 0.45,
+    };
+
+    expect(resolveGlobalUpscaleSettings({ draft })).toEqual({
+      method: "bicubic",
+      scale: 2,
+      steps: 18,
+      denoise: 0.45,
+    });
+  });
+
+  test("prefers the independently saved global value", () => {
+    expect(
+      resolveGlobalUpscaleSettings({
+        draft: DEFAULT_DRAFT,
+        upscaleSettings: {
+          method: "area",
+          scale: 1.75,
+          steps: 20,
+          denoise: 0.3,
+        },
+      }),
+    ).toEqual({
+      method: "area",
+      scale: 1.75,
+      steps: 20,
+      denoise: 0.3,
+    });
   });
 });

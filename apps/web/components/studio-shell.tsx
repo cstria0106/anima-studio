@@ -26,6 +26,7 @@ import { RuntimeStartupGate } from "@/components/runtime-startup-gate";
 import { SettingsView } from "@/components/settings-view";
 import {
   normalizeGenerationDraft,
+  resolveGlobalUpscaleSettings,
   useUiPreferences,
 } from "@/components/ui-preferences-provider";
 import { Badge } from "@/components/ui/badge";
@@ -75,6 +76,7 @@ import { useCompletionNotifications } from "@/components/completion-notification
 import {
   buildPreflightIssues,
   loadSeedIntoDraft,
+  restoreImageSettings,
   type PreflightIssue,
 } from "@/lib/studio-ux";
 
@@ -104,7 +106,7 @@ function CreateWorkspace({
   queueJobs: StudioJob[];
   onJobUpdate: (job: StudioJob) => void;
   onGenerate: () => void;
-  onLoadJobSettings: (job: StudioJob) => void;
+  onLoadJobSettings: (job: StudioJob, outputId: string) => void;
   onLoadJobSeed: (job: StudioJob) => void;
   onOpenJobDetail: (job: StudioJob, outputId?: string) => void;
   submitting: boolean;
@@ -702,8 +704,14 @@ export function StudioShell() {
     );
   }
 
-  function loadSettings(settings: GenerationDraft) {
-    setDraft(structuredClone(settings));
+  function loadSettings(job: StudioJob, outputId: string) {
+    setDraft(
+      restoreImageSettings(
+        job,
+        outputId,
+        resolveGlobalUpscaleSettings(preferences),
+      ),
+    );
     setToast({
       type: "success",
       message: "히스토리 설정을 생성 화면에 불러왔습니다.",
@@ -957,7 +965,7 @@ export function StudioShell() {
             queueJobs={trackedJobs}
             onJobUpdate={updateTrackedJob}
             onGenerate={handleGenerate}
-            onLoadJobSettings={(job) => loadSettings(job.settings)}
+            onLoadJobSettings={loadSettings}
             onLoadJobSeed={(job) => loadSeed(job.settings.sampling.seed)}
             onOpenJobDetail={(job, outputId) =>
               setHistoryDetailRequest((current) => ({

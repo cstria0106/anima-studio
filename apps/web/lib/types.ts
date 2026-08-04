@@ -104,11 +104,17 @@ export type SettingsSection = "overview" | "runtime" | "storage";
 
 export interface UiPreferences {
   draft?: GenerationDraft;
+  upscaleSettings?: GlobalUpscaleSettings;
   blurSensitive?: boolean;
   completionNotificationsEnabled?: boolean;
   settingsSection?: SettingsSection;
   historySidebarWidth?: number;
 }
+
+export type GlobalUpscaleSettings = Omit<
+  GenerationDraft["upscale"],
+  "enabled"
+>;
 
 export const DEFAULT_DRAFT: GenerationDraft = {
   referenceAssets: [],

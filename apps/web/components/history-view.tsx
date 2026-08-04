@@ -45,7 +45,7 @@ export interface HistoryDetailDialogProps {
   deleting: boolean;
   onOpenChange: (open: boolean) => void;
   onOutputChange: (id: string) => void;
-  onLoadSettings: (settings: GenerationDraft) => void;
+  onLoadSettings: (job: StudioJob, outputId: string) => void;
   onLoadSeed: (seed: number) => void;
   onUpscale: (
     job: StudioJob,
@@ -113,8 +113,10 @@ export function HistoryDetailDialog({
               type="button"
               size="sm"
               variant="outline"
+              disabled={!output}
               onClick={() => {
-                onLoadSettings(structuredClone(job.settings));
+                if (!output) return;
+                onLoadSettings(job, output.id);
                 onOpenChange(false);
               }}
             >
@@ -221,7 +223,7 @@ export function HistoryDetailDialog({
                   <SettingRow
                     label="업스케일"
                     value={
-                      job.settings.upscale.enabled
+                      output?.kind === "upscale" || output?.kind === "upscaled"
                         ? `${job.settings.upscale.method} · ${job.settings.upscale.scale}×`
                         : "사용 안 함"
                     }
@@ -287,7 +289,6 @@ export function HistoryDetailDialog({
 
       <UpscaleSettingsDialog
         open={upscaleOpen}
-        initialSettings={job.settings.upscale}
         onOpenChange={setUpscaleOpen}
         onSubmit={(settings) =>
           output ? onUpscale(job, settings, output.id) : Promise.resolve()

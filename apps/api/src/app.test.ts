@@ -592,6 +592,12 @@ describe("Anima Studio API", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         draft: { prompts: { positive: "red eyes" } },
+        upscaleSettings: {
+          method: "bicubic",
+          scale: 2,
+          steps: 24,
+          denoise: 0.4,
+        },
         blurSensitive: false,
       }),
     });
@@ -608,6 +614,12 @@ describe("Anima Studio API", () => {
     expect(await sectionResponse.json()).toEqual({
       preferences: {
         draft: { prompts: { positive: "red eyes" } },
+        upscaleSettings: {
+          method: "bicubic",
+          scale: 2,
+          steps: 24,
+          denoise: 0.4,
+        },
         blurSensitive: false,
         settingsSection: "runtime",
         historySidebarWidth: 448,
@@ -617,6 +629,12 @@ describe("Anima Studio API", () => {
       api.repository.getSetting<unknown>(UI_PREFERENCES_SETTING),
     ).toEqual({
       draft: { prompts: { positive: "red eyes" } },
+      upscaleSettings: {
+        method: "bicubic",
+        scale: 2,
+        steps: 24,
+        denoise: 0.4,
+      },
       blurSensitive: false,
       settingsSection: "runtime",
       historySidebarWidth: 448,
@@ -631,6 +649,20 @@ describe("Anima Studio API", () => {
       body: JSON.stringify({ settingsSection: "missing" }),
     });
     expect(response.status).toBe(400);
+
+    const invalidUpscale = await api.app.request("/api/ui-preferences", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        upscaleSettings: {
+          method: "bicubic",
+          scale: 9,
+          steps: 24,
+          denoise: 0.4,
+        },
+      }),
+    });
+    expect(invalidUpscale.status).toBe(400);
   });
 
   test("keeps a previous managed bundle stopped until it is updated", async () => {
@@ -1259,6 +1291,13 @@ describe("Anima Studio API", () => {
       ...structuredClone(testGenerationConfig),
       referenceAssetIds: [assetId],
       seed: { mode: "fixed", value: 1234 },
+      upscale: {
+        enabled: false,
+        method: "bicubic",
+        scale: 3,
+        steps: 44,
+        denoise: 0.25,
+      },
     };
     const response = await api.app.request("/api/jobs", {
       method: "POST",
@@ -1267,9 +1306,18 @@ describe("Anima Studio API", () => {
     });
     expect(response.status).toBe(202);
     const body = (await response.json()) as {
-      job: { id: string; status: string; actualSeed: number };
+      job: {
+        id: string;
+        status: string;
+        actualSeed: number;
+        config: GenerationConfig;
+      };
     };
-    expect(body.job).toMatchObject({ status: "queued", actualSeed: 1234 });
+    expect(body.job).toMatchObject({
+      status: "queued",
+      actualSeed: 1234,
+      config: { upscale: testGenerationConfig.upscale },
+    });
     expect(comfy.uploads).toHaveLength(1);
     expect(comfy.queuedExtraData[0]?.preview_method).toBe("latent2rgb");
 
@@ -1304,6 +1352,33 @@ describe("Anima Studio API", () => {
     expect(body.job).toMatchObject({ status: "queued", assets: [] });
     expect(comfy.uploads).toHaveLength(0);
     expect(comfy.queuedPrompts).toHaveLength(1);
+  });
+
+  test("preserves upscale settings when generation requests an upscale output", async () => {
+    const { runtime: api } = await runtime();
+    const upscale = {
+      enabled: true,
+      method: "bicubic" as const,
+      scale: 2,
+      steps: 18,
+      denoise: 0.45,
+    };
+    const config: GenerationConfig = {
+      ...structuredClone(testGenerationConfig),
+      referenceAssetIds: [],
+      upscale,
+    };
+
+    const response = await api.app.request("/api/jobs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ config }),
+    });
+    expect(response.status).toBe(202);
+    const body = (await response.json()) as {
+      job: { config: GenerationConfig };
+    };
+    expect(body.job.config.upscale).toEqual(upscale);
   });
 
   test("cancels only the selected pending ComfyUI prompt", async () => {

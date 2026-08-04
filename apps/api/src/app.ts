@@ -10,10 +10,12 @@ import {
   CURATED_IMAGE_PRESETS,
   civitaiInspectRequestSchema,
   huggingFaceAnimaDownloadCreateSchema,
+  globalUpscaleSettingsSchema,
   modelDownloadCreateSchema,
   runtimeConfigSchema,
   taggingOptionsSchema,
   type JobStatus,
+  type GlobalUpscaleSettings,
   type RuntimeConfig,
   type RuntimeDto,
   type RuntimeHardwareDto,
@@ -171,6 +173,7 @@ const SETTINGS_SECTIONS = new Set(["overview", "runtime", "storage"]);
 
 interface UiPreferences {
   draft?: Record<string, unknown>;
+  upscaleSettings?: GlobalUpscaleSettings;
   blurSensitive?: boolean;
   completionNotificationsEnabled?: boolean;
   settingsSection?: string;
@@ -187,6 +190,12 @@ function uiPreferences(value: unknown): UiPreferences {
     !Array.isArray(input.draft)
   ) {
     result.draft = input.draft as Record<string, unknown>;
+  }
+  const upscaleSettings = globalUpscaleSettingsSchema.safeParse(
+    input.upscaleSettings,
+  );
+  if (upscaleSettings.success) {
+    result.upscaleSettings = upscaleSettings.data;
   }
   if (typeof input.blurSensitive === "boolean") {
     result.blurSensitive = input.blurSensitive;
@@ -222,6 +231,7 @@ function uiPreferencesPatch(value: unknown): UiPreferences {
   const input = value as Record<string, unknown>;
   const supported = new Set([
     "draft",
+    "upscaleSettings",
     "blurSensitive",
     "completionNotificationsEnabled",
     "settingsSection",

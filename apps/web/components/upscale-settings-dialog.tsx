@@ -2,6 +2,10 @@
 
 import * as React from "react";
 import { LoaderCircle, Maximize2 } from "lucide-react";
+import {
+  resolveGlobalUpscaleSettings,
+  useUiPreferences,
+} from "@/components/ui-preferences-provider";
 import { UpscaleSettingsFields } from "@/components/upscale-settings-fields";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,34 +19,33 @@ import type { GenerationDraft } from "@/lib/types";
 
 interface UpscaleSettingsDialogProps {
   open: boolean;
-  initialSettings: GenerationDraft["upscale"];
   onOpenChange: (open: boolean) => void;
   onSubmit: (settings: GenerationDraft["upscale"]) => Promise<void>;
 }
 
 export function UpscaleSettingsDialog({
   open,
-  initialSettings,
   onOpenChange,
   onSubmit,
 }: UpscaleSettingsDialogProps) {
-  const [settings, setSettings] = React.useState(initialSettings);
+  const { preferences, updatePreferences } = useUiPreferences();
+  const initialSettings = React.useMemo(
+    () => resolveGlobalUpscaleSettings(preferences),
+    [preferences],
+  );
+  const [settings, setSettings] = React.useState<GenerationDraft["upscale"]>({
+    ...initialSettings,
+    enabled: true,
+  });
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState("");
 
   React.useEffect(() => {
     if (!open) return;
-    setSettings({ ...initialSettings });
+    setSettings({ ...initialSettings, enabled: true });
     setSubmitting(false);
     setError("");
-  }, [
-    initialSettings.denoise,
-    initialSettings.enabled,
-    initialSettings.method,
-    initialSettings.scale,
-    initialSettings.steps,
-    open,
-  ]);
+  }, [initialSettings, open]);
 
   function handleOpenChange(nextOpen: boolean) {
     if (submitting) return;
@@ -56,6 +59,14 @@ export function UpscaleSettingsDialog({
     setError("");
     try {
       await onSubmit(settings);
+      updatePreferences({
+        upscaleSettings: {
+          method: settings.method,
+          scale: settings.scale,
+          steps: settings.steps,
+          denoise: settings.denoise,
+        },
+      });
       setSubmitting(false);
       onOpenChange(false);
     } catch (submitError) {

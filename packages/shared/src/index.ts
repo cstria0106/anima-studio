@@ -109,6 +109,10 @@ export const upscaleSettingsSchema = z.object({
   denoise: z.number().min(0).max(1).default(0.8),
 });
 
+export const globalUpscaleSettingsSchema = upscaleSettingsSchema.omit({
+  enabled: true,
+});
+
 export const upscaleJobRequestSchema = z
   .object({
     outputId: z.string().min(1).optional(),
@@ -182,6 +186,9 @@ export const generationConfigSchema = z.object({
 });
 
 export type GenerationConfig = z.infer<typeof generationConfigSchema>;
+export type GlobalUpscaleSettings = z.infer<
+  typeof globalUpscaleSettingsSchema
+>;
 export type LoraSelection = z.infer<typeof loraSelectionSchema>;
 export type JobStatus = (typeof jobStatuses)[number];
 export type JobPhase = (typeof jobPhases)[number];

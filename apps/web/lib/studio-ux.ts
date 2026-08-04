@@ -1,7 +1,9 @@
 import type {
   CapabilitiesResponse,
   GenerationDraft,
+  GlobalUpscaleSettings,
   HealthResponse,
+  StudioJob,
   StudioOptions,
 } from "@/lib/types";
 
@@ -72,6 +74,24 @@ export function loadSeedIntoDraft(
       seed,
     },
   };
+}
+
+export function restoreImageSettings(
+  job: StudioJob,
+  outputId: string,
+  globalUpscaleSettings: GlobalUpscaleSettings,
+): GenerationDraft {
+  const output = job.outputs.find((item) => item.id === outputId);
+  if (!output) {
+    throw new Error("선택한 이미지의 생성 설정을 찾지 못했습니다.");
+  }
+
+  const restored = structuredClone(job.settings);
+  restored.upscale =
+    output.kind === "upscale" || output.kind === "upscaled"
+      ? { ...restored.upscale, enabled: true }
+      : { ...globalUpscaleSettings, enabled: false };
+  return restored;
 }
 
 export function buildPreflightIssues({
