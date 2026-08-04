@@ -433,7 +433,7 @@ export function HistoryView({
     if (
       job.status !== "completed" ||
       job.settings.upscale.enabled ||
-      output?.kind !== "base"
+      (output?.kind !== "base" && output?.kind !== "inpaint")
     ) {
       throw new Error("이 이미지는 업스케일할 수 없습니다.");
     }
