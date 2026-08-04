@@ -829,6 +829,7 @@ export function StudioShell() {
     }
 
     setDraft(restored);
+    setInpaint(emptyInpaintWorkspace());
     setToast({
       type: "success",
       message: "히스토리 설정을 생성 화면에 불러왔습니다.",
