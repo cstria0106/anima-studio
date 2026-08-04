@@ -451,9 +451,13 @@ export class JobService {
       );
     }
 
+    const requestedSeed = parsedRequest.data.seed;
     let config = generationConfigSchema.parse({
       ...sourceJob.config,
-      seed: { mode: "fixed", value: source.actualSeed },
+      seed:
+        requestedSeed.mode === "source"
+          ? { mode: "fixed", value: source.actualSeed }
+          : requestedSeed,
       instantLora: {
         ...sourceJob.config.instantLora,
         training: {
@@ -468,6 +472,11 @@ export class JobService {
         ...parsedRequest.data.upscale,
         enabled: true,
       },
+    });
+    const actualSeed = resolveSeed(config);
+    config = generationConfigSchema.parse({
+      ...config,
+      seed: { mode: "fixed", value: actualSeed },
     });
 
     const report = await this.capabilities.report();
@@ -497,7 +506,7 @@ export class JobService {
       sourceOutputId: sourceOutput.id,
       clientId: this.clientId,
       config,
-      actualSeed: source.actualSeed,
+      actualSeed,
       assetIds: assetRows.map((asset) => asset.id),
       createdAt,
     });
@@ -510,13 +519,13 @@ export class JobService {
       payload: {
         parentJobId: sourceJobId,
         sourceOutputId: sourceOutput.id,
-        actualSeed: source.actualSeed,
+        actualSeed,
       },
     });
 
     return this.submitCreatedJob({
       jobId,
-      actualSeed: source.actualSeed,
+      actualSeed,
       assetRows,
       build: async (inputNames) => {
         const uploadedBase = await this.storage.uploadOutputToComfy(
@@ -533,7 +542,7 @@ export class JobService {
           config,
           inputNames,
           uploadedBase.inputName,
-          source.actualSeed,
+          actualSeed,
         );
       },
       extraData: {

@@ -34,7 +34,7 @@ import {
   Dialog,
   DialogContent,
 } from "@/components/ui/dialog";
-import type { GenerationDraft, StudioJob } from "@/lib/types";
+import type { GlobalUpscaleSettings, StudioJob } from "@/lib/types";
 import { cn, formatDate, outputUrl } from "@/lib/utils";
 
 export interface HistoryDetailDialogProps {
@@ -50,7 +50,7 @@ export interface HistoryDetailDialogProps {
   onLoadSeed: (seed: number) => void;
   onUpscale: (
     job: StudioJob,
-    settings: GenerationDraft["upscale"],
+    settings: GlobalUpscaleSettings,
     outputId: string,
   ) => Promise<void>;
   onDelete: (outputId: string) => Promise<boolean>;
@@ -383,6 +383,7 @@ export function HistoryDetailDialog({
 
       <UpscaleSettingsDialog
         open={upscaleOpen}
+        sourceSeed={job.settings.sampling.seed}
         onOpenChange={setUpscaleOpen}
         onSubmit={(settings) =>
           output ? onUpscale(job, settings, output.id) : Promise.resolve()

@@ -111,13 +111,26 @@ export const upscaleSettingsSchema = z.object({
   denoise: z.number().min(0).max(1).default(0.8),
 });
 
-export const globalUpscaleSettingsSchema = upscaleSettingsSchema.omit({
-  enabled: true,
-});
+export const upscaleSeedSchema = z
+  .object({
+    mode: z.enum(["source", "random", "fixed"]).default("source"),
+    value: z
+      .number()
+      .int()
+      .min(0)
+      .max(Number.MAX_SAFE_INTEGER)
+      .default(42),
+  })
+  .default({});
+
+export const globalUpscaleSettingsSchema = upscaleSettingsSchema
+  .omit({ enabled: true })
+  .extend({ seed: upscaleSeedSchema });
 
 export const upscaleJobRequestSchema = z
   .object({
     outputId: z.string().min(1).optional(),
+    seed: upscaleSeedSchema,
     upscale: upscaleSettingsSchema
       .omit({ enabled: true })
       .partial()
@@ -208,6 +221,7 @@ export type GenerationConfig = z.infer<typeof generationConfigSchema>;
 export type GlobalUpscaleSettings = z.infer<
   typeof globalUpscaleSettingsSchema
 >;
+export type UpscaleSeed = z.infer<typeof upscaleSeedSchema>;
 export type LoraSelection = z.infer<typeof loraSelectionSchema>;
 export type JobStatus = (typeof jobStatuses)[number];
 export type JobPhase = (typeof jobPhases)[number];

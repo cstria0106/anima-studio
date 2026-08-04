@@ -624,6 +624,7 @@ describe("Anima Studio API", () => {
           scale: 2,
           steps: 24,
           denoise: 0.4,
+          seed: { mode: "fixed", value: 9876 },
         },
         blurSensitive: false,
       }),
@@ -646,6 +647,7 @@ describe("Anima Studio API", () => {
           scale: 2,
           steps: 24,
           denoise: 0.4,
+          seed: { mode: "fixed", value: 9876 },
         },
         blurSensitive: false,
         settingsSection: "runtime",
@@ -661,6 +663,7 @@ describe("Anima Studio API", () => {
         scale: 2,
         steps: 24,
         denoise: 0.4,
+        seed: { mode: "fixed", value: 9876 },
       },
       blurSensitive: false,
       settingsSection: "runtime",
@@ -1879,7 +1882,7 @@ describe("Anima Studio API", () => {
     );
   });
 
-  test("queues an upscale-only child job with the original actual seed", async () => {
+  test("resolves source, fixed, and random seeds for upscale-only child jobs", async () => {
     const { runtime: api, comfy } = await runtime();
     const assetId = await uploadReference(api);
     const config: GenerationConfig = {
@@ -1966,6 +1969,59 @@ describe("Anima Studio API", () => {
     expect(comfy.queuedPrompts.at(-1)?.["3"]?.class_type).toBe(
       "SaveImage",
     );
+
+    comfy.queuedPromptId = "prompt-upscale-fixed";
+    const fixedResponse = await api.app.request(
+      `/api/jobs/${source.job.id}/upscale`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          seed: { mode: "fixed", value: 987654 },
+        }),
+      },
+    );
+    expect(fixedResponse.status).toBe(202);
+    const fixedResult = (await fixedResponse.json()) as {
+      job: { actualSeed: number; config: GenerationConfig };
+    };
+    expect(fixedResult.job).toMatchObject({
+      actualSeed: 987654,
+      config: { seed: { mode: "fixed", value: 987654 } },
+    });
+
+    comfy.queuedPromptId = "prompt-upscale-random";
+    const randomResponse = await api.app.request(
+      `/api/jobs/${source.job.id}/upscale`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ seed: { mode: "random", value: 42 } }),
+      },
+    );
+    expect(randomResponse.status).toBe(202);
+    const randomResult = (await randomResponse.json()) as {
+      job: { actualSeed: number; config: GenerationConfig };
+    };
+    expect(Number.isSafeInteger(randomResult.job.actualSeed)).toBeTrue();
+    expect(randomResult.job.actualSeed).toBeGreaterThanOrEqual(0);
+    expect(randomResult.job.config.seed).toEqual({
+      mode: "fixed",
+      value: randomResult.job.actualSeed,
+    });
+
+    const invalidSeed = await api.app.request(
+      `/api/jobs/${source.job.id}/upscale`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          seed: { mode: "fixed", value: Number.MAX_SAFE_INTEGER + 1 },
+        }),
+      },
+    );
+    expect(invalidSeed.status).toBe(422);
+
     const sourceDelete = await api.app.request(
       `/api/jobs/${source.job.id}`,
       { method: "DELETE" },

@@ -99,10 +99,12 @@ export function restoreImageSettings(
   }
 
   const restored = structuredClone(job.settings);
+  const { seed: _upscaleSeed, ...generationUpscaleSettings } =
+    globalUpscaleSettings;
   restored.upscale =
     output.kind === "upscale" || output.kind === "upscaled"
       ? { ...restored.upscale, enabled: true }
-      : { ...globalUpscaleSettings, enabled: false };
+      : { ...generationUpscaleSettings, enabled: false };
   return restored;
 }
 

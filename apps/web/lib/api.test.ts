@@ -66,11 +66,11 @@ describe("upscale submission", () => {
     await upscaleJob(
       "source job",
       {
-        enabled: false,
         method: "bicubic",
         scale: 2.25,
         steps: 18,
         denoise: 0.31,
+        seed: { mode: "fixed", value: 123456 },
       },
       "base/output",
     );
@@ -79,6 +79,7 @@ describe("upscale submission", () => {
     expect(requestedMethod).toBe("POST");
     expect(submittedBody).toEqual({
       outputId: "base/output",
+      seed: { mode: "fixed", value: 123456 },
       upscale: {
         method: "bicubic",
         scale: 2.25,
@@ -86,6 +87,42 @@ describe("upscale submission", () => {
         denoise: 0.31,
       },
     });
+  });
+
+  test("submits source and random upscale seed modes", async () => {
+    const submittedBodies: unknown[] = [];
+    globalThis.fetch = (async (_input, init) => {
+      submittedBodies.push(JSON.parse(String(init?.body)));
+      return new Response(
+        JSON.stringify({
+          job: { id: "upscale-child", settings: DEFAULT_DRAFT },
+        }),
+        { headers: { "content-type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    const baseSettings = {
+      method: "bilinear" as const,
+      scale: 1.5,
+      steps: 30,
+      denoise: 0.8,
+    };
+    await upscaleJob("source", {
+      ...baseSettings,
+      seed: { mode: "source", value: 42 },
+    });
+    await upscaleJob("source", {
+      ...baseSettings,
+      seed: { mode: "random", value: 777 },
+    });
+
+    const submittedSeeds = submittedBodies.map(
+      (body) => (body as { seed: unknown }).seed,
+    );
+    expect(submittedSeeds).toEqual([
+      { mode: "source", value: 42 },
+      { mode: "random", value: 777 },
+    ]);
   });
 });
 

@@ -1259,6 +1259,7 @@ export function HistoryView({
 
       <UpscaleSettingsDialog
         open={Boolean(upscaleTarget)}
+        sourceSeed={upscaleTarget?.job.settings.sampling.seed ?? 42}
         onOpenChange={(open) => {
           if (!open) setUpscaleTarget(null);
         }}

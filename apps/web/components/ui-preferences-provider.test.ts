@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_DRAFT } from "@/lib/types";
 import {
+  normalizeGlobalUpscaleSettings,
   normalizeGenerationDraft,
   resolveGlobalUpscaleSettings,
 } from "./ui-preferences-provider";
@@ -44,6 +45,17 @@ describe("normalizeGenerationDraft", () => {
 });
 
 describe("global upscale settings", () => {
+  test("fills seed defaults in legacy global settings", () => {
+    expect(
+      normalizeGlobalUpscaleSettings({
+        method: "bilinear",
+        scale: 1.5,
+        steps: 30,
+        denoise: 0.8,
+      }),
+    ).toMatchObject({ seed: { mode: "source", value: 42 } });
+  });
+
   test("falls back to the saved generation draft until a global value exists", () => {
     const draft = structuredClone(DEFAULT_DRAFT);
     draft.upscale = {
@@ -59,6 +71,7 @@ describe("global upscale settings", () => {
       scale: 2,
       steps: 18,
       denoise: 0.45,
+      seed: { mode: "source", value: 42 },
     });
   });
 
@@ -71,6 +84,7 @@ describe("global upscale settings", () => {
           scale: 1.75,
           steps: 20,
           denoise: 0.3,
+          seed: { mode: "fixed", value: 9876 },
         },
       }),
     ).toEqual({
@@ -78,6 +92,7 @@ describe("global upscale settings", () => {
       scale: 1.75,
       steps: 20,
       denoise: 0.3,
+      seed: { mode: "fixed", value: 9876 },
     });
   });
 });

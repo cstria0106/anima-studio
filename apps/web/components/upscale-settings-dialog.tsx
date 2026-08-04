@@ -1,13 +1,15 @@
 "use client";
 
 import * as React from "react";
-import { LoaderCircle, Maximize2 } from "lucide-react";
+import { Dices, LoaderCircle, Maximize2 } from "lucide-react";
 import {
   resolveGlobalUpscaleSettings,
   useUiPreferences,
 } from "@/components/ui-preferences-provider";
 import { UpscaleSettingsFields } from "@/components/upscale-settings-fields";
+import { SearchableSelect } from "@/components/searchable-select";
 import { Button } from "@/components/ui/button";
+import { CommittedNumberField } from "@/components/ui/committed-number-field";
 import {
   Dialog,
   DialogContent,
@@ -15,16 +17,25 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { GenerationDraft } from "@/lib/types";
+import { Field } from "@/components/ui/field";
+import type { GlobalUpscaleSettings } from "@/lib/types";
+
+const SEED_MODE_OPTIONS = [
+  { name: "원본 시드", value: "source" },
+  { name: "랜덤", value: "random" },
+  { name: "직접 입력", value: "fixed" },
+];
 
 interface UpscaleSettingsDialogProps {
   open: boolean;
+  sourceSeed: number;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (settings: GenerationDraft["upscale"]) => Promise<void>;
+  onSubmit: (settings: GlobalUpscaleSettings) => Promise<void>;
 }
 
 export function UpscaleSettingsDialog({
   open,
+  sourceSeed,
   onOpenChange,
   onSubmit,
 }: UpscaleSettingsDialogProps) {
@@ -33,16 +44,15 @@ export function UpscaleSettingsDialog({
     () => resolveGlobalUpscaleSettings(preferences),
     [preferences],
   );
-  const [settings, setSettings] = React.useState<GenerationDraft["upscale"]>({
-    ...initialSettings,
-    enabled: true,
-  });
+  const [settings, setSettings] =
+    React.useState<GlobalUpscaleSettings>(initialSettings);
+  const seedModeId = `upscale-seed-mode-${React.useId()}`;
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState("");
 
   React.useEffect(() => {
     if (!open) return;
-    setSettings({ ...initialSettings, enabled: true });
+    setSettings(initialSettings);
     setSubmitting(false);
     setError("");
   }, [initialSettings, open]);
@@ -60,12 +70,7 @@ export function UpscaleSettingsDialog({
     try {
       await onSubmit(settings);
       updatePreferences({
-        upscaleSettings: {
-          method: settings.method,
-          scale: settings.scale,
-          steps: settings.steps,
-          denoise: settings.denoise,
-        },
+        upscaleSettings: settings,
       });
       setSubmitting(false);
       onOpenChange(false);
@@ -102,9 +107,64 @@ export function UpscaleSettingsDialog({
 
           <div className="grid gap-4 px-5 py-5 sm:grid-cols-2">
             <UpscaleSettingsFields
-              value={settings}
+              value={{ ...settings, enabled: true }}
               disabled={submitting}
-              onChange={setSettings}
+              onChange={(upscale) =>
+                setSettings({
+                  ...settings,
+                  method: upscale.method as GlobalUpscaleSettings["method"],
+                  scale: upscale.scale,
+                  steps: upscale.steps,
+                  denoise: upscale.denoise,
+                })
+              }
+            />
+            <Field label="시드 방식" htmlFor={seedModeId}>
+              <SearchableSelect
+                id={seedModeId}
+                value={settings.seed.mode}
+                options={SEED_MODE_OPTIONS}
+                onChange={(mode) =>
+                  setSettings({
+                    ...settings,
+                    seed: {
+                      ...settings.seed,
+                      mode: mode as GlobalUpscaleSettings["seed"]["mode"],
+                    },
+                  })
+                }
+                placeholder="시드 방식"
+                disabled={submitting}
+              />
+            </Field>
+            <CommittedNumberField
+              label={
+                <span className="inline-flex items-center gap-2">
+                  <Dices className="size-3.5 text-pink-300" />
+                  시드
+                </span>
+              }
+              hint={
+                settings.seed.mode === "source"
+                  ? `원본: ${sourceSeed}`
+                  : settings.seed.mode === "random"
+                    ? "실행 시 생성"
+                    : undefined
+              }
+              value={
+                settings.seed.mode === "source"
+                  ? sourceSeed
+                  : settings.seed.value
+              }
+              min={0}
+              max={Number.MAX_SAFE_INTEGER}
+              disabled={submitting || settings.seed.mode !== "fixed"}
+              onChange={(value) =>
+                setSettings({
+                  ...settings,
+                  seed: { ...settings.seed, value: Math.round(value) },
+                })
+              }
             />
           </div>
 

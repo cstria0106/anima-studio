@@ -26,6 +26,7 @@ import { cancelJob, upscaleJob } from "@/lib/api";
 import type {
   CapabilitiesResponse,
   GenerationDraft,
+  GlobalUpscaleSettings,
   JobStatus,
   StudioJob,
 } from "@/lib/types";
@@ -177,7 +178,7 @@ export function JobPanel({
     }
   }
 
-  async function handleUpscale(settings: GenerationDraft["upscale"]) {
+  async function handleUpscale(settings: GlobalUpscaleSettings) {
     if (!job || !canUpscaleResult) return;
     setActionError("");
     const nextJob = await upscaleJob(
@@ -470,6 +471,7 @@ export function JobPanel({
       {job ? (
         <UpscaleSettingsDialog
           open={upscaleOpen}
+          sourceSeed={job.settings.sampling.seed}
           onOpenChange={setUpscaleOpen}
           onSubmit={handleUpscale}
         />

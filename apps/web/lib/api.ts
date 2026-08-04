@@ -9,6 +9,7 @@ import {
   DEFAULT_DRAFT,
   EMPTY_OPTIONS,
   type GenerationDraft,
+  type GlobalUpscaleSettings,
   type HealthResponse,
   type HuggingFaceAnimaInstallRequest,
   type HuggingFaceAnimaProviderResponse,
@@ -1102,7 +1103,7 @@ export async function cancelJob(id: string) {
 
 export async function upscaleJob(
   id: string,
-  settings: GenerationDraft["upscale"],
+  settings: GlobalUpscaleSettings,
   outputId?: string,
 ) {
   const raw = await apiFetch<
@@ -1111,6 +1112,7 @@ export async function upscaleJob(
     method: "POST",
     body: JSON.stringify({
       ...(outputId ? { outputId } : {}),
+      seed: settings.seed,
       upscale: {
         method: settings.method,
         scale: settings.scale,

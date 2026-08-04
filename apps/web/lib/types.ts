@@ -1,3 +1,5 @@
+import type { GlobalUpscaleSettings as SharedGlobalUpscaleSettings } from "@anima/shared";
+
 export type {
   ManagedModelInstallationDto as ManagedModelInstallation,
 } from "@anima/shared";
@@ -111,10 +113,7 @@ export interface UiPreferences {
   historySidebarWidth?: number;
 }
 
-export type GlobalUpscaleSettings = Omit<
-  GenerationDraft["upscale"],
-  "enabled"
->;
+export type GlobalUpscaleSettings = SharedGlobalUpscaleSettings;
 
 export const DEFAULT_DRAFT: GenerationDraft = {
   referenceAssets: [],

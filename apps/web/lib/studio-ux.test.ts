@@ -196,17 +196,21 @@ describe("image settings restoration", () => {
     ],
   };
   const globalUpscale = {
-    method: "area",
+    method: "area" as const,
     scale: 1.75,
     steps: 22,
     denoise: 0.35,
+    seed: { mode: "source" as const, value: 42 },
   };
 
   test("disables upscale and applies global fields for a base image", () => {
     const restored = restoreImageSettings(job, "base-1", globalUpscale);
 
     expect(restored.upscale).toEqual({
-      ...globalUpscale,
+      method: globalUpscale.method,
+      scale: globalUpscale.scale,
+      steps: globalUpscale.steps,
+      denoise: globalUpscale.denoise,
       enabled: false,
     });
     expect(job.settings.upscale).toEqual({
