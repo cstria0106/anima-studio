@@ -5,17 +5,54 @@ export interface PromptCommentRange {
   end: number;
 }
 
-/** Returns every `//` line-comment range without including its line break. */
+/** Returns every line-comment and block-comment range in a prompt. */
 export function getPromptCommentRanges(value: string): PromptCommentRange[] {
-  return Array.from(value.matchAll(/\/\/[^\r\n]*/g), (match) => ({
-    start: match.index,
-    end: match.index + match[0].length,
-  }));
+  const ranges: PromptCommentRange[] = [];
+  let index = 0;
+
+  while (index < value.length) {
+    if (value.startsWith("//", index)) {
+      let end = index + 2;
+      while (
+        end < value.length &&
+        value[end] !== "\r" &&
+        value[end] !== "\n"
+      ) {
+        end += 1;
+      }
+      ranges.push({ start: index, end });
+      index = end;
+      continue;
+    }
+
+    if (value.startsWith("/*", index)) {
+      const closingDelimiter = value.indexOf("*/", index + 2);
+      const end =
+        closingDelimiter < 0 ? value.length : closingDelimiter + "*/".length;
+      ranges.push({ start: index, end });
+      index = end;
+      continue;
+    }
+
+    index += 1;
+  }
+
+  return ranges;
 }
 
-/** Removes `//` line comments while preserving the prompt's line structure. */
+/** Removes prompt comments while preserving their line breaks. */
 export function stripPromptComments(value: string): string {
-  return value.replace(/\/\/[^\r\n]*/g, "");
+  const ranges = getPromptCommentRanges(value);
+  let result = "";
+  let offset = 0;
+
+  for (const range of ranges) {
+    result += value.slice(offset, range.start);
+    result += value.slice(range.start, range.end).replace(/[^\r\n]/g, "");
+    offset = range.end;
+  }
+
+  return result + value.slice(offset);
 }
 
 export function isPositionInPromptComment(

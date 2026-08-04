@@ -35,7 +35,8 @@ export function formatDate(value?: string | number | Date | null) {
 
 export function getTagAtCursor(value: string, cursor: number) {
   const position = clamp(cursor, 0, value.length);
-  const previousSeparator =
+  const commentRanges = getPromptCommentRanges(value);
+  let previousSeparator =
     position === 0
       ? -1
       : Math.max(
@@ -43,10 +44,16 @@ export function getTagAtCursor(value: string, cursor: number) {
           value.lastIndexOf("\n", position - 1),
           value.lastIndexOf("\r", position - 1),
         );
+  const previousComment = commentRanges.findLast(
+    (range) => range.end <= position,
+  );
+  if (previousComment) {
+    previousSeparator = Math.max(previousSeparator, previousComment.end - 1);
+  }
   const nextSeparators = [",", "\n", "\r"]
     .map((separator) => value.indexOf(separator, position))
     .filter((index) => index >= 0);
-  const nextComment = getPromptCommentRanges(value).find(
+  const nextComment = commentRanges.find(
     (range) => range.start >= position,
   );
   if (nextComment) nextSeparators.push(nextComment.start);
@@ -75,7 +82,10 @@ export function replaceTagAtCursor(
     before.length + leadingSpace.length + replacement.length;
 
   if (tag.end < value.length) {
-    if (value.startsWith("//", tag.end)) {
+    const commentStartsAtTagEnd = getPromptCommentRanges(value).some(
+      (range) => range.start === tag.end,
+    );
+    if (commentStartsAtTagEnd) {
       const commentSpacing =
         value.slice(tag.start, tag.end).match(/[^\S\r\n]*$/)?.[0] || " ";
       return {

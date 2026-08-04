@@ -68,6 +68,26 @@ describe("tag prompt editing", () => {
     });
   });
 
+  test("keeps block comments outside tags completed on either side", () => {
+    const commented = "black ha /* compare styles */ long ha";
+    const firstCursor = commented.indexOf("black ha") + "black ha".length;
+
+    expect(replaceTagAtCursor(commented, firstCursor, "black hair")).toEqual({
+      value: "black hair /* compare styles */ long ha",
+      cursor: "black hair".length,
+    });
+
+    const secondCursor = commented.lastIndexOf("long ha") + "long ha".length;
+    expect(getTagAtCursor(commented, secondCursor)).toMatchObject({
+      tag: "long ha",
+      query: "long ha",
+    });
+    expect(replaceTagAtCursor(commented, secondCursor, "long hair")).toEqual({
+      value: "black ha /* compare styles */ long hair, ",
+      cursor: "black ha /* compare styles */ long hair, ".length,
+    });
+  });
+
   test("uses line breaks as tag boundaries and adds a comma before them", () => {
     const multiline = "black hair\nlong hair\ncat ears";
     const cursor = multiline.indexOf("long") + "long".length;
@@ -141,6 +161,7 @@ describe("tag prompt editing", () => {
   test("recognizes equivalent tags already present in the prompt", () => {
     expect(promptHasTag("blue_eyes, long hair", "Blue Eyes")).toBeTrue();
     expect(promptHasTag("blue eyes // long hair", "long hair")).toBeFalse();
+    expect(promptHasTag("blue eyes /* long hair */", "long hair")).toBeFalse();
   });
 
   test("appends a recognized tag using the prompt's comma convention", () => {
@@ -162,6 +183,9 @@ describe("tag prompt editing", () => {
     expect(appendPromptTag("blue eyes // keep this", "long hair")).toBe(
       "blue eyes // keep this\nlong hair, ",
     );
+    expect(appendPromptTag("blue eyes /* keep this */", "long hair")).toBe(
+      "blue eyes /* keep this */\nlong hair, ",
+    );
   });
 });
 
@@ -182,7 +206,7 @@ describe("autocomplete keyboard handling", () => {
   });
 });
 
-describe("prompt line comments", () => {
+describe("prompt comments", () => {
   const prompt = "red eyes, // experiment\nlong hair // optional";
 
   test("finds comment text without consuming line breaks", () => {
@@ -209,5 +233,45 @@ describe("prompt line comments", () => {
     expect(
       isPositionInPromptComment(prompt, prompt.indexOf("long hair")),
     ).toBeFalse();
+  });
+
+  test("finds inline, multiline, consecutive, and unfinished block comments", () => {
+    const blockPrompt =
+      "red /* inline */ eyes /* first *//* second */\r\n/* multi\nline */ tail /* unfinished";
+    const comments = [
+      "/* inline */",
+      "/* first */",
+      "/* second */",
+      "/* multi\nline */",
+      "/* unfinished",
+    ];
+
+    expect(getPromptCommentRanges(blockPrompt)).toEqual(
+      comments.map((comment) => ({
+        start: blockPrompt.indexOf(comment),
+        end: blockPrompt.indexOf(comment) + comment.length,
+      })),
+    );
+    expect(stripPromptComments(blockPrompt)).toBe("red  eyes \r\n\n tail ");
+    expect(
+      isPositionInPromptComment(
+        blockPrompt,
+        blockPrompt.indexOf("multi") + "multi".length,
+      ),
+    ).toBeTrue();
+    expect(isPositionInPromptComment(blockPrompt, blockPrompt.indexOf("tail")))
+      .toBeFalse();
+  });
+
+  test("uses the first comment syntax encountered and does not nest blocks", () => {
+    const mixed = [
+      "/* block // still block */ visible",
+      "// line /* still line */",
+      "/* outer /* inner */ visible */",
+    ].join("\n");
+
+    expect(stripPromptComments(mixed)).toBe(
+      " visible\n\n visible */",
+    );
   });
 });
