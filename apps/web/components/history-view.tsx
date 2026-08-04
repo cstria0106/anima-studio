@@ -138,7 +138,12 @@ export function HistoryDetailDialog({
               <Dices /> 시드 불러오기
             </Button>
             {canUpscale ? (
-              <Button type="button" size="sm" onClick={() => setUpscaleOpen(true)}>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setUpscaleOpen(true)}
+              >
                 <Maximize2 /> 업스케일
               </Button>
             ) : null}
