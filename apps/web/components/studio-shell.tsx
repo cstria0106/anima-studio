@@ -65,6 +65,7 @@ import {
 import {
   emptyInpaintWorkspace,
   initialInpaintDraft,
+  inpaintWorkspaceFromJob,
   inpaintWorkspaceFromOutput,
   preparedInpaintSubmission,
   type InpaintWorkspaceDraft,
@@ -786,13 +787,32 @@ export function StudioShell() {
   }
 
   function loadSettings(job: StudioJob, outputId: string) {
-    setDraft(
-      restoreImageSettings(
-        job,
-        outputId,
-        resolveGlobalUpscaleSettings(preferences),
-      ),
+    const restored = restoreImageSettings(
+      job,
+      outputId,
+      resolveGlobalUpscaleSettings(preferences),
     );
+    if (job.inpaint) {
+      const workspace = inpaintWorkspaceFromJob(job);
+      const crop = workspace.source!.crop;
+      setDraft({
+        ...restored,
+        sampling: {
+          ...restored.sampling,
+          width: crop.width,
+          height: crop.height,
+        },
+        upscale: { ...restored.upscale, enabled: false },
+      });
+      setInpaint(workspace);
+      setToast({
+        type: "success",
+        message: "인페인트 원본과 설정을 생성 화면에 불러왔습니다.",
+      });
+      return;
+    }
+
+    setDraft(restored);
     setToast({
       type: "success",
       message: "히스토리 설정을 생성 화면에 불러왔습니다.",
@@ -800,6 +820,10 @@ export function StudioShell() {
   }
 
   function openInpaint(job: StudioJob, outputId: string) {
+    if (job.inpaint) {
+      loadSettings(job, outputId);
+      return;
+    }
     const output = job.outputs.find((item) => item.id === outputId);
     if (!output) {
       setToast({ type: "error", message: "선택한 원본 이미지를 찾지 못했습니다." });

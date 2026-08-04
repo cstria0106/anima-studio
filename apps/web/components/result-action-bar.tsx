@@ -71,7 +71,7 @@ export function ResultActionBar({
           onClick={() => void run("load", onLoadSettings)}
         >
           {icon("load", <Copy />)}
-          {job.kind === "inpaint" ? "설정만 불러오기" : "설정 불러오기"}
+          설정 불러오기
         </Button>
         <Button
           type="button"
@@ -97,7 +97,7 @@ export function ResultActionBar({
             업스케일
           </Button>
         ) : null}
-        {onInpaint ? (
+        {onInpaint && !job.inpaint ? (
           <Button
             type="button"
             size="sm"
@@ -107,7 +107,7 @@ export function ResultActionBar({
             onClick={() => onInpaint(job)}
           >
             <Paintbrush />
-            {job.kind === "inpaint" ? "마스크·설정 재편집" : "인페인트"}
+            인페인트
           </Button>
         ) : null}
       </div>

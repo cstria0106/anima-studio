@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   centeredInpaintCrop,
   emptyInpaintWorkspace,
+  inpaintWorkspaceFromJob,
   inpaintWorkspaceFromOutput,
   initialInpaintDraft,
   maskHasPaint,
@@ -63,24 +64,12 @@ describe("inpaint image preparation", () => {
     });
   });
 
-  test("restores the selected output and previous mask as a fixed revision source", () => {
-    const output = { id: "inpaint-output", kind: "inpaint", width: 768, height: 1024 };
-    const maskAsset = {
-      id: "mask-asset",
-      name: "mask.png",
-      url: "/api/assets/mask-asset",
-      status: "ready" as const,
-    };
+  test("starts a fresh inpaint workspace from the selected output", () => {
+    const output = { id: "base-output", kind: "base", width: 768, height: 1024 };
     const job = {
-      id: "inpaint-job",
-      kind: "inpaint",
+      id: "generation-job",
+      kind: "generation",
       settings: structuredClone(DEFAULT_DRAFT),
-      inpaint: {
-        inputSourceAsset: maskAsset,
-        rootSourceAsset: maskAsset,
-        maskAsset,
-        growMaskBy: 13,
-      },
     } as StudioJob;
 
     const workspace = inpaintWorkspaceFromOutput(job, output);
@@ -88,12 +77,60 @@ describe("inpaint image preparation", () => {
     expect(workspace).toMatchObject({
       source: { type: "output", output, crop: { width: 768, height: 1024 } },
       sourceStatus: "ready",
+      maskAsset: null,
+      growMaskBy: 6,
+    });
+    expect(workspace.revisionOfJobId).toBeUndefined();
+  });
+
+  test("restores the exact input source, mask, and lineage from an inpaint job", () => {
+    const inputSourceAsset = {
+      id: "input-source",
+      name: "input.png",
+      url: "/api/assets/input-source",
+      width: 768,
+      height: 1024,
+      status: "ready" as const,
+    };
+    const maskAsset = {
+      id: "mask-asset",
+      name: "mask.png",
+      url: "/api/assets/mask-asset",
+      status: "ready" as const,
+    };
+    const rootSourceAsset = {
+      ...inputSourceAsset,
+      id: "root-source",
+      name: "root.png",
+      url: "/api/assets/root-source",
+    };
+    const job = {
+      id: "inpaint-job",
+      kind: "inpaint",
+      settings: structuredClone(DEFAULT_DRAFT),
+      inpaint: {
+        inputSourceAsset,
+        rootSourceAsset,
+        maskAsset,
+        growMaskBy: 13,
+      },
+    } as StudioJob;
+
+    const workspace = inpaintWorkspaceFromJob(job);
+
+    expect(workspace).toMatchObject({
+      source: {
+        type: "asset",
+        asset: inputSourceAsset,
+        crop: { width: 768, height: 1024 },
+      },
+      sourceStatus: "ready",
       maskAsset,
       growMaskBy: 13,
       revisionOfJobId: "inpaint-job",
     });
     expect(preparedInpaintSubmission(workspace)).toEqual({
-      source: { type: "output", outputId: "inpaint-output" },
+      source: { type: "asset", assetId: "input-source" },
       maskAssetId: "mask-asset",
       growMaskBy: 13,
       revisionOfJobId: "inpaint-job",

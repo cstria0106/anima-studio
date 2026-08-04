@@ -491,18 +491,20 @@ export function MobileExecutionDock({
                         다운로드
                       </a>
                     </Button>
-                    <Button
-                      type="button"
-                      variant="soft"
-                      className="min-h-11 flex-1"
-                      onClick={() => {
-                        if (!job) return;
-                        setSheetOpen(false);
-                        onInpaint(job, selectedOutput.id);
-                      }}
-                    >
-                      <Paintbrush /> 인페인트
-                    </Button>
+                    {!job?.inpaint ? (
+                      <Button
+                        type="button"
+                        variant="soft"
+                        className="min-h-11 flex-1"
+                        onClick={() => {
+                          if (!job) return;
+                          setSheetOpen(false);
+                          onInpaint(job, selectedOutput.id);
+                        }}
+                      >
+                        <Paintbrush /> 인페인트
+                      </Button>
+                    ) : null}
                     <Button asChild variant="ghost" size="icon">
                       <a
                         href={outputUrl(

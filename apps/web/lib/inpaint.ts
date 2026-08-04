@@ -60,10 +60,29 @@ export function inpaintWorkspaceFromOutput(
       crop: centeredInpaintCrop(width, height),
     },
     sourceStatus: "ready",
-    maskAsset: job.inpaint?.maskAsset ?? null,
-    growMaskBy: job.inpaint?.growMaskBy ?? 6,
-    revisionOfJobId:
-      job.kind === "inpaint" && job.inpaint ? job.id : undefined,
+    maskAsset: null,
+    growMaskBy: 6,
+  };
+}
+
+export function inpaintWorkspaceFromJob(job: StudioJob): InpaintWorkspaceDraft {
+  if (!job.inpaint) {
+    throw new Error("인페인트 작업의 원본과 마스크를 찾지 못했습니다.");
+  }
+
+  const source = job.inpaint.inputSourceAsset;
+  const width = source.width ?? job.settings.sampling.width;
+  const height = source.height ?? job.settings.sampling.height;
+  return {
+    source: {
+      type: "asset",
+      asset: source,
+      crop: centeredInpaintCrop(width, height),
+    },
+    sourceStatus: "ready",
+    maskAsset: job.inpaint.maskAsset,
+    growMaskBy: job.inpaint.growMaskBy,
+    revisionOfJobId: job.id,
   };
 }
 

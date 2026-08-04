@@ -1125,9 +1125,7 @@ export function HistoryView({
                     }
                   >
                     <Settings2 />
-                    {menuImage.kind === "inpaint"
-                      ? "설정만 생성 화면에 불러오기"
-                      : "설정 불러오기"}
+                    설정 불러오기
                   </button>
                   <button
                     type="button"
@@ -1141,20 +1139,21 @@ export function HistoryView({
                   >
                     <Dices /> 시드 불러오기
                   </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs hover:bg-accent"
-                    onClick={() =>
-                      void runImageAction(menuImage, (job) => {
-                        onInpaint(job, menuImage.id);
-                        setMenu(null);
-                      })
-                    }
-                  >
-                    <Paintbrush />
-                    {menuImage.kind === "inpaint" ? "마스크·설정 재편집" : "인페인트"}
-                  </button>
+                  {menuImage.kind !== "inpaint" ? (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs hover:bg-accent"
+                      onClick={() =>
+                        void runImageAction(menuImage, (job) => {
+                          onInpaint(job, menuImage.id);
+                          setMenu(null);
+                        })
+                      }
+                    >
+                      <Paintbrush /> 인페인트
+                    </button>
+                  ) : null}
                   {menuImage.kind === "base" || menuImage.kind === "inpaint" ? (
                     <button
                       type="button"

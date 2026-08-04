@@ -124,7 +124,7 @@ export function HistoryDetailDialog({
               }}
             >
               <Settings2 />
-              {job.kind === "inpaint" ? "설정만 생성 화면에 불러오기" : "설정 불러오기"}
+              설정 불러오기
             </Button>
             <Button
               type="button"
@@ -142,7 +142,7 @@ export function HistoryDetailDialog({
                 <Maximize2 /> 업스케일
               </Button>
             ) : null}
-            {output ? (
+            {output && !job.inpaint ? (
               <Button
                 type="button"
                 size="sm"
@@ -153,7 +153,7 @@ export function HistoryDetailDialog({
                 }}
               >
                 <Paintbrush />
-                {job.kind === "inpaint" ? "마스크·설정 재편집" : "인페인트"}
+                인페인트
               </Button>
             ) : null}
             {output ? (
