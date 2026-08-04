@@ -41,6 +41,15 @@ function loadFileImage(file: File): Promise<HTMLImageElement> {
   });
 }
 
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new window.Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("마스크 미리보기를 읽지 못했습니다."));
+    image.src = src;
+  });
+}
+
 function canvasBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => {
     canvas.toBlob(
@@ -60,6 +69,43 @@ export function InpaintSourceCard({
   const operationRef = React.useRef(0);
   const [draggingOver, setDraggingOver] = React.useState(false);
   const [selectionError, setSelectionError] = React.useState("");
+  const [maskPreviewUrl, setMaskPreviewUrl] = React.useState("");
+
+  React.useEffect(() => {
+    const maskUrl = value.maskAsset?.url;
+    let disposed = false;
+    let objectUrl = "";
+    setMaskPreviewUrl("");
+    if (!maskUrl) return;
+
+    void loadImage(outputUrl(maskUrl))
+      .then(async (image) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        const context = canvas.getContext("2d")!;
+        context.drawImage(image, 0, 0);
+        const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+        for (let index = 0; index < pixels.data.length; index += 4) {
+          pixels.data[index] = 244;
+          pixels.data[index + 1] = 63;
+          pixels.data[index + 2] = 94;
+          pixels.data[index + 3] = 255 - pixels.data[index + 3];
+        }
+        context.putImageData(pixels, 0, 0);
+        objectUrl = URL.createObjectURL(await canvasBlob(canvas));
+        if (disposed) URL.revokeObjectURL(objectUrl);
+        else setMaskPreviewUrl(objectUrl);
+      })
+      .catch(() => {
+        if (!disposed) setMaskPreviewUrl("");
+      });
+
+    return () => {
+      disposed = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [value.maskAsset?.url]);
 
   const selectFile = React.useCallback(
     async (file: File) => {
@@ -230,14 +276,19 @@ export function InpaintSourceCard({
               unoptimized
               className="object-contain"
             />
+            {maskPreviewUrl ? (
+              <Image
+                src={maskPreviewUrl}
+                alt=""
+                aria-hidden
+                fill
+                unoptimized
+                className="pointer-events-none object-contain opacity-[0.45]"
+              />
+            ) : null}
             {busy ? (
               <div className="absolute inset-0 grid place-items-center bg-black/55">
                 <LoaderCircle className="size-6 animate-spin text-pink-300" />
-              </div>
-            ) : null}
-            {value.maskAsset ? (
-              <div className="absolute bottom-2 left-2 rounded-md border border-emerald-300/20 bg-emerald-950/80 px-2 py-1 text-[10px] text-emerald-100">
-                마스크 저장됨 · 확장 {value.growMaskBy}px
               </div>
             ) : null}
           </div>
@@ -245,13 +296,7 @@ export function InpaintSourceCard({
             <div className="flex items-start justify-between gap-3 text-xs">
               <div>
                 <p className="font-medium">{crop ? `${crop.width} × ${crop.height}` : "크기 확인 중"}</p>
-                {crop?.cropped ? (
-                  <p className="mt-1 text-amber-300">
-                    원본 {crop.sourceWidth}×{crop.sourceHeight}에서 중앙 크롭
-                  </p>
-                ) : (
-                  <p className="mt-1 text-muted-foreground">출력 크기는 원본에 고정됩니다.</p>
-                )}
+                <p className="mt-1 text-muted-foreground">출력 크기는 원본에 고정됩니다.</p>
               </div>
               <div className="flex gap-1">
                 <Button type="button" size="icon" variant="ghost" onClick={() => inputRef.current?.click()} title="원본 교체">
@@ -263,7 +308,7 @@ export function InpaintSourceCard({
               </div>
             </div>
             <Button id="inpaint-mask-edit" type="button" className="w-full" variant="soft" disabled={value.sourceStatus !== "ready"} onClick={onEditMask}>
-              <Paintbrush /> {value.maskAsset ? "마스크 다시 편집" : "마스크 편집"}
+              <Paintbrush /> 마스크 편집
             </Button>
           </div>
         </div>

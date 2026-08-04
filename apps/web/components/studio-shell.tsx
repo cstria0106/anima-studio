@@ -300,14 +300,7 @@ function CreateWorkspace({
 
               <Card id="create-section-inpaint">
                 <CardHeader className="pb-3">
-                  <SectionHeading
-                    title="인페인트"
-                    action={
-                      inpaintActive ? (
-                        <Badge variant="secondary">활성</Badge>
-                      ) : null
-                    }
-                  />
+                  <SectionHeading title="인페인트" />
                 </CardHeader>
                 <CardContent>
                   <InpaintSourceCard

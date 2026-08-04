@@ -3,12 +3,14 @@
 import * as React from "react";
 import {
   Brush,
+  Circle,
   Eraser,
   FlipHorizontal2,
   LoaderCircle,
   Maximize,
   Redo2,
   Save,
+  Square,
   Trash2,
   Undo2,
   ZoomIn,
@@ -53,6 +55,13 @@ interface LoadedSource {
   previewUrl: string;
 }
 
+type MaskTool = "brush" | "eraser" | "sphere" | "box";
+
+interface Point {
+  x: number;
+  y: number;
+}
+
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const image = new window.Image();
@@ -84,6 +93,8 @@ export function InpaintEditorDialog({
   const viewportRef = React.useRef<HTMLDivElement>(null);
   const pointersRef = React.useRef(new Map<number, { x: number; y: number }>());
   const previousPointRef = React.useRef<{ x: number; y: number } | null>(null);
+  const shapeStartRef = React.useRef<Point | null>(null);
+  const shapeBaseRef = React.useRef<ImageData | null>(null);
   const pinchRef = React.useRef<{
     distance: number;
     zoom: number;
@@ -95,7 +106,8 @@ export function InpaintEditorDialog({
   const maskInitializedRef = React.useRef(false);
   const [loaded, setLoaded] = React.useState<LoadedSource | null>(null);
   const [loadingError, setLoadingError] = React.useState("");
-  const [tool, setTool] = React.useState<"brush" | "eraser">("brush");
+  const [tool, setTool] = React.useState<MaskTool>("brush");
+  const [brushCursor, setBrushCursor] = React.useState<Point | null>(null);
   const [brushSize, setBrushSize] = React.useState(64);
   const [overlayOpacity, setOverlayOpacity] = React.useState(0.45);
   const [growMaskBy, setGrowMaskBy] = React.useState(initialGrowMaskBy);
@@ -261,6 +273,8 @@ export function InpaintEditorDialog({
       if (editing) return;
       if (event.key.toLowerCase() === "b") setTool("brush");
       if (event.key.toLowerCase() === "e") setTool("eraser");
+      if (event.key.toLowerCase() === "c") setTool("sphere");
+      if (event.key.toLowerCase() === "r") setTool("box");
       if (event.key === "0") fit();
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
         event.preventDefault();
@@ -317,6 +331,37 @@ export function InpaintEditorDialog({
     context.restore();
   };
 
+  const paintShape = (from: Point, to: Point) => {
+    const canvas = maskCanvasRef.current;
+    const context = canvas?.getContext("2d");
+    if (!canvas || !context || !shapeBaseRef.current) return;
+    context.putImageData(shapeBaseRef.current, 0, 0);
+    context.save();
+    context.fillStyle = "rgba(244, 63, 94, 1)";
+    const width = to.x - from.x;
+    const height = to.y - from.y;
+    if (Math.abs(width) < 1 || Math.abs(height) < 1) {
+      context.restore();
+      return;
+    }
+    context.beginPath();
+    if (tool === "sphere") {
+      context.ellipse(
+        from.x + width / 2,
+        from.y + height / 2,
+        Math.abs(width) / 2,
+        Math.abs(height) / 2,
+        0,
+        0,
+        Math.PI * 2,
+      );
+    } else {
+      context.rect(from.x, from.y, width, height);
+    }
+    context.fill();
+    context.restore();
+  };
+
   const commitMask = () => {
     const canvas = maskCanvasRef.current;
     if (!canvas) return;
@@ -351,10 +396,20 @@ export function InpaintEditorDialog({
     }
     const point = canvasPoint(event);
     previousPointRef.current = point;
-    paintDot(point);
+    if (tool === "sphere" || tool === "box") {
+      const canvas = maskCanvasRef.current;
+      if (!canvas) return;
+      shapeStartRef.current = point;
+      shapeBaseRef.current = canvas
+        .getContext("2d")!
+        .getImageData(0, 0, canvas.width, canvas.height);
+    } else {
+      paintDot(point);
+    }
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    setBrushCursor(canvasPoint(event));
     if (!pointersRef.current.has(event.pointerId)) return;
     pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (pointersRef.current.size >= 2 && pinchRef.current) {
@@ -377,7 +432,9 @@ export function InpaintEditorDialog({
       previousPointRef.current = point;
       return;
     }
-    if (previousPointRef.current) {
+    if (shapeStartRef.current) {
+      paintShape(shapeStartRef.current, canvasPoint(event));
+    } else if (previousPointRef.current) {
       const point = canvasPoint(event);
       paintLine(previousPointRef.current, point);
       previousPointRef.current = point;
@@ -386,8 +443,26 @@ export function InpaintEditorDialog({
 
   const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const wasPainting = !panningRef.current && pointersRef.current.size < 2;
+    if (wasPainting && shapeStartRef.current) {
+      const end = canvasPoint(event);
+      const distance = Math.hypot(
+        end.x - shapeStartRef.current.x,
+        end.y - shapeStartRef.current.y,
+      );
+      if (distance < 1) {
+        const radius = brushSize / 2;
+        paintShape(
+          { x: end.x - radius, y: end.y - radius },
+          { x: end.x + radius, y: end.y + radius },
+        );
+      } else {
+        paintShape(shapeStartRef.current, end);
+      }
+    }
     pointersRef.current.delete(event.pointerId);
     previousPointRef.current = null;
+    shapeStartRef.current = null;
+    shapeBaseRef.current = null;
     panningRef.current = false;
     if (pointersRef.current.size < 2) pinchRef.current = null;
     if (wasPainting) commitMask();
@@ -490,6 +565,26 @@ export function InpaintEditorDialog({
         >
           <Eraser />
         </Button>
+        <Button
+          type="button"
+          size="icon"
+          variant={tool === "sphere" ? "soft" : "ghost"}
+          onClick={() => setTool("sphere")}
+          title="구 (C)"
+          aria-label="구"
+        >
+          <Circle />
+        </Button>
+        <Button
+          type="button"
+          size="icon"
+          variant={tool === "box" ? "soft" : "ghost"}
+          onClick={() => setTool("box")}
+          title="박스 (R)"
+          aria-label="박스"
+        >
+          <Square />
+        </Button>
         <label className="flex items-center gap-2 px-2 text-[11px] text-white/80">
           크기
           <input
@@ -541,9 +636,6 @@ export function InpaintEditorDialog({
       >
         <DialogHeader className="flex h-14 shrink-0 flex-row items-center gap-3 border-b border-white/10 px-3 sm:px-4">
           <DialogTitle className="text-sm sm:text-base">인페인트 마스크 편집</DialogTitle>
-          <p className="ml-auto hidden text-xs text-muted-foreground sm:block">
-            저장한 마스크는 생성 화면의 인페인트 카드에 적용됩니다.
-          </p>
         </DialogHeader>
 
         <div className="relative min-h-0 flex-1 overflow-hidden">
@@ -552,6 +644,15 @@ export function InpaintEditorDialog({
               className="absolute inset-0 overflow-hidden bg-[#111116] [background-image:radial-gradient(circle_at_center,rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:20px_20px]"
               onWheel={(event) => {
                 event.preventDefault();
+                if (event.altKey) {
+                  setBrushSize((value) =>
+                    Math.min(
+                      256,
+                      Math.max(4, Math.round(value * (event.deltaY > 0 ? 0.9 : 1.1))),
+                    ),
+                  );
+                  return;
+                }
                 setZoom((value) =>
                   Math.min(8, Math.max(0.25, value * (event.deltaY > 0 ? 0.9 : 1.1))),
                 );
@@ -572,14 +673,30 @@ export function InpaintEditorDialog({
                     ref={maskCanvasRef}
                     className={cn(
                       "absolute inset-0 size-full touch-none",
-                      spacePressedRef.current ? "cursor-grab" : tool === "eraser" ? "cursor-cell" : "cursor-crosshair",
+                      tool === "brush" || tool === "eraser"
+                        ? "cursor-none"
+                        : "cursor-crosshair",
                     )}
                     style={{ opacity: overlayOpacity }}
                     onPointerDown={handlePointerDown}
                     onPointerMove={handlePointerMove}
+                    onPointerEnter={(event) => setBrushCursor(canvasPoint(event))}
+                    onPointerLeave={() => setBrushCursor(null)}
                     onPointerUp={handlePointerUp}
                     onPointerCancel={handlePointerUp}
                   />
+                  {brushCursor && (tool === "brush" || tool === "eraser") ? (
+                    <div
+                      className="pointer-events-none absolute z-10 rounded-full border border-white shadow-[0_0_0_1px_rgba(0,0,0,0.75)]"
+                      style={{
+                        left: brushCursor.x,
+                        top: brushCursor.y,
+                        width: brushSize,
+                        height: brushSize,
+                        transform: "translate(-50%, -50%)",
+                      }}
+                    />
+                  ) : null}
                 </div>
               ) : (
                 <div className="absolute inset-0 grid place-items-center text-sm text-muted-foreground">
@@ -611,9 +728,6 @@ export function InpaintEditorDialog({
                   px
                 </label>
               </div>
-              <p className="hidden rounded-lg bg-black/55 px-3 py-2 text-[10px] text-white/65 backdrop-blur sm:block">
-                B/E 도구 · Space+드래그 이동 · 휠/핀치 확대 · 0 화면 맞춤
-              </p>
             </div>
         </div>
 
@@ -629,7 +743,7 @@ export function InpaintEditorDialog({
           </Button>
           <Button type="button" disabled={saving || !loaded} onClick={() => void saveMask()}>
             {saving ? <LoaderCircle className="animate-spin" /> : <Save />}
-            {saving ? "마스크 저장 중" : "마스크 저장"}
+            {saving ? "저장 중" : "저장"}
           </Button>
         </div>
       </DialogContent>
