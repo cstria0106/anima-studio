@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { globalUpscaleSettingsSchema } from "@anima/shared";
-import { getUiPreferences, updateUiPreferences } from "@/lib/api";
+import { ApiError, getUiPreferences, updateUiPreferences } from "@/lib/api";
 import {
   DEFAULT_DRAFT,
   type GenerationDraft,
@@ -35,6 +35,43 @@ interface UiPreferencesContextValue {
 const UiPreferencesContext = React.createContext<
   UiPreferencesContextValue | undefined
 >(undefined);
+
+const UI_PREFERENCES_STARTUP_RETRY_MS = 1_000;
+
+function waitForUiPreferencesRetry(signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      signal.removeEventListener("abort", handleAbort);
+      resolve();
+    }, UI_PREFERENCES_STARTUP_RETRY_MS);
+    const handleAbort = () => {
+      window.clearTimeout(timeout);
+      reject(signal.reason);
+    };
+    signal.addEventListener("abort", handleAbort, { once: true });
+  });
+}
+
+export async function loadUiPreferencesWithStartupRetry(
+  load: (signal: AbortSignal) => Promise<UiPreferences>,
+  signal: AbortSignal,
+  wait: (signal: AbortSignal) => Promise<void> = waitForUiPreferencesRetry,
+): Promise<UiPreferences> {
+  while (true) {
+    try {
+      return await load(signal);
+    } catch (error) {
+      if (
+        signal.aborted ||
+        !(error instanceof ApiError) ||
+        error.status !== 503
+      ) {
+        throw error;
+      }
+      await wait(signal);
+    }
+  }
+}
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -182,7 +219,10 @@ export function UiPreferencesProvider({
     void (async () => {
       const legacy = readLegacyPreferences();
       try {
-        const stored = await getUiPreferences(controller.signal);
+        const stored = await loadUiPreferencesWithStartupRetry(
+          getUiPreferences,
+          controller.signal,
+        );
         if (controller.signal.aborted) return;
         const migration = Object.fromEntries(
           Object.entries(legacy.preferences).filter(

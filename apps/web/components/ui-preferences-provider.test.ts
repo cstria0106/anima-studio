@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_DRAFT } from "@/lib/types";
 import {
+  loadUiPreferencesWithStartupRetry,
   normalizeGlobalUpscaleSettings,
   normalizeGenerationDraft,
   resolveGlobalUpscaleSettings,
 } from "./ui-preferences-provider";
+import { ApiError } from "@/lib/api";
 
 describe("normalizeGenerationDraft", () => {
   test("restores saved fields while filling new fields from defaults", () => {
@@ -41,6 +43,46 @@ describe("normalizeGenerationDraft", () => {
     expect(draft.loras).toEqual([]);
     expect(draft.referenceAssets.map((asset) => asset.id)).toEqual(["saved"]);
     expect(draft.loraOptimizer.enabled).toBeTrue();
+  });
+});
+
+describe("UI preference startup loading", () => {
+  test("retries a startup response until persisted preferences are available", async () => {
+    const controller = new AbortController();
+    const draft = structuredClone(DEFAULT_DRAFT);
+    draft.prompts.positive = "restored";
+    const saved = { draft };
+    let attempts = 0;
+
+    const preferences = await loadUiPreferencesWithStartupRetry(
+      async () => {
+        attempts += 1;
+        if (attempts < 3) throw new ApiError("Anima Studio is starting.", 503);
+        return saved;
+      },
+      controller.signal,
+      async () => {},
+    );
+
+    expect(attempts).toBe(3);
+    expect(preferences).toBe(saved);
+  });
+
+  test("does not retry a non-startup failure", async () => {
+    const controller = new AbortController();
+    let attempts = 0;
+
+    await expect(
+      loadUiPreferencesWithStartupRetry(
+        async () => {
+          attempts += 1;
+          throw new ApiError("Failed", 500);
+        },
+        controller.signal,
+        async () => {},
+      ),
+    ).rejects.toMatchObject({ status: 500 });
+    expect(attempts).toBe(1);
   });
 });
 
