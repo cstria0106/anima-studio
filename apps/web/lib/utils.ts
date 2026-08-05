@@ -74,12 +74,27 @@ export function replaceTagAtCursor(
   replacement: string,
 ) {
   const tag = getTagAtCursor(value, cursor);
+  const position = clamp(cursor, tag.start, tag.end);
   const before = value.slice(0, tag.start);
   const after = value.slice(tag.end);
+  const remainingTag = value.slice(position, tag.end).trim();
   const leadingSpace = before && !/\s$/.test(before) ? " " : "";
   const completed = `${before}${leadingSpace}${replacement}${after}`;
   const completedCursor =
     before.length + leadingSpace.length + replacement.length;
+
+  if (remainingTag) {
+    const splitTag = `${before}${leadingSpace}${replacement}, ${remainingTag}${after}`;
+    return {
+      value:
+        tag.end === value.length
+          ? `${splitTag}, `
+          : value[tag.end] === "\n" || value[tag.end] === "\r"
+            ? `${before}${leadingSpace}${replacement}, ${remainingTag},${after}`
+            : splitTag,
+      cursor: completedCursor + 2,
+    };
+  }
 
   if (tag.end < value.length) {
     const commentStartsAtTagEnd = getPromptCommentRanges(value).some(

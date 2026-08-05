@@ -90,15 +90,35 @@ describe("tag prompt editing", () => {
 
   test("uses line breaks as tag boundaries and adds a comma before them", () => {
     const multiline = "black hair\nlong hair\ncat ears";
-    const cursor = multiline.indexOf("long") + "long".length;
+    const cursor = multiline.indexOf("long hair") + "long hair".length;
 
     expect(getTagAtCursor(multiline, cursor)).toMatchObject({
       tag: "long hair",
-      query: "long",
+      query: "long hair",
     });
     expect(replaceTagAtCursor(multiline, cursor, "short hair")).toEqual({
       value: "black hair\nshort hair,\ncat ears",
       cursor: "black hair\nshort hair,".length,
+    });
+  });
+
+  test("keeps text after the cursor as a separate tag", () => {
+    const prompt = "pink hairpin";
+    const cursor = "pink".length;
+
+    expect(replaceTagAtCursor(prompt, cursor, "pink hair")).toEqual({
+      value: "pink hair, hairpin, ",
+      cursor: "pink hair, ".length,
+    });
+  });
+
+  test("keeps the separated remainder before the following tag", () => {
+    const prompt = "pink hairpin\nsolo";
+    const cursor = "pink".length;
+
+    expect(replaceTagAtCursor(prompt, cursor, "pink hair")).toEqual({
+      value: "pink hair, hairpin,\nsolo",
+      cursor: "pink hair, ".length,
     });
   });
 
