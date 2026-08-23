@@ -20,6 +20,17 @@ Anima와 Instant Reference LoRA를 위한 Windows용 로컬 AI 이미지 생성 
 
 `AnimaStudio.exe`를 실행한 뒤 **엔진 설치**와 모델 설치를 완료하고 이미지를 생성하세요.
 
+기본적으로 `127.0.0.1`의 8787번 포트부터 사용 가능한 포트를 찾아 실행합니다.
+IPv4 주소와 포트를 직접 지정하려면 다음 실행 옵션을 사용하세요.
+
+```powershell
+.\AnimaStudio.exe --host 192.168.0.20 --port 9000
+```
+
+`--host 0.0.0.0`은 모든 네트워크 인터페이스에 서버를 공개하고 API Origin
+제한도 해제합니다. 별도 인증이나 TLS를 제공하지 않으므로 신뢰할 수 있는
+네트워크에서만 사용하세요.
+
 ## 개발
 
 ```powershell

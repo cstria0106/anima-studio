@@ -67,10 +67,58 @@ describe("portable instance coordination", () => {
     });
     if (!server.port) throw new Error("test server has no port");
     const port = server.port;
-    await first.lease.publish(port);
+    await first.lease.publish("127.0.0.1", port);
     try {
       const second = await new InstanceCoordinator(data, { inspector, pid: 200, executablePath: executable }).acquire();
       expect(second).toEqual({ owner: false, url: `http://127.0.0.1:${port}` });
+    } finally {
+      await server.stop(true);
+      await first.lease.release();
+    }
+  });
+
+  test("stores a wildcard bind host but probes and reuses it through loopback", async () => {
+    const data = await appData();
+    const start = "2026-08-01T00:00:00.000Z";
+    const executable = "C:\\A\\AnimaStudio.exe";
+    const inspector = new FakeInspector(new Map([
+      [100, observed(100, executable, start)],
+      [200, observed(200, executable, start)],
+    ]));
+    const first = await new InstanceCoordinator(data, {
+      inspector,
+      pid: 100,
+      executablePath: executable,
+    }).acquire();
+    if (!first.owner) throw new Error("first process did not acquire");
+    const server = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch: (request) => new Response(
+        request.headers.get("X-Anima-Instance-Token") === first.lease.token
+          ? "ok"
+          : "no",
+        {
+          status:
+            request.headers.get("X-Anima-Instance-Token") === first.lease.token
+              ? 200
+              : 404,
+        },
+      ),
+    });
+    await first.lease.publish("0.0.0.0", server.port!);
+    expect(JSON.parse(await readFile(join(data, "_app", "instance.json"), "utf8")))
+      .toMatchObject({ host: "0.0.0.0", port: server.port });
+    try {
+      const second = await new InstanceCoordinator(data, {
+        inspector,
+        pid: 200,
+        executablePath: executable,
+      }).acquire();
+      expect(second).toEqual({
+        owner: false,
+        url: `http://127.0.0.1:${server.port}`,
+      });
     } finally {
       await server.stop(true);
       await first.lease.release();
@@ -87,7 +135,11 @@ describe("portable instance coordination", () => {
       const token = "a".repeat(64);
       const stale = { pid: 10, executable: "C:\\A\\AnimaStudio.exe", startedAt: "2026-08-01T00:00:00Z", token };
       await writeFile(join(data, "_app", "instance.lock"), JSON.stringify(stale));
-      await writeFile(join(data, "_app", "instance.json"), JSON.stringify({ ...stale, port: 12345 }));
+      await writeFile(join(data, "_app", "instance.json"), JSON.stringify({
+        ...stale,
+        host: "127.0.0.1",
+        port: 12345,
+      }));
       const self = observed(100, "C:\\A\\AnimaStudio.exe", "2026-08-03T00:00:00Z");
       const inspector = new FakeInspector(new Map([[10, actual], [100, self]]));
       const acquired = await new InstanceCoordinator(data, {

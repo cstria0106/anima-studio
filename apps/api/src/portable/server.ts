@@ -1,6 +1,5 @@
 import type { EmbeddedStaticSite } from "./static";
-
-export const PORTABLE_APP_PORT = 8787;
+import { PORTABLE_APP_HOST, PORTABLE_APP_PORT } from "./network";
 
 export interface PortableStartupHandler {
   fetch(request: Request): Response | Promise<Response>;
@@ -45,18 +44,28 @@ function addressInUse(error: unknown): boolean {
 
 export function startPortableServer(
   fetch: (request: Request) => Response | Promise<Response>,
-  startPort = PORTABLE_APP_PORT,
+  options: {
+    hostname?: string;
+    startPort?: number;
+    findAvailablePort?: boolean;
+  } = {},
 ): ReturnType<typeof Bun.serve> {
-  for (let port = startPort; port <= 65_535; port += 1) {
+  const hostname = options.hostname ?? PORTABLE_APP_HOST;
+  const startPort = options.startPort ?? PORTABLE_APP_PORT;
+  const lastPort = options.findAvailablePort === false ? startPort : 65_535;
+  for (let port = startPort; port <= lastPort; port += 1) {
     try {
       return Bun.serve({
-        hostname: "127.0.0.1",
+        hostname,
         port,
         fetch,
         idleTimeout: 120,
       });
     } catch (error) {
       if (!addressInUse(error)) throw error;
+      if (options.findAvailablePort === false) {
+        throw new Error(`TCP port ${port} is already in use on ${hostname}.`);
+      }
     }
   }
   throw new Error(`No available TCP port exists at or above ${startPort}.`);

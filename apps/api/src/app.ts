@@ -463,6 +463,16 @@ function isLocalOrigin(origin: string): boolean {
   }
 }
 
+function isAllowedApiOrigin(origin: string, host: string): boolean {
+  if (host === "0.0.0.0") return true;
+  if (isLocalOrigin(origin)) return true;
+  try {
+    return new URL(origin).hostname === host;
+  } catch {
+    return false;
+  }
+}
+
 function tokensMatch(expected: string, received: string | undefined): boolean {
   if (!received) return false;
   const left = Buffer.from(expected);
@@ -948,7 +958,7 @@ export function createApp(services: AppServices): Hono {
   app.use("*", secureHeaders());
   app.use("/api/*", async (c, next) => {
     const origin = c.req.header("Origin");
-    if (origin && !isLocalOrigin(origin)) {
+    if (origin && !isAllowedApiOrigin(origin, services.config.host)) {
       return c.json(
         {
           message: "Cross-origin API requests are not allowed.",
@@ -965,7 +975,10 @@ export function createApp(services: AppServices): Hono {
   app.use(
     "*",
     cors({
-      origin: (origin) => (!origin || isLocalOrigin(origin) ? origin : ""),
+      origin: (origin) =>
+        !origin || isAllowedApiOrigin(origin, services.config.host)
+          ? origin
+          : "",
       allowHeaders: ["Content-Type", "Last-Event-ID"],
       allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       exposeHeaders: ["Content-Length"],

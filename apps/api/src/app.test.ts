@@ -1281,6 +1281,28 @@ describe("Anima Studio API", () => {
     });
   });
 
+  test("allows browser API requests from the configured IPv4 host", async () => {
+    const { runtime: api } = await runtime();
+    api.config.host = "192.168.10.20";
+    const response = await api.app.request("/api/health", {
+      headers: { origin: "http://192.168.10.20:8787" },
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("access-control-allow-origin"))
+      .toBe("http://192.168.10.20:8787");
+  });
+
+  test("allows every browser origin when bound to the wildcard host", async () => {
+    const { runtime: api } = await runtime();
+    api.config.host = "0.0.0.0";
+    const response = await api.app.request("/api/health", {
+      headers: { origin: "https://remote.example" },
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("access-control-allow-origin"))
+      .toBe("https://remote.example");
+  });
+
   test("reuses its ComfyUI client ID across API runtime restarts", async () => {
     const { runtime: first, comfy: firstComfy } = await runtime();
     await first.tracker.start();

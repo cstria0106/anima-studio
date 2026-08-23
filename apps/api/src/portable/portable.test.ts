@@ -8,9 +8,9 @@ import { extractEmbeddedResources, type EmbeddedResource } from "./resources";
 import { EmbeddedStaticSite } from "./static";
 import {
   createPortableStartupHandler,
-  PORTABLE_APP_PORT,
   startPortableServer,
 } from "./server";
+import { PORTABLE_APP_PORT } from "./network";
 
 const temporaryDirectories: string[] = [];
 
@@ -111,12 +111,48 @@ describe("portable server port", () => {
       hostname: "127.0.0.1",
       fetch: () => new Response("busy"),
     });
-    const server = startPortableServer(() => new Response("ok"), preferredPort);
+    const server = startPortableServer(() => new Response("ok"), {
+      startPort: preferredPort,
+    });
     try {
       expect(server.port).toBe(preferredPort + 1);
       expect(await (await fetch(`http://127.0.0.1:${server.port}`)).text()).toBe("ok");
     } finally {
       await Promise.all([server.stop(true), occupied.stop(true)]);
+    }
+  });
+
+  test("fails when an explicitly selected port is already in use", async () => {
+    const occupied = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch: () => new Response("busy"),
+    });
+    try {
+      expect(() =>
+        startPortableServer(() => new Response("ok"), {
+          hostname: "127.0.0.1",
+          startPort: occupied.port!,
+          findAvailablePort: false,
+        }),
+      ).toThrow(/already in use/);
+    } finally {
+      await occupied.stop(true);
+    }
+  });
+
+  test("binds to a selected IPv4 host", async () => {
+    const server = startPortableServer(() => new Response("ok"), {
+      hostname: "0.0.0.0",
+      startPort: 0,
+      findAvailablePort: false,
+    });
+    try {
+      expect(server.hostname).toBe("0.0.0.0");
+      expect(await (await fetch(`http://127.0.0.1:${server.port}`)).text())
+        .toBe("ok");
+    } finally {
+      await server.stop(true);
     }
   });
 

@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { open, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { isIPv4 } from "node:net";
 import { join } from "node:path";
 import {
   CimWindowsProcessInspector,
@@ -7,9 +8,11 @@ import {
   type WindowsProcessIdentity,
   type WindowsProcessInspector,
 } from "../process/windows";
+import { portableUrl } from "./network";
 
 export interface InstanceDescriptor extends WindowsProcessIdentity {
   token: string;
+  host: string;
   port: number;
 }
 
@@ -46,7 +49,13 @@ function validIdentity(value: unknown): value is InstanceLock {
 function validDescriptor(value: unknown): value is InstanceDescriptor {
   if (!validIdentity(value)) return false;
   const item = value as Partial<InstanceDescriptor>;
-  return Number.isSafeInteger(item.port) && Number(item.port) > 0 && Number(item.port) <= 65_535;
+  return (
+    typeof item.host === "string" &&
+    isIPv4(item.host) &&
+    Number.isSafeInteger(item.port) &&
+    Number(item.port) > 0 &&
+    Number(item.port) <= 65_535
+  );
 }
 
 async function readJson(path: string): Promise<unknown | null> {
@@ -84,8 +93,8 @@ export class InstanceLease {
     this.token = token;
   }
 
-  async publish(port: number): Promise<InstanceDescriptor> {
-    const descriptor = { ...this.identity, token: this.token, port };
+  async publish(host: string, port: number): Promise<InstanceDescriptor> {
+    const descriptor = { ...this.identity, token: this.token, host, port };
     const temporary = `${this.descriptorPath}.${this.token}.tmp`;
     await writeFile(temporary, JSON.stringify(descriptor, null, 2), "utf8");
     await rm(this.descriptorPath, { force: true });
@@ -175,7 +184,7 @@ export class InstanceCoordinator {
             0,
           )
         ) {
-          const url = `http://127.0.0.1:${descriptor.port}`;
+          const url = portableUrl(descriptor.host, descriptor.port);
           const response = await this.request(`${url}/api/app/instance`, {
             headers: { "X-Anima-Instance-Token": descriptor.token },
             signal: AbortSignal.timeout(2_000),

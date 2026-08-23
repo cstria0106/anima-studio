@@ -11,6 +11,11 @@ import {
   THIRD_PARTY_NOTICES,
 } from "./generated/resources";
 import { InstanceCoordinator } from "./portable/instance";
+import { parsePortableArguments } from "./portable/arguments";
+import {
+  PORTABLE_APP_PORT,
+  portableUrl,
+} from "./portable/network";
 import {
   assertPortableDataWritable,
   portableDataDirectory,
@@ -20,22 +25,10 @@ import { EmbeddedStaticSite } from "./portable/static";
 import { GitHubUpdateService } from "./portable/update";
 import {
   createPortableStartupHandler,
-  PORTABLE_APP_PORT,
   startPortableServer,
 } from "./portable/server";
 
 const REPOSITORY_URL = "https://github.com/cstria0106/anima-studio";
-
-function parseArguments(args: string[]): { noBrowser: boolean; version: boolean } {
-  let noBrowser = false;
-  let version = false;
-  for (const argument of args) {
-    if (argument === "--no-browser") noBrowser = true;
-    else if (argument === "--version") version = true;
-    else throw new Error(`Unknown option: ${argument}`);
-  }
-  return { noBrowser, version };
-}
 
 function openBrowser(url: string): void {
   const child = Bun.spawn(["cmd.exe", "/d", "/c", "start", "", url], {
@@ -48,7 +41,7 @@ function openBrowser(url: string): void {
 }
 
 async function main(): Promise<void> {
-  const arguments_ = parseArguments(process.argv.slice(2));
+  const arguments_ = parsePortableArguments(process.argv.slice(2));
   if (arguments_.version) {
     console.log(APP_VERSION);
     return;
@@ -79,11 +72,15 @@ async function main(): Promise<void> {
     let actualPort = 0;
     const staticSite = new EmbeddedStaticSite(STATIC_RESOURCES);
     const startup = createPortableStartupHandler(staticSite);
-    server = startPortableServer((request) => startup.fetch(request));
+    server = startPortableServer((request) => startup.fetch(request), {
+      hostname: arguments_.host,
+      startPort: arguments_.port ?? PORTABLE_APP_PORT,
+      findAvailablePort: arguments_.port === undefined,
+    });
     if (!server.port) throw new Error("Windows did not assign a server port.");
     actualPort = server.port;
-    const url = `http://127.0.0.1:${actualPort}`;
-    await lease.publish(actualPort);
+    const url = portableUrl(arguments_.host, actualPort);
+    await lease.publish(arguments_.host, actualPort);
 
     console.log(`Anima Studio ${APP_VERSION}`);
     console.log(`URL: ${url}`);
@@ -92,8 +89,8 @@ async function main(): Promise<void> {
     if (!arguments_.noBrowser) openBrowser(url);
 
     const config = loadConfig({
-      host: "127.0.0.1",
-      port: PORTABLE_APP_PORT,
+      host: arguments_.host,
+      port: actualPort,
       dataDir,
       runtimeDir: join(dataDir, "runtime"),
       databasePath: join(dataDir, "anima-studio.sqlite"),
