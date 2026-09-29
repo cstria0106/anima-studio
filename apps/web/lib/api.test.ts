@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createInpaintJob, createJob, getJob, getOptions, upscaleJob } from "./api";
+import {
+  checkInstantLoraDownload,
+  createInpaintJob,
+  createJob,
+  getJob,
+  getOptions,
+  upscaleJob,
+} from "./api";
 import { DEFAULT_DRAFT, type GenerationDraft } from "./types";
 
 const originalFetch = globalThis.fetch;
@@ -481,5 +488,31 @@ describe("generation job submission", () => {
         useTriggerWords: false,
       },
     ]);
+  });
+});
+
+describe("instant LoRA download", () => {
+  test("checks the trained LoRA with a HEAD request", async () => {
+    const requests: Array<{ url: string; method: string }> = [];
+    globalThis.fetch = (async (input, init) => {
+      requests.push({ url: String(input), method: init?.method ?? "GET" });
+      return new Response(null, { status: 200 });
+    }) as typeof fetch;
+
+    await checkInstantLoraDownload("job/1");
+
+    expect(requests).toEqual([
+      { url: "/api/jobs/job%2F1/instant-lora", method: "HEAD" },
+    ]);
+  });
+
+  test("explains a missing LoRA file", async () => {
+    globalThis.fetch = (async () =>
+      new Response(null, { status: 404 })) as unknown as typeof fetch;
+
+    await expect(checkInstantLoraDownload("job-1")).rejects.toMatchObject({
+      status: 404,
+      message: expect.stringContaining("학습된 LoRA 파일을 찾을 수 없습니다"),
+    });
   });
 });

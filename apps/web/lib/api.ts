@@ -1058,6 +1058,28 @@ export async function getJob(id: string, signal?: AbortSignal) {
   return normalizeJob(raw);
 }
 
+export function instantLoraDownloadUrl(jobId: string): string {
+  return `/api/jobs/${encodeURIComponent(jobId)}/instant-lora`;
+}
+
+/**
+ * Checks the trained LoRA before a browser download starts, because a failed
+ * anchor download gives the user no readable reason.
+ */
+export async function checkInstantLoraDownload(jobId: string): Promise<void> {
+  const response = await fetch(instantLoraDownloadUrl(jobId), {
+    method: "HEAD",
+    cache: "no-store",
+  });
+  if (response.ok) return;
+  throw new ApiError(
+    response.status === 404
+      ? "학습된 LoRA 파일을 찾을 수 없습니다. 저장 공간 정리로 삭제되었을 수 있습니다."
+      : `학습 LoRA를 받지 못했습니다 (${response.status})`,
+    response.status,
+  );
+}
+
 export async function deleteJob(id: string): Promise<void> {
   await apiFetch<void>(`/api/jobs/${encodeURIComponent(id)}`, {
     method: "DELETE",

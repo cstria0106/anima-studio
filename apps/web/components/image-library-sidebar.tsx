@@ -55,12 +55,14 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import {
+  checkInstantLoraDownload,
   createLibraryFolder,
   deleteLibraryFolder,
   deleteLibraryImages,
   getJob,
   getLibraryFolders,
   getLibraryImages,
+  instantLoraDownloadUrl,
   moveLibraryImages,
   updateLibraryFolder,
   upscaleJob,
@@ -412,10 +414,21 @@ export function HistoryView({
     anchor.click();
   }
 
-  function downloadInstantLora(image: LibraryImage) {
+  async function downloadInstantLora(image: LibraryImage) {
     setMenu(null);
+    setError("");
+    try {
+      await checkInstantLoraDownload(image.jobId);
+    } catch (downloadFailure) {
+      setError(
+        downloadFailure instanceof Error
+          ? downloadFailure.message
+          : "학습 LoRA를 받지 못했습니다.",
+      );
+      return;
+    }
     const anchor = document.createElement("a");
-    anchor.href = `/api/jobs/${encodeURIComponent(image.jobId)}/instant-lora`;
+    anchor.href = instantLoraDownloadUrl(image.jobId);
     anchor.download = "";
     anchor.click();
   }
@@ -1128,7 +1141,7 @@ export function HistoryView({
                       type="button"
                       role="menuitem"
                       className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs hover:bg-accent"
-                      onClick={() => downloadInstantLora(menuImage)}
+                      onClick={() => void downloadInstantLora(menuImage)}
                     >
                       <Sparkles /> 학습 LoRA 저장
                     </button>
