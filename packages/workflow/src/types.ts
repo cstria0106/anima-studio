@@ -35,6 +35,7 @@ export interface BuiltWorkflow {
   };
   autoTagsNodeId: string | null;
   autoTagsSource: ComfyLink | null;
+  instantLoraPathNodeId: string | null;
 }
 
 export interface WorkflowBuildOptions {
@@ -47,6 +48,7 @@ export interface WorkflowBuildOptions {
   upscaleFilenamePrefix?: string;
   inpaintFilenamePrefix?: string;
   autoTagsFilenamePrefix?: string;
+  instantLoraPathFilenamePrefix?: string;
 }
 
 export interface ManifestNodeContract {

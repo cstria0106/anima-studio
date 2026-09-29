@@ -214,6 +214,7 @@ export class JobService {
         nodeLabels: built.nodeLabels,
         outputKinds: built.outputKinds,
         autoTagsNodeId: built.autoTagsNodeId,
+        instantLoraPathNodeId: built.instantLoraPathNodeId,
       });
       this.events.append({
         jobId,
@@ -510,7 +511,10 @@ export class JobService {
       assetIds: assetRows.map((asset) => asset.id),
       createdAt,
     });
-    this.repository.updateJob(jobId, { autoTags: source.autoTags });
+    this.repository.updateJob(jobId, {
+      autoTags: source.autoTags,
+      instantLoraPath: source.instantLoraPath,
+    });
     this.events.append({
       jobId,
       phase: "preparing",

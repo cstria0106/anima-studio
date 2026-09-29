@@ -2190,6 +2190,27 @@ export function createApp(services: AppServices): Hono {
     return c.body(null, 204);
   });
 
+  app.get("/api/jobs/:id/instant-lora", async (c) => {
+    const row = services.repository.findJobRow(c.req.param("id"));
+    if (!row) throw new JobSubmissionError("Job not found.", 404);
+    if (!row.instantLoraPath) {
+      throw new JobSubmissionError("This job has no trained Instant LoRA.", 404);
+    }
+    const file = await services.storageInventory.instantLoraFile(
+      row.instantLoraPath,
+    );
+    if (!file) {
+      throw new JobSubmissionError("The trained Instant LoRA file is no longer available.", 404);
+    }
+    return new Response(Bun.file(file.path), {
+      headers: {
+        "content-type": "application/octet-stream",
+        "content-length": String(file.byteSize),
+        "content-disposition": attachmentDisposition(file.filename),
+      },
+    });
+  });
+
   app.get("/api/jobs/:id/preview", async (c) => {
     const jobId = c.req.param("id");
     services.jobs.get(jobId);

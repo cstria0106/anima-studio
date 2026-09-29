@@ -59,6 +59,8 @@ export const jobs = sqliteTable(
     autoTagsNodeId: text("auto_tags_node_id"),
     actualSeed: integer("actual_seed").notNull(),
     autoTags: text("auto_tags").notNull().default(""),
+    instantLoraPathNodeId: text("instant_lora_path_node_id"),
+    instantLoraPath: text("instant_lora_path"),
     error: text("error"),
     createdAt: text("created_at")
       .notNull()

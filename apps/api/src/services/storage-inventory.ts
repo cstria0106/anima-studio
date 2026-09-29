@@ -2,10 +2,12 @@ import {
   lstat,
   mkdir,
   readdir,
+  realpath,
   rename,
   unlink,
 } from "node:fs/promises";
 import {
+  basename,
   isAbsolute,
   relative,
   resolve,
@@ -59,6 +61,32 @@ export class StorageInventoryService {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Resolves a LoRA path reported by Instant Reference to a downloadable file,
+   * or null when it is not a regular .safetensors file in the generated folder.
+   */
+  async instantLoraFile(
+    rawPath: string,
+  ): Promise<{ path: string; filename: string; byteSize: number } | null> {
+    const path = resolve(this.loraRoot, rawPath);
+    if (
+      !pathInside(this.instantLoraRoot, path) ||
+      !path.toLowerCase().endsWith(".safetensors")
+    ) {
+      return null;
+    }
+    // Reject paths that escape the generated folder through a linked directory.
+    const [realRoot, realFile] = await Promise.all([
+      realpath(this.instantLoraRoot).catch(() => null),
+      realpath(path).catch(() => null),
+    ]);
+    if (!realRoot || !realFile || !pathInside(realRoot, realFile)) return null;
+    const byteSize = await this.regularFileSize(path);
+    return byteSize === null
+      ? null
+      : { path, filename: basename(path), byteSize };
   }
 
   private modelPath(row: { storagePath: string }): string | null {

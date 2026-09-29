@@ -399,6 +399,7 @@ export interface LibraryImage {
   height: number | null;
   url: string;
   createdAt: string;
+  hasInstantLora: boolean;
 }
 
 export interface LibraryImageListResponse {

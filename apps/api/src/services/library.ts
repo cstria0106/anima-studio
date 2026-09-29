@@ -104,6 +104,7 @@ function imageDto(row: ReturnType<StudioRepository["listLibraryImages"]>[number]
     width: row.width,
     height: row.height,
     url: `/api/outputs/${encodeURIComponent(row.id)}`,
+    hasInstantLora: Boolean(row.instantLoraPath),
     createdAt: row.createdAt.includes("T")
       ? row.createdAt
       : `${row.createdAt.replace(" ", "T")}Z`,

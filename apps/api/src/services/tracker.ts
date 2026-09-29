@@ -52,6 +52,12 @@ function textValues(value: unknown): string[] {
   );
 }
 
+function nonEmptyTextValues(value: unknown): string[] {
+  return textValues(value)
+    .map((text) => text.trim())
+    .filter((text) => text.length > 0);
+}
+
 function outputFileRefs(value: unknown): ComfyImageRef[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((entry) => {
@@ -323,6 +329,9 @@ export class JobTracker {
         if (event.data?.node === row.autoTagsNodeId) {
           const tags = textValues(event.data.output).join(", ").trim();
           if (tags) this.repository.updateJob(row.id, { autoTags: tags });
+        } else if (event.data?.node === row.instantLoraPathNodeId) {
+          const [path] = nonEmptyTextValues(event.data.output);
+          if (path) this.repository.updateJob(row.id, { instantLoraPath: path });
         }
         break;
       case "execution_success":
@@ -521,14 +530,19 @@ export class JobTracker {
     return null;
   }
 
-  private async extractAutoTags(
-    row: JobRow,
+  /**
+   * Reads a SaveText node's result from history, preferring inline UI text
+   * and falling back to the saved text files.
+   */
+  private async extractTextOutput(
+    nodeId: string | null,
     entry: ComfyHistoryEntry,
-  ): Promise<string> {
-    if (!row.autoTagsNodeId) return row.autoTags;
-    const output = entry.outputs?.[row.autoTagsNodeId];
-    const inline = textValues(output).join(", ").trim();
-    if (inline) return inline;
+    description: string,
+  ): Promise<string[]> {
+    if (!nodeId) return [];
+    const output = entry.outputs?.[nodeId];
+    const inline = nonEmptyTextValues(output);
+    if (inline.length > 0) return inline;
 
     if (output && typeof output === "object") {
       const record = output as Record<string, unknown>;
@@ -540,13 +554,37 @@ export class JobTracker {
         try {
           const file = await this.comfy.downloadOutput(ref);
           const text = new TextDecoder().decode(file.bytes).trim();
-          if (text) return text;
+          if (text) return [text];
         } catch (error) {
-          this.logger.warn("Could not download automatic tag output.", error);
+          this.logger.warn(`Could not download ${description} output.`, error);
         }
       }
     }
-    return row.autoTags;
+    return [];
+  }
+
+  private async extractAutoTags(
+    row: JobRow,
+    entry: ComfyHistoryEntry,
+  ): Promise<string> {
+    const values = await this.extractTextOutput(
+      row.autoTagsNodeId,
+      entry,
+      "automatic tag",
+    );
+    return values.join(", ") || row.autoTags;
+  }
+
+  private async extractInstantLoraPath(
+    row: JobRow,
+    entry: ComfyHistoryEntry,
+  ): Promise<string | null> {
+    const [path] = await this.extractTextOutput(
+      row.instantLoraPathNodeId,
+      entry,
+      "Instant LoRA path",
+    );
+    return path ?? row.instantLoraPath;
   }
 
   private async finalize(
@@ -623,12 +661,14 @@ export class JobTracker {
         return;
       }
       const autoTags = await this.extractAutoTags(row, entry);
+      const instantLoraPath = await this.extractInstantLoraPath(row, entry);
       const completedAt = new Date().toISOString();
       this.repository.updateJob(jobId, {
         status: "completed",
         phase: "completed",
         queueNumber: null,
         autoTags,
+        instantLoraPath,
         error: null,
         completedAt,
       });

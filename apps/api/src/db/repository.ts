@@ -301,6 +301,8 @@ export interface JobUpdate {
   outputKinds?: Record<string, "base" | "upscale" | "inpaint"> | null;
   autoTagsNodeId?: string | null;
   autoTags?: string;
+  instantLoraPathNodeId?: string | null;
+  instantLoraPath?: string | null;
   error?: string | null;
   startedAt?: string | null;
   completedAt?: string | null;
@@ -362,6 +364,7 @@ export interface LibraryImageRow {
   width: number | null;
   height: number | null;
   createdAt: string;
+  instantLoraPath: string | null;
 }
 
 export interface NewSystemOperation {
@@ -1256,6 +1259,12 @@ export class StudioRepository {
       set.autoTagsNodeId = patch.autoTagsNodeId;
     }
     if (patch.autoTags !== undefined) set.autoTags = patch.autoTags;
+    if (patch.instantLoraPathNodeId !== undefined) {
+      set.instantLoraPathNodeId = patch.instantLoraPathNodeId;
+    }
+    if (patch.instantLoraPath !== undefined) {
+      set.instantLoraPath = patch.instantLoraPath;
+    }
     if (patch.error !== undefined) set.error = patch.error;
     if (patch.startedAt !== undefined) set.startedAt = patch.startedAt;
     if (patch.completedAt !== undefined) set.completedAt = patch.completedAt;
@@ -1610,6 +1619,7 @@ export class StudioRepository {
         width: outputs.width,
         height: outputs.height,
         createdAt: outputs.createdAt,
+        instantLoraPath: jobs.instantLoraPath,
       })
       .from(outputs)
       .innerJoin(jobs, eq(outputs.jobId, jobs.id))

@@ -310,6 +310,7 @@ export interface LibraryImageDto {
   height: number | null;
   url: string;
   createdAt: string;
+  hasInstantLora: boolean;
 }
 
 export interface LibraryImageListDto {

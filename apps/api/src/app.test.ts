@@ -4,6 +4,7 @@ import {
   mkdtemp,
   rm,
   stat,
+  unlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -214,6 +215,7 @@ class FakeWorkflow implements WorkflowEngine {
       outputKinds: { "1": "base" },
       autoTagsNodeId: "2",
       autoTagsOutputIndex: 0,
+      instantLoraPathNodeId: "lora",
     };
   }
 
@@ -243,6 +245,7 @@ class FakeWorkflow implements WorkflowEngine {
       outputKinds: { "3": "upscale" },
       autoTagsNodeId: "4",
       autoTagsOutputIndex: 0,
+      instantLoraPathNodeId: null,
     };
   }
 
@@ -270,6 +273,7 @@ class FakeWorkflow implements WorkflowEngine {
       outputKinds: { "5": "inpaint" },
       autoTagsNodeId: null,
       autoTagsOutputIndex: null,
+      instantLoraPathNodeId: null,
     };
   }
 
@@ -2192,6 +2196,97 @@ describe("Anima Studio API", () => {
     });
     await expect(stat(generatedLora)).rejects.toMatchObject({ code: "ENOENT" });
     expect((await stat(join(loraRoot, "manual.safetensors"))).size).toBe(64);
+  });
+
+  test("downloads the LoRA trained for a job's reference images", async () => {
+    const { runtime: api, comfy } = await runtime();
+    const loraRoot = join(
+      api.config.runtimeDir,
+      "shared",
+      "models",
+      "loras",
+    );
+    const generatedDirectory = join(
+      loraRoot,
+      "Instant-Reference-Generated",
+      "cache-a",
+    );
+    const generatedLora = join(
+      generatedDirectory,
+      "instant_lora_a.safetensors",
+    );
+    await mkdir(generatedDirectory, { recursive: true });
+    await writeFile(generatedLora, new Uint8Array([1, 2, 3, 4]));
+    await writeFile(join(loraRoot, "manual.safetensors"), new Uint8Array(8));
+
+    const assetId = await uploadReference(api);
+    const created = await api.app.request("/api/jobs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        config: {
+          ...structuredClone(testGenerationConfig),
+          referenceAssetIds: [assetId],
+          seed: { mode: "fixed", value: 7 },
+        },
+      }),
+    });
+    const { job } = (await created.json()) as { job: { id: string } };
+
+    comfy.pending = false;
+    comfy.history = {
+      [comfy.queuedPromptId]: {
+        status: { completed: true, status_str: "success", messages: [] },
+        outputs: {
+          "1": {
+            images: [
+              { filename: "base_00001_.png", subfolder: "", type: "output" },
+            ],
+          },
+          lora: { text: [`${generatedLora}\n`] },
+        },
+      },
+    };
+    await api.tracker.start();
+
+    const library = await api.app.request("/api/library/images");
+    expect(await library.json()).toMatchObject({
+      images: [{ jobId: job.id, hasInstantLora: true }],
+    });
+
+    const download = await api.app.request(`/api/jobs/${job.id}/instant-lora`);
+    expect(download.status).toBe(200);
+    expect(download.headers.get("content-disposition")).toStartWith(
+      'attachment; filename="instant_lora_a.safetensors"',
+    );
+    expect(new Uint8Array(await download.arrayBuffer())).toEqual(
+      new Uint8Array([1, 2, 3, 4]),
+    );
+
+    for (const outside of [
+      join(loraRoot, "manual.safetensors"),
+      "Instant-Reference-Generated/../manual.safetensors",
+      join(generatedDirectory, "training.json"),
+    ]) {
+      api.repository.updateJob(job.id, { instantLoraPath: outside });
+      const rejected = await api.app.request(
+        `/api/jobs/${job.id}/instant-lora`,
+      );
+      expect(rejected.status).toBe(404);
+    }
+
+    api.repository.updateJob(job.id, { instantLoraPath: generatedLora });
+    await unlink(generatedLora);
+    const missing = await api.app.request(`/api/jobs/${job.id}/instant-lora`);
+    expect(missing.status).toBe(404);
+
+    api.repository.updateJob(job.id, { instantLoraPath: null });
+    const none = await api.app.request(`/api/jobs/${job.id}/instant-lora`);
+    expect(none.status).toBe(404);
+    const unmarked = await api.app.request("/api/library/images");
+    expect(await unmarked.json()).toMatchObject({
+      images: [{ hasInstantLora: false }],
+    });
   });
 
   test("storage cleanup rechecks dependencies between review and deletion", async () => {

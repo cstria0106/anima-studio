@@ -132,6 +132,15 @@ describe("buildWorkflow", () => {
         format: "txt",
       },
     });
+    expect(result.instantLoraPathNodeId).toBe(NODE_IDS.instantLoraPathSave);
+    expect(result.prompt[NODE_IDS.instantLoraPathSave]).toEqual({
+      class_type: "SaveText",
+      inputs: {
+        text: [NODE_IDS.instantReference, 2],
+        filename_prefix: "AnimaStudio/lora",
+        format: "txt",
+      },
+    });
   });
 
   test("preserves prompt field text and duplicate tags exactly", () => {
@@ -277,6 +286,8 @@ describe("buildWorkflow", () => {
     ]);
     expect(result.autoTagsNodeId).toBeNull();
     expect(result.autoTagsSource).toBeNull();
+    expect(result.prompt[NODE_IDS.instantLoraPathSave]).toBeUndefined();
+    expect(result.instantLoraPathNodeId).toBeNull();
   });
 
   test("optimizes Instant Reference and enabled LoRAs as one stack", () => {

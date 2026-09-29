@@ -26,6 +26,7 @@ export interface WorkflowBuildResult {
   outputKinds: Record<string, "base" | "upscale" | "inpaint">;
   autoTagsNodeId: string | null;
   autoTagsOutputIndex: number | null;
+  instantLoraPathNodeId: string | null;
 }
 
 export interface WorkflowEngine {
@@ -103,6 +104,7 @@ export class PortableWorkflowEngine implements WorkflowEngine {
       outputKinds: built.outputKinds,
       autoTagsNodeId: built.autoTagsNodeId,
       autoTagsOutputIndex: built.autoTagsSource?.[1] ?? null,
+      instantLoraPathNodeId: built.instantLoraPathNodeId,
     };
   }
 
@@ -116,6 +118,7 @@ export class PortableWorkflowEngine implements WorkflowEngine {
       baseFilenamePrefix: "AnimaStudio/base",
       upscaleFilenamePrefix: "AnimaStudio/upscale",
       autoTagsFilenamePrefix: "AnimaStudio/tags",
+      instantLoraPathFilenamePrefix: "AnimaStudio/lora",
     });
     return this.result(built);
   }
@@ -134,6 +137,7 @@ export class PortableWorkflowEngine implements WorkflowEngine {
         randomSeed: () => actualSeed,
         upscaleFilenamePrefix: "AnimaStudio/upscale",
         autoTagsFilenamePrefix: "AnimaStudio/tags",
+        instantLoraPathFilenamePrefix: "AnimaStudio/lora",
       },
     );
     return this.result(built);
@@ -157,6 +161,7 @@ export class PortableWorkflowEngine implements WorkflowEngine {
         randomSeed: () => actualSeed,
         inpaintFilenamePrefix: "AnimaStudio/inpaint",
         autoTagsFilenamePrefix: "AnimaStudio/tags",
+        instantLoraPathFilenamePrefix: "AnimaStudio/lora",
       },
     );
     return this.result(built);

@@ -23,6 +23,7 @@ import {
   RefreshCw,
   Search,
   Settings2,
+  Sparkles,
   SquareArrowOutUpRight,
   Trash2,
 } from "lucide-react";
@@ -408,6 +409,14 @@ export function HistoryView({
     for (const id of targetIds) query.append("id", id);
     const anchor = document.createElement("a");
     anchor.href = `/api/library/images/download?${query}`;
+    anchor.click();
+  }
+
+  function downloadInstantLora(image: LibraryImage) {
+    setMenu(null);
+    const anchor = document.createElement("a");
+    anchor.href = `/api/jobs/${encodeURIComponent(image.jobId)}/instant-lora`;
+    anchor.download = "";
     anchor.click();
   }
 
@@ -1083,7 +1092,7 @@ export function HistoryView({
           className="fixed z-[100] min-w-40 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl [&_svg]:size-3.5 [&_svg]:shrink-0"
           style={{
             left: Math.max(8, Math.min(menu.x, window.innerWidth - 180)),
-            top: Math.max(8, Math.min(menu.y, window.innerHeight - 330)),
+            top: Math.max(8, Math.min(menu.y, window.innerHeight - 370)),
           }}
           onPointerDown={(event) => event.stopPropagation()}
         >
@@ -1114,6 +1123,16 @@ export function HistoryView({
               </button>
               {menuImage ? (
                 <>
+                  {menuImage.hasInstantLora ? (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs hover:bg-accent"
+                      onClick={() => downloadInstantLora(menuImage)}
+                    >
+                      <Sparkles /> 학습 LoRA 저장
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     role="menuitem"

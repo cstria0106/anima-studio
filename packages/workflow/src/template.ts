@@ -100,6 +100,7 @@ export const NODE_IDS = Object.freeze({
   inpaintRepeatLatent: "31",
   inpaintRepeatImage: "32",
   inpaintComposite: "33",
+  instantLoraPathSave: "34",
 });
 
 const REFERENCE_LOAD_NODE_START = 1000;

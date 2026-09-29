@@ -235,6 +235,10 @@ function validateBuildInput(
     options.inpaintFilenamePrefix ?? "AnimaStudio/inpaint",
     "inpaintFilenamePrefix",
   );
+  assertOutputPrefix(
+    options.instantLoraPathFilenamePrefix ?? "AnimaStudio/lora",
+    "instantLoraPathFilenamePrefix",
+  );
 }
 
 function joinPromptFields(fields: readonly string[]): string {
@@ -401,6 +405,7 @@ export function buildWorkflow(
   let loraStack: ComfyLink | null = null;
   let autoTagsNodeId: string | null = null;
   let autoTagsSource: ComfyLink | null = null;
+  let instantLoraPathNodeId: string | null = null;
 
   if (uploadedInputNames.length > 0) {
     const referenceImages = buildReferenceNodes(
@@ -478,9 +483,23 @@ export function buildWorkflow(
       "training",
       "자동 태그 저장",
     );
+    addNode(
+      accumulator,
+      NODE_IDS.instantLoraPathSave,
+      classes.saveText,
+      {
+        text: link(NODE_IDS.instantReference, 2),
+        filename_prefix:
+          options.instantLoraPathFilenamePrefix ?? "AnimaStudio/lora",
+        format: "txt",
+      },
+      "training",
+      "학습 LoRA 경로 기록",
+    );
     loraStack = link(NODE_IDS.instantReference, 3);
     autoTagsNodeId = NODE_IDS.autoTagsSave;
     autoTagsSource = link(NODE_IDS.instantReference, 4);
+    instantLoraPathNodeId = NODE_IDS.instantLoraPathSave;
   }
 
   const enabledLoras = config.loras.filter((lora) => lora.enabled);
@@ -760,6 +779,7 @@ export function buildWorkflow(
     outputNodeIds,
     autoTagsNodeId,
     autoTagsSource,
+    instantLoraPathNodeId,
   };
 }
 

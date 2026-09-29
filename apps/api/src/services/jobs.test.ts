@@ -46,6 +46,7 @@ function buildResult(actualSeed: number): WorkflowBuildResult {
     outputKinds: {},
     autoTagsNodeId: "tags",
     autoTagsOutputIndex: 0,
+    instantLoraPathNodeId: null,
   };
 }
 
