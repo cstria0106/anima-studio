@@ -11,7 +11,11 @@ import {
   type RuntimeState,
 } from "@anima/runtime";
 
-import { MODEL_PATHS_FILENAME, RUNTIME_MARKER_FILENAME } from "./installer";
+import {
+  MODEL_PATHS_FILENAME,
+  RUNTIME_MARKER_FILENAME,
+  writeModelPathsConfig,
+} from "./installer";
 import { RuntimeLogService } from "./logs";
 import {
   managedInstantReferenceRuntimeRoot,
@@ -465,8 +469,9 @@ export class ManagedRuntimeSupervisor {
         access(join(releaseRoot, RUNTIME_MARKER_FILENAME)),
         access(join(releaseRoot, this.manifest.launch.executable)),
         access(join(releaseRoot, this.manifest.launch.entrypoint)),
-        access(join(this.paths.shared, MODEL_PATHS_FILENAME)),
       ]);
+      // Installs made before a config change keep their old file otherwise.
+      await writeModelPathsConfig(this.paths);
       await validateManagedCustomNodeAllowlist(releaseRoot);
       const port = await this.availablePort(state?.port ?? null);
       const endpoint = `http://${this.manifest.launch.host}:${port}`;

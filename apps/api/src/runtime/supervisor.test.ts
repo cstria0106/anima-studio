@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   mkdir,
   mkdtemp,
+  readFile,
   rm,
   writeFile,
 } from "node:fs/promises";
@@ -282,6 +283,10 @@ describe("managed runtime supervisor", () => {
 
     expect(started.status).toBe("ready");
     expect(started.endpoint).toBe("http://127.0.0.1:8188");
+    // The fixture's outdated config is replaced before ComfyUI launches.
+    expect(
+      await readFile(join(paths.shared, MODEL_PATHS_FILENAME), "utf8"),
+    ).toContain("  is_default: true\n");
     expect(runner.arguments?.slice(-2)).toEqual([
       "--database-url",
       `sqlite:///${join(paths.user, "comfyui.db").replaceAll("\\", "/")}`,

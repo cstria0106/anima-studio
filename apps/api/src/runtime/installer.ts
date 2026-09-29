@@ -88,11 +88,14 @@ function manifestDigest(manifest: EngineManifest): string {
     .digest("hex");
 }
 
-function modelPathsYaml(paths: RuntimePaths): string {
+export function modelPathsYaml(paths: RuntimePaths): string {
   const base = paths.shared.replaceAll("\\", "/").replaceAll('"', '\\"');
   return [
     "anima:",
     `  base_path: "${base}"`,
+    // Make the shared folders ComfyUI's first save location, so files written
+    // by custom nodes (Instant Reference LoRAs) survive engine updates.
+    "  is_default: true",
     "  checkpoints: models/checkpoints",
     "  diffusion_models: models/diffusion_models",
     "  unet: models/unet",
@@ -102,6 +105,16 @@ function modelPathsYaml(paths: RuntimePaths): string {
     "  loras: models/loras",
     "",
   ].join("\n");
+}
+
+/** Writes the ComfyUI model path config, leaving an identical file untouched. */
+export async function writeModelPathsConfig(paths: RuntimePaths): Promise<void> {
+  const path = join(paths.shared, MODEL_PATHS_FILENAME);
+  const content = modelPathsYaml(paths);
+  const current = await readFile(path, "utf8").catch(() => null);
+  if (current !== content) {
+    await writeFile(path, content, { encoding: "utf8", flag: "w" });
+  }
 }
 
 function event(
@@ -334,11 +347,7 @@ export class ManagedRuntimeInstaller {
       for (const directory of this.manifest.sharedDirectories) {
         await mkdir(join(this.paths.shared, directory), { recursive: true });
       }
-      await writeFile(
-        join(this.paths.shared, MODEL_PATHS_FILENAME),
-        modelPathsYaml(this.paths),
-        { encoding: "utf8", flag: "w" },
-      );
+      await writeModelPathsConfig(this.paths);
 
       let releaseExists = false;
       try {
