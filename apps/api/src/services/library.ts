@@ -4,7 +4,7 @@ import type {
   LibraryImageDto,
   LibraryImageListDto,
 } from "@anima/shared";
-import { StudioRepository } from "../db/repository";
+import { outputKindFromRow, StudioRepository } from "../db/repository";
 import type { FolderRow } from "../db/schema";
 import { FileStorage } from "../files/storage";
 import { JobSubmissionError } from "./jobs";
@@ -97,7 +97,7 @@ function imageDto(row: ReturnType<StudioRepository["listLibraryImages"]>[number]
     id: row.id,
     jobId: row.jobId,
     folderId: row.folderId,
-    kind: row.kind === "upscale" ? "upscale" : "base",
+    kind: outputKindFromRow(row.kind),
     filename: row.filename,
     mimeType: row.mimeType,
     byteSize: row.byteSize,

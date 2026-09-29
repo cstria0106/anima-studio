@@ -128,13 +128,14 @@ export function assetToDto(row: AssetRow): AssetDto {
   };
 }
 
+export function outputKindFromRow(kind: string): OutputDto["kind"] {
+  return kind === "upscale" || kind === "inpaint" ? kind : "base";
+}
+
 export function outputToDto(row: OutputRow): OutputDto {
   return {
     id: row.id,
-    kind:
-      row.kind === "upscale" || row.kind === "inpaint"
-        ? row.kind
-        : "base",
+    kind: outputKindFromRow(row.kind),
     filename: row.filename,
     mimeType: row.mimeType,
     url: `/api/outputs/${encodeURIComponent(row.id)}`,

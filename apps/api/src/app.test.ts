@@ -2289,6 +2289,50 @@ describe("Anima Studio API", () => {
     });
   });
 
+  test("library images keep the inpaint output kind", async () => {
+    const { runtime: api } = await runtime();
+    const jobId = crypto.randomUUID();
+    const createdAt = new Date().toISOString();
+    api.repository.createJob({
+      id: jobId,
+      clientId: "library-kind",
+      config: structuredClone(testGenerationConfig),
+      actualSeed: 1,
+      assetIds: [],
+      createdAt,
+    });
+    for (const kind of ["base", "upscale", "inpaint"] as const) {
+      api.repository.createOutput({
+        id: `${kind}-output`,
+        jobId,
+        kind,
+        nodeId: kind,
+        filename: `${kind}.png`,
+        mimeType: "image/png",
+        byteSize: 1,
+        width: 1,
+        height: 1,
+        storagePath: `outputs/${kind}.png`,
+        comfyFilename: `${kind}.png`,
+        comfySubfolder: "",
+        comfyType: "output",
+        createdAt,
+      });
+    }
+
+    const response = await api.app.request("/api/library/images");
+    const { images } = (await response.json()) as {
+      images: Array<{ id: string; kind: string }>;
+    };
+    expect(
+      Object.fromEntries(images.map((image) => [image.id, image.kind])),
+    ).toEqual({
+      "base-output": "base",
+      "upscale-output": "upscale",
+      "inpaint-output": "inpaint",
+    });
+  });
+
   test("storage cleanup rechecks dependencies between review and deletion", async () => {
     const { runtime: api } = await runtime();
     const assetId = await uploadReference(api);
