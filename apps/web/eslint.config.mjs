@@ -16,6 +16,15 @@ const compat = new FlatCompat({
 const config = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
   {
+    rules: {
+      // Allow omitting a property with rest destructuring.
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { ignoreRestSiblings: true },
+      ],
+    },
+  },
+  {
     ignores: [
       ".next*/**",
       "node_modules/**",

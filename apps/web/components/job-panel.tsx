@@ -25,7 +25,6 @@ import { GenerationQueueList } from "@/components/generation-queue-list";
 import { cancelJob, upscaleJob } from "@/lib/api";
 import type {
   CapabilitiesResponse,
-  GenerationDraft,
   GlobalUpscaleSettings,
   JobStatus,
   StudioJob,
