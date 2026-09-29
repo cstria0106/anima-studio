@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   MANAGED_ENGINE_MANIFEST,
   resolveRuntimeRootPaths,
@@ -804,7 +804,14 @@ export async function createRuntime(
   const storageInventory = new StorageInventoryService(repository, {
     dataDir: config.dataDir,
     modelRoots: [runtimePaths.models],
+    runtimeRoot: runtimePaths.root,
     loraRoot: join(runtimePaths.models, "loras"),
+    releasesRoot: runtimePaths.releases,
+    releaseLoraPath: join(
+      dirname(manifest.launch.entrypoint),
+      "models",
+      "loras",
+    ),
   });
   const library = new LibraryService(repository, storage);
   await library.pruneEmptyTerminalJobs();

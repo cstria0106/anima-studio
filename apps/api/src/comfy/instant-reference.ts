@@ -1,5 +1,5 @@
 export const INSTANT_REFERENCE_GENERATED_LORA_DIRECTORY =
-  "Instant-Reference-Generated";
+  "instant-reference-generated";
 
 export function isInstantReferenceGeneratedLora(value: string): boolean {
   const normalized = value.replaceAll("\\", "/").replace(/^\/+/, "");

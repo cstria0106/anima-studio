@@ -2151,17 +2151,38 @@ describe("Anima Studio API", () => {
     );
     const generatedDirectory = join(
       loraRoot,
-      "Instant-Reference-Generated",
+      "instant-reference-generated",
       "cache-a",
     );
     const generatedLora = join(
       generatedDirectory,
       "instant_lora_a.safetensors",
     );
+    // Written by engine configs that saved into the release's own folder.
+    const releaseLoraRoot = join(
+      api.config.runtimeDir,
+      "releases",
+      "bundle-old",
+      "ComfyUI",
+      "models",
+      "loras",
+    );
+    const releaseDirectory = join(
+      releaseLoraRoot,
+      "instant-reference-generated",
+      "cache-b",
+    );
+    const releaseLora = join(releaseDirectory, "instant_lora_b.safetensors");
     await mkdir(generatedDirectory, { recursive: true });
+    await mkdir(releaseDirectory, { recursive: true });
     await writeFile(generatedLora, new Uint8Array(128));
+    await writeFile(releaseLora, new Uint8Array(32));
     await writeFile(join(generatedDirectory, "training.json"), "{}");
     await writeFile(join(loraRoot, "manual.safetensors"), new Uint8Array(64));
+    await writeFile(
+      join(releaseLoraRoot, "release-manual.safetensors"),
+      new Uint8Array(16),
+    );
 
     const inventory = await api.storageInventory.inventory();
     const generatedItems = inventory.items.filter(
@@ -2169,33 +2190,46 @@ describe("Anima Studio API", () => {
     );
     expect(generatedItems).toEqual([
       expect.objectContaining({
-        id: "Instant-Reference-Generated/cache-a/instant_lora_a.safetensors",
-        name: "Instant-Reference-Generated/cache-a/instant_lora_a.safetensors",
+        id: "shared/models/loras/instant-reference-generated/cache-a/instant_lora_a.safetensors",
+        name: "instant-reference-generated/cache-a/instant_lora_a.safetensors",
         byteSize: 128,
+        cleanupEligible: true,
+      }),
+      expect.objectContaining({
+        id: "releases/bundle-old/ComfyUI/models/loras/instant-reference-generated/cache-b/instant_lora_b.safetensors",
+        name: "instant-reference-generated/cache-b/instant_lora_b.safetensors",
+        byteSize: 32,
         cleanupEligible: true,
       }),
     ]);
     expect(
       inventory.categories.find((category) => category.kind === "instant_lora"),
-    ).toEqual({ kind: "instant_lora", byteSize: 128, itemCount: 1 });
+    ).toEqual({ kind: "instant_lora", byteSize: 160, itemCount: 2 });
+
+    const outside = await api.storageInventory.cleanup({
+      targets: [
+        { kind: "instant_lora", id: "shared/models/loras/manual.safetensors" },
+      ],
+    }).catch((error: unknown) => error);
+    expect(outside).toMatchObject({ status: 404 });
 
     const cleanup = await api.storageInventory.cleanup({
-      targets: [{ kind: "instant_lora", id: generatedItems[0]!.id }],
+      targets: generatedItems.map(({ kind, id }) => ({ kind, id })),
       dryRun: false,
     });
     expect(cleanup).toMatchObject({
-      reclaimedBytes: 128,
+      reclaimedBytes: 160,
       results: [
-        {
-          kind: "instant_lora",
-          eligible: true,
-          deleted: true,
-          byteSize: 128,
-        },
+        { kind: "instant_lora", eligible: true, deleted: true, byteSize: 128 },
+        { kind: "instant_lora", eligible: true, deleted: true, byteSize: 32 },
       ],
     });
     await expect(stat(generatedLora)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(releaseLora)).rejects.toMatchObject({ code: "ENOENT" });
     expect((await stat(join(loraRoot, "manual.safetensors"))).size).toBe(64);
+    expect(
+      (await stat(join(releaseLoraRoot, "release-manual.safetensors"))).size,
+    ).toBe(16);
   });
 
   test("downloads the LoRA trained for a job's reference images", async () => {
@@ -2208,16 +2242,36 @@ describe("Anima Studio API", () => {
     );
     const generatedDirectory = join(
       loraRoot,
-      "Instant-Reference-Generated",
+      "instant-reference-generated",
       "cache-a",
     );
     const generatedLora = join(
       generatedDirectory,
       "instant_lora_a.safetensors",
     );
+    const releaseLoraRoot = join(
+      api.config.runtimeDir,
+      "releases",
+      "bundle-old",
+      "ComfyUI",
+      "models",
+      "loras",
+    );
+    const releaseLora = join(
+      releaseLoraRoot,
+      "instant-reference-generated",
+      "cache-b",
+      "instant_lora_b.safetensors",
+    );
     await mkdir(generatedDirectory, { recursive: true });
+    await mkdir(join(releaseLora, ".."), { recursive: true });
     await writeFile(generatedLora, new Uint8Array([1, 2, 3, 4]));
+    await writeFile(releaseLora, new Uint8Array([5, 6]));
     await writeFile(join(loraRoot, "manual.safetensors"), new Uint8Array(8));
+    await writeFile(
+      join(releaseLoraRoot, "release-manual.safetensors"),
+      new Uint8Array(8),
+    );
 
     const assetId = await uploadReference(api);
     const created = await api.app.request("/api/jobs", {
@@ -2263,9 +2317,20 @@ describe("Anima Studio API", () => {
       new Uint8Array([1, 2, 3, 4]),
     );
 
+    // LoRAs saved in an engine release folder before the shared-folder fix.
+    api.repository.updateJob(job.id, { instantLoraPath: releaseLora });
+    const fromRelease = await api.app.request(
+      `/api/jobs/${job.id}/instant-lora`,
+    );
+    expect(fromRelease.status).toBe(200);
+    expect(new Uint8Array(await fromRelease.arrayBuffer())).toEqual(
+      new Uint8Array([5, 6]),
+    );
+
     for (const outside of [
       join(loraRoot, "manual.safetensors"),
-      "Instant-Reference-Generated/../manual.safetensors",
+      join(releaseLoraRoot, "release-manual.safetensors"),
+      "instant-reference-generated/../manual.safetensors",
       join(generatedDirectory, "training.json"),
     ]) {
       api.repository.updateJob(job.id, { instantLoraPath: outside });

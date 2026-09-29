@@ -38,20 +38,63 @@ function pathInside(root: string, candidate: string): boolean {
 export class StorageInventoryService {
   private readonly dataRoot: string;
   private readonly modelRoots: string[];
+  private readonly runtimeRoot: string;
   private readonly loraRoot: string;
-  private readonly instantLoraRoot: string;
+  private readonly releasesRoot: string;
+  private readonly releaseLoraPath: string;
 
   constructor(
     private readonly repository: StudioRepository,
-    options: { dataDir: string; modelRoots: string[]; loraRoot: string },
+    options: {
+      dataDir: string;
+      modelRoots: string[];
+      runtimeRoot: string;
+      loraRoot: string;
+      releasesRoot: string;
+      /** LoRA folder inside each engine release, e.g. ComfyUI/models/loras. */
+      releaseLoraPath: string;
+    },
   ) {
     this.dataRoot = resolve(options.dataDir);
     this.modelRoots = options.modelRoots.map((root) => resolve(root));
+    this.runtimeRoot = resolve(options.runtimeRoot);
     this.loraRoot = resolve(options.loraRoot);
-    this.instantLoraRoot = resolve(
-      this.loraRoot,
-      INSTANT_REFERENCE_GENERATED_LORA_DIRECTORY,
-    );
+    this.releasesRoot = resolve(options.releasesRoot);
+    this.releaseLoraPath = options.releaseLoraPath;
+  }
+
+  /**
+   * Instant Reference writes into ComfyUI's first LoRA folder. That is the
+   * shared folder now, but older engine configs used each release's own
+   * folder, so LoRAs generated before the change live there.
+   */
+  private async instantLoraRoots(): Promise<
+    Array<{ loraRoot: string; root: string }>
+  > {
+    const loraRoots = [this.loraRoot];
+    const releases = await readdir(this.releasesRoot, {
+      withFileTypes: true,
+    }).catch(() => []);
+    for (const release of releases) {
+      if (release.isDirectory() && !release.isSymbolicLink()) {
+        loraRoots.push(
+          resolve(this.releasesRoot, release.name, this.releaseLoraPath),
+        );
+      }
+    }
+    const roots: Array<{ loraRoot: string; root: string }> = [];
+    for (const loraRoot of loraRoots) {
+      const root = resolve(loraRoot, INSTANT_REFERENCE_GENERATED_LORA_DIRECTORY);
+      const stats = await lstat(root).catch(() => null);
+      if (
+        stats?.isDirectory() &&
+        !stats.isSymbolicLink() &&
+        pathInside(this.runtimeRoot, root)
+      ) {
+        roots.push({ loraRoot, root });
+      }
+    }
+    return roots;
   }
 
   private async regularFileSize(path: string): Promise<number | null> {
@@ -71,15 +114,14 @@ export class StorageInventoryService {
     rawPath: string,
   ): Promise<{ path: string; filename: string; byteSize: number } | null> {
     const path = resolve(this.loraRoot, rawPath);
-    if (
-      !pathInside(this.instantLoraRoot, path) ||
-      !path.toLowerCase().endsWith(".safetensors")
-    ) {
-      return null;
-    }
+    if (!path.toLowerCase().endsWith(".safetensors")) return null;
+    const root = (await this.instantLoraRoots()).find((candidate) =>
+      pathInside(candidate.root, path),
+    )?.root;
+    if (!root) return null;
     // Reject paths that escape the generated folder through a linked directory.
     const [realRoot, realFile] = await Promise.all([
-      realpath(this.instantLoraRoot).catch(() => null),
+      realpath(root).catch(() => null),
       realpath(path).catch(() => null),
     ]);
     if (!realRoot || !realFile || !pathInside(realRoot, realFile)) return null;
@@ -97,16 +139,18 @@ export class StorageInventoryService {
   }
 
   private async instantLoraItems(): Promise<StorageItemDto[]> {
-    const rootStats = await lstat(this.instantLoraRoot).catch(() => null);
-    if (
-      !rootStats?.isDirectory() ||
-      rootStats.isSymbolicLink() ||
-      !pathInside(this.loraRoot, this.instantLoraRoot)
-    ) {
-      return [];
-    }
-
     const items: StorageItemDto[] = [];
+    for (const { loraRoot, root } of await this.instantLoraRoots()) {
+      await this.collectInstantLoras(loraRoot, root, items);
+    }
+    return items;
+  }
+
+  private async collectInstantLoras(
+    loraRoot: string,
+    root: string,
+    items: StorageItemDto[],
+  ): Promise<void> {
     const visit = async (directory: string): Promise<void> => {
       let entries;
       try {
@@ -117,7 +161,7 @@ export class StorageInventoryService {
       }
       for (const entry of entries) {
         const path = resolve(directory, entry.name);
-        if (!pathInside(this.instantLoraRoot, path)) continue;
+        if (!pathInside(root, path)) continue;
         if (entry.isDirectory() && !entry.isSymbolicLink()) {
           await visit(path);
           continue;
@@ -131,11 +175,10 @@ export class StorageInventoryService {
         }
         const stats = await lstat(path).catch(() => null);
         if (!stats?.isFile() || stats.isSymbolicLink()) continue;
-        const id = relative(this.loraRoot, path).split(sep).join("/");
         items.push({
           kind: "instant_lora",
-          id,
-          name: id,
+          id: relative(this.runtimeRoot, path).split(sep).join("/"),
+          name: relative(loraRoot, path).split(sep).join("/"),
           byteSize: stats.size,
           createdAt: (stats.birthtimeMs > 0
             ? stats.birthtime
@@ -147,8 +190,7 @@ export class StorageInventoryService {
         });
       }
     };
-    await visit(this.instantLoraRoot);
-    return items;
+    await visit(root);
   }
 
   async inventory(): Promise<StorageInventoryDto> {
@@ -230,7 +272,7 @@ export class StorageInventoryService {
     };
   }
 
-  private targetPath(item: StorageItemDto): string {
+  private async targetPath(item: StorageItemDto): Promise<string> {
     if (item.kind === "asset") {
       const row = this.repository.findAsset(item.id);
       if (!row) throw new JobSubmissionError("Storage asset not found.", 404);
@@ -250,8 +292,9 @@ export class StorageInventoryService {
       return path;
     }
     if (item.kind === "instant_lora") {
-      const path = resolve(this.loraRoot, item.id);
-      if (!pathInside(this.instantLoraRoot, path)) {
+      const path = resolve(this.runtimeRoot, item.id);
+      const roots = await this.instantLoraRoots();
+      if (!roots.some(({ root }) => pathInside(root, path))) {
         throw new JobSubmissionError(
           "Instant LoRA path is invalid.",
           409,
@@ -268,7 +311,7 @@ export class StorageInventoryService {
   }
 
   private async deleteItem(item: StorageItemDto): Promise<void> {
-    const source = this.targetPath(item);
+    const source = await this.targetPath(item);
     const size = await this.regularFileSize(source);
     if (size === null) {
       throw new JobSubmissionError(
