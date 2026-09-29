@@ -1750,9 +1750,14 @@ describe("Anima Studio API", () => {
       },
     };
     await api.tracker.start();
+    // Both outputs can share a timestamp, so their list order is not fixed.
     const jobOutputs = api.repository.listOutputs(job.job.id);
-    const output = jobOutputs[0]!;
-    const remainingOutput = jobOutputs[1]!;
+    const output = jobOutputs.find(
+      (candidate) => candidate.filename === "library.png",
+    )!;
+    const remainingOutput = jobOutputs.find(
+      (candidate) => candidate.filename === "library-second.png",
+    )!;
     const folderResponse = await api.app.request("/api/library/folders", {
       method: "POST",
       headers: { "content-type": "application/json" },
