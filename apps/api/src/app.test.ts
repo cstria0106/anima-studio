@@ -2,7 +2,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   mkdir,
   mkdtemp,
-  rm,
   stat,
   unlink,
   writeFile,
@@ -47,6 +46,7 @@ import { loadConfig } from "./config";
 import { createDatabase } from "./db/database";
 import { StudioRepository } from "./db/repository";
 import { RUNTIME_STATE_SETTING } from "./runtime/studio";
+import { removeTemporaryDirectory } from "./testing/remove-temporary-directory";
 import type {
   WorkflowBuildResult,
   WorkflowEngine,
@@ -66,7 +66,7 @@ const testGenerationConfig: GenerationConfig = generationConfigSchema.parse({
 afterEach(async () => {
   for (const runtime of runtimes.splice(0)) await runtime.close();
   for (const directory of temporaryDirectories.splice(0)) {
-    await rm(directory, { recursive: true, force: true });
+    await removeTemporaryDirectory(directory);
   }
 });
 

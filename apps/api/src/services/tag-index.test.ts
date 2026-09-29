@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../config";
 import { createDatabase } from "../db/database";
 import { StudioRepository } from "../db/repository";
+import { removeTemporaryDirectory } from "../testing/remove-temporary-directory";
 import {
   initializeDanbooruTagIndex,
   type TagDataSource,
@@ -18,12 +19,7 @@ afterEach(async () => {
   Bun.gc(true);
   await Bun.sleep(10);
   for (const directory of temporaryDirectories.splice(0)) {
-    await rm(directory, {
-      recursive: true,
-      force: true,
-      maxRetries: 5,
-      retryDelay: 50,
-    });
+    await removeTemporaryDirectory(directory);
   }
 });
 

@@ -8,7 +8,6 @@ import { createHash } from "node:crypto";
 import {
   mkdir,
   mkdtemp,
-  rm,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,6 +23,7 @@ import type {
   NewModelDownload,
 } from "../db/repository";
 import type { OperationProgress } from "../services/operations";
+import { removeTemporaryDirectory } from "../testing/remove-temporary-directory";
 import type { CivitaiMetadataClient } from "./client";
 import { DestinationRegistry } from "./destinations";
 import {
@@ -52,12 +52,7 @@ const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
   for (const directory of temporaryDirectories.splice(0)) {
-    await rm(directory, {
-      recursive: true,
-      force: true,
-      maxRetries: 5,
-      retryDelay: 25,
-    });
+    await removeTemporaryDirectory(directory);
   }
 });
 
