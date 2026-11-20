@@ -31,7 +31,10 @@ export interface PreflightIssue {
     | "diffusion_missing"
     | "clip_missing"
     | "vae_missing"
-    | "lora_missing";
+    | "lora_missing"
+    | "snapref_as_lora"
+    | "snapref_adapter_missing"
+    | "snapref_too_many_references";
   message: string;
   stepId: CreateStepId;
   fieldId?: string;
@@ -46,6 +49,28 @@ interface PreflightInput {
   capabilities: CapabilitiesResponse | null;
   inpaint?: InpaintWorkspaceDraft;
   inpaintCapabilities?: CapabilitiesResponse | null;
+}
+
+export const MAX_SNAPREF_REFERENCES = 8;
+
+/**
+ * SnapRef weights live in the LoRA folder and the node finds them by name,
+ * but they are reference adapters that a LoRA loader must never apply.
+ */
+export function isSnapRefAdapter(path: string): boolean {
+  return /snapref/i.test(path);
+}
+
+export function snapRefAdapterOptions<T extends { value: string }>(
+  loras: T[],
+): T[] {
+  return loras.filter((option) => isSnapRefAdapter(option.value));
+}
+
+export function regularLoraOptions<T extends { value: string }>(
+  loras: T[],
+): T[] {
+  return loras.filter((option) => !isSnapRefAdapter(option.value));
 }
 
 function normalizedModel(value: string) {
@@ -273,6 +298,45 @@ export function buildPreflightIssues({
         fieldId: "lora-options",
         severity: "error",
       });
+    }
+
+    const snapRefLora = draft.loras.find(
+      (lora) => lora.enabled && isSnapRefAdapter(lora.path),
+    );
+    if (snapRefLora) {
+      issues.push({
+        code: "snapref_as_lora",
+        message: `“${snapRefLora.name}”은(는) SnapRef 가중치라 LoRA로 쓸 수 없습니다. LoRA 목록에서 빼고 참조 이미지의 SnapRef에서 선택하세요.`,
+        stepId: "models",
+        fieldId: "lora-options",
+        severity: "error",
+      });
+    }
+
+    const snapRefReferences = draft.referenceAssets.filter(
+      (asset) => asset.status === "ready",
+    ).length;
+    if (draft.reference.method === "snapref" && snapRefReferences > 0) {
+      if (
+        !draft.reference.snapref.adapter ||
+        !installed(draft.reference.snapref.adapter, options.loras)
+      ) {
+        issues.push({
+          code: "snapref_adapter_missing",
+          message: "SnapRef 가중치를 설치하고 선택해주세요.",
+          stepId: "reference",
+          fieldId: "snapref-adapter",
+          severity: "error",
+        });
+      }
+      if (snapRefReferences > MAX_SNAPREF_REFERENCES) {
+        issues.push({
+          code: "snapref_too_many_references",
+          message: `SnapRef는 참조 이미지를 최대 ${MAX_SNAPREF_REFERENCES}장까지 사용합니다.`,
+          stepId: "reference",
+          severity: "error",
+        });
+      }
     }
   }
 

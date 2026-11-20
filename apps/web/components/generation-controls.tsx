@@ -4,6 +4,7 @@ import { CURATED_IMAGE_PRESETS } from "@anima/shared";
 import {
   ChevronDown,
   Dices,
+  Gauge,
   Maximize2,
   Settings2,
 } from "lucide-react";
@@ -13,6 +14,7 @@ import { SearchableSelect } from "@/components/searchable-select";
 import { UpscaleSettingsFields } from "@/components/upscale-settings-fields";
 import { Field } from "@/components/ui/field";
 import { CommittedNumberField } from "@/components/ui/committed-number-field";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import type { GenerationDraft, ModelOption, StudioOptions } from "@/lib/types";
 
@@ -25,6 +27,32 @@ interface GenerationControlsProps {
 
 function optionsFromStrings(values: string[]): ModelOption[] {
   return values.map((value) => ({ name: value, value }));
+}
+
+function EnhancementSwitch({
+  label,
+  description,
+  checked,
+  onCheckedChange,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <p className="text-xs font-medium">{label}</p>
+        <p className="text-[11px] text-muted-foreground">{description}</p>
+      </div>
+      <Switch
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+        aria-label={`${label} 사용`}
+      />
+    </div>
+  );
 }
 
 export function GenerationControls({
@@ -43,6 +71,14 @@ export function GenerationControls({
     setUpscaleOpen(enabled);
     patchUpscale({ enabled });
   };
+  const { enhancements } = value;
+  const patchEnhancements = (patch: Partial<GenerationDraft["enhancements"]>) =>
+    onChange({ ...value, enhancements: { ...enhancements, ...patch } });
+  const enabledEnhancements = [
+    enhancements.modGuidance.enabled,
+    enhancements.safePag.enabled,
+    enhancements.spectrum.enabled,
+  ].filter(Boolean).length;
 
   const curatedKeys = new Set(
     CURATED_IMAGE_PRESETS.map(({ width, height }) => `${width}x${height}`),
@@ -179,6 +215,79 @@ export function GenerationControls({
             max={1}
             step={0.01}
             hint="0–1"
+          />
+        </div>
+      </details>
+
+      <details className="group rounded-lg border border-border/70 bg-background/30">
+        <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3">
+          <span className="inline-flex items-center gap-2 text-xs font-medium">
+            <Gauge className="size-4 text-emerald-300" />
+            품질 · 속도
+          </span>
+          <span className="ml-auto mr-2 text-[10px] text-muted-foreground">
+            {enabledEnhancements > 0 ? `${enabledEnhancements}개 켜짐` : "꺼짐"}
+          </span>
+          <ChevronDown className="size-4 text-muted-foreground transition group-open:rotate-180" />
+        </summary>
+        <div className="space-y-4 border-t border-border/60 p-4">
+          <EnhancementSwitch
+            label="Mod Guidance"
+            description="품질 태그 방향으로 생성을 유도합니다."
+            checked={enhancements.modGuidance.enabled}
+            onCheckedChange={(enabled) =>
+              patchEnhancements({
+                modGuidance: { ...enhancements.modGuidance, enabled },
+              })
+            }
+          />
+          {enhancements.modGuidance.enabled ? (
+            <Field label="Mod Guidance 품질 태그" htmlFor="mod-guidance-tags">
+              <Input
+                id="mod-guidance-tags"
+                value={enhancements.modGuidance.qualityTags}
+                onChange={(event) =>
+                  patchEnhancements({
+                    modGuidance: {
+                      ...enhancements.modGuidance,
+                      qualityTags: event.target.value,
+                    },
+                  })
+                }
+              />
+            </Field>
+          ) : null}
+          <EnhancementSwitch
+            label="Safe PAG"
+            description="디테일과 선을 또렷하게 합니다. 생성이 느려집니다."
+            checked={enhancements.safePag.enabled}
+            onCheckedChange={(enabled) =>
+              patchEnhancements({
+                safePag: { ...enhancements.safePag, enabled },
+              })
+            }
+          />
+          {enhancements.safePag.enabled ? (
+            <CommittedNumberField
+              label="Safe PAG scale"
+              value={enhancements.safePag.scale}
+              onChange={(scale) =>
+                patchEnhancements({
+                  safePag: { ...enhancements.safePag, scale },
+                })
+              }
+              min={0}
+              max={100}
+              step={0.1}
+            />
+          ) : null}
+          <EnhancementSwitch
+            label="Spectrum 가속"
+            description="일부 스텝을 예측해 기본 생성을 빠르게 합니다."
+            checked={enhancements.spectrum.enabled}
+            onCheckedChange={(enabled) =>
+              patchEnhancements({ spectrum: { enabled } })
+            }
           />
         </div>
       </details>

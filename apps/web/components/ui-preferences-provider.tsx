@@ -2,7 +2,13 @@
 
 import * as React from "react";
 import { globalUpscaleSettingsSchema } from "@anima/shared";
-import { ApiError, getUiPreferences, updateUiPreferences } from "@/lib/api";
+import {
+  ApiError,
+  getUiPreferences,
+  normalizeEnhancementSettings,
+  normalizeReferenceSettings,
+  updateUiPreferences,
+} from "@/lib/api";
 import {
   DEFAULT_DRAFT,
   type GenerationDraft,
@@ -125,6 +131,12 @@ export function normalizeGenerationDraft(
       ...DEFAULT_DRAFT.loraOptimizer,
       ...record(saved.loraOptimizer),
     },
+    reference: normalizeReferenceSettings(
+      record(saved.reference) as Partial<GenerationDraft["reference"]>,
+    ),
+    enhancements: normalizeEnhancementSettings(
+      record(saved.enhancements) as Partial<GenerationDraft["enhancements"]>,
+    ),
     tagging: { ...DEFAULT_DRAFT.tagging, ...record(saved.tagging) },
     upscale: { ...DEFAULT_DRAFT.upscale, ...record(saved.upscale) },
     loras: Array.isArray(saved.loras)

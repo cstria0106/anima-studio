@@ -26,6 +26,7 @@ import { MobileExecutionDock } from "@/components/mobile-execution-dock";
 import { ModelLoraControls } from "@/components/model-lora-controls";
 import { PromptEditor } from "@/components/prompt-editor";
 import { RecognizedTags } from "@/components/recognized-tags";
+import { ReferenceMethodControls } from "@/components/reference-method-controls";
 import { ReferenceUploader } from "@/components/reference-uploader";
 import { RuntimeStartupGate } from "@/components/runtime-startup-gate";
 import { SettingsView } from "@/components/settings-view";
@@ -119,6 +120,7 @@ function CreateWorkspace({
   onInpaintChange,
   onEditInpaintMask,
   onInpaintUploadReady,
+  onOptionsChanged,
   submitting,
 }: {
   draft: GenerationDraft;
@@ -140,6 +142,7 @@ function CreateWorkspace({
   onInpaintChange: (value: InpaintWorkspaceDraft) => void;
   onEditInpaintMask: () => void;
   onInpaintUploadReady: (value: InpaintWorkspaceDraft) => void;
+  onOptionsChanged: () => void;
   submitting: boolean;
 }) {
   const preflightIssues = React.useMemo(
@@ -295,21 +298,31 @@ function CreateWorkspace({
                       onDraftChange({ ...draft, referenceAssets })
                     }
                   />
-                  <InstantReferenceStrengthControls
+                  <ReferenceMethodControls
                     value={draft}
+                    options={options}
                     onChange={onDraftChange}
+                    onOptionsChanged={onOptionsChanged}
                   />
-                  <InstantReferenceControls
-                    value={draft}
-                    onChange={onDraftChange}
-                  />
-                  <RecognizedTags
-                    tags={recognizedTags}
-                    prompts={draft.prompts}
-                    onChange={(prompts) =>
-                      onDraftChange({ ...draft, prompts })
-                    }
-                  />
+                  {draft.reference.method === "instant_lora" ? (
+                    <>
+                      <InstantReferenceStrengthControls
+                        value={draft}
+                        onChange={onDraftChange}
+                      />
+                      <InstantReferenceControls
+                        value={draft}
+                        onChange={onDraftChange}
+                      />
+                      <RecognizedTags
+                        tags={recognizedTags}
+                        prompts={draft.prompts}
+                        onChange={(prompts) =>
+                          onDraftChange({ ...draft, prompts })
+                        }
+                      />
+                    </>
+                  ) : null}
                 </CardContent>
               </Card>
 
@@ -1157,6 +1170,7 @@ export function StudioShell() {
             onInpaintUploadReady={(workspace) =>
               setInpaintEditorSession({ workspace })
             }
+            onOptionsChanged={() => void refreshSystem()}
             submitting={submitting}
           />
         </main>

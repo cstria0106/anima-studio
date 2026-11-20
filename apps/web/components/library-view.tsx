@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 
 import { AnimaCatalogPanel } from "@/components/anima-catalog-panel";
+import { SnapRefLibraryCard } from "@/components/snapref-library-card";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -67,6 +68,7 @@ import type {
   ModelInstallTask,
   ManagedModelInstallation,
 } from "@/lib/types";
+import { isSnapRefAdapter } from "@/lib/studio-ux";
 import { cn } from "@/lib/utils";
 import {
   Tabs,
@@ -612,7 +614,7 @@ export function LibraryView({
       <Tabs defaultValue="anima" className="w-full">
         <div className="flex items-center justify-between gap-3">
           <TabsList className="grid min-w-0 flex-1 grid-cols-2 sm:max-w-[420px]">
-            <TabsTrigger value="anima">Anima 공식</TabsTrigger>
+            <TabsTrigger value="anima">기본 모델</TabsTrigger>
             <TabsTrigger value="civitai">
               Civitai
               {civitaiLoras.length ? (
@@ -635,7 +637,7 @@ export function LibraryView({
           </Button>
         </div>
 
-        <TabsContent value="anima">
+        <TabsContent value="anima" className="space-y-4">
           <AnimaCatalogPanel
             value={animaProvider}
             loading={loading}
@@ -646,6 +648,7 @@ export function LibraryView({
               onOpenManagedRuntime();
             }}
           />
+          <SnapRefLibraryCard onOptionsChanged={onOptionsChanged} />
         </TabsContent>
 
         <TabsContent value="civitai" className="space-y-4">
@@ -721,6 +724,11 @@ export function LibraryView({
                             <p className="mt-1 truncate text-[11px] text-muted-foreground">
                               {lora.versionName}
                             </p>
+                            {isSnapRefAdapter(lora.filename) ? (
+                              <Badge variant="secondary" className="mt-1.5">
+                                SnapRef 참조 가중치
+                              </Badge>
+                            ) : null}
                           </div>
                           <Button
                             type="button"

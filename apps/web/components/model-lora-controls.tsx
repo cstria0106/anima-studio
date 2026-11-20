@@ -18,6 +18,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { StrengthSlider } from "@/components/ui/strength-slider";
 import { Switch } from "@/components/ui/switch";
+import { regularLoraOptions } from "@/lib/studio-ux";
 import type {
   GenerationDraft,
   LoraOption,
@@ -187,6 +188,10 @@ export function ModelLoraControls({
       ),
     [options.loras],
   );
+  const regularLoras = React.useMemo(
+    () => regularLoraOptions(options.loras),
+    [options.loras],
+  );
 
   function addLora(option: LoraOption) {
     onLorasChange([
@@ -303,7 +308,7 @@ export function ModelLoraControls({
         </div>
 
         <LoraFinder
-          options={options.loras}
+          options={regularLoras}
           selected={loras}
           onAdd={addLora}
         />

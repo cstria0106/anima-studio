@@ -3,7 +3,9 @@ import {
   buildPreflightIssues,
   clearModelAndLoraSelections,
   loadSeedIntoDraft,
+  regularLoraOptions,
   restoreImageSettings,
+  snapRefAdapterOptions,
 } from "./studio-ux";
 import {
   emptyInpaintWorkspace,
@@ -233,5 +235,49 @@ describe("image settings restoration", () => {
     expect(() =>
       restoreImageSettings(job, "missing", globalUpscale),
     ).toThrow("선택한 이미지의 생성 설정을 찾지 못했습니다.");
+  });
+});
+
+describe("SnapRef weights in the LoRA folder", () => {
+  const loras = [
+    { name: "style", value: "style.safetensors" },
+    { name: "SnapRef", value: "AnimaBase\Ref\snapref_v2a.safetensors" },
+  ];
+
+  test("offers SnapRef weights only as reference adapters", () => {
+    expect(regularLoraOptions(loras).map((option) => option.value)).toEqual([
+      "style.safetensors",
+    ]);
+    expect(snapRefAdapterOptions(loras).map((option) => option.name)).toEqual([
+      "SnapRef",
+    ]);
+  });
+
+  test("blocks a SnapRef file that was added as a LoRA", () => {
+    const issues = buildPreflightIssues({
+      draft: {
+        ...readyDraft,
+        loras: [
+          {
+            id: "lora-snapref",
+            name: "SnapRef",
+            path: "AnimaBase\Ref\snapref_v2a.safetensors",
+            enabled: true,
+            modelStrength: 1,
+            clipStrength: 1,
+            triggerWords: [],
+            useTriggerWords: true,
+          },
+        ],
+      },
+      options: { ...options, loras },
+      optionsLoading: false,
+      health: { ok: true, comfyui: true },
+      capabilities: { ready: true, missingNodes: [] },
+    });
+
+    expect(issues.map((issue) => [issue.code, issue.fieldId])).toEqual([
+      ["snapref_as_lora", "lora-options"],
+    ]);
   });
 });

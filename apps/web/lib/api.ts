@@ -21,6 +21,7 @@ import {
   type LoraOption,
   type ManagedModelInstallation,
   type ModelInstallTask,
+  type SnapRefProviderResponse,
   type ModelOption,
   type JobPreview,
   type ReferenceAsset,
@@ -220,6 +221,8 @@ interface ApiGenerationConfig {
   loraOptimizer: {
     enabled: boolean;
   };
+  reference?: GenerationDraft["reference"];
+  enhancements?: GenerationDraft["enhancements"];
   seed: { mode: "random" | "fixed"; value: number };
   sampling: {
     sampler: string;
@@ -821,6 +824,8 @@ function draftToConfig(draft: GenerationDraft): ApiGenerationConfig {
       },
     },
     loraOptimizer: draft.loraOptimizer,
+    reference: draft.reference,
+    enhancements: draft.enhancements,
     seed: {
       mode: draft.sampling.seedMode,
       value: draft.sampling.seed,
@@ -845,6 +850,29 @@ function draftToConfig(draft: GenerationDraft): ApiGenerationConfig {
       method:
         draft.upscale.method as ApiGenerationConfig["upscale"]["method"],
     },
+  };
+}
+
+export function normalizeReferenceSettings(
+  value: Partial<GenerationDraft["reference"]> | undefined,
+): GenerationDraft["reference"] {
+  return {
+    method: value?.method ?? DEFAULT_DRAFT.reference.method,
+    snapref: {
+      ...DEFAULT_DRAFT.reference.snapref,
+      ...(value?.snapref ?? {}),
+    },
+  };
+}
+
+export function normalizeEnhancementSettings(
+  value: Partial<GenerationDraft["enhancements"]> | undefined,
+): GenerationDraft["enhancements"] {
+  const defaults = DEFAULT_DRAFT.enhancements;
+  return {
+    modGuidance: { ...defaults.modGuidance, ...(value?.modGuidance ?? {}) },
+    safePag: { ...defaults.safePag, ...(value?.safePag ?? {}) },
+    spectrum: { ...defaults.spectrum, ...(value?.spectrum ?? {}) },
   };
 }
 
@@ -937,6 +965,8 @@ function configToDraft(config: ApiGenerationConfig): GenerationDraft {
         config.loraOptimizer?.enabled ??
         DEFAULT_DRAFT.loraOptimizer.enabled,
     },
+    reference: normalizeReferenceSettings(config.reference),
+    enhancements: normalizeEnhancementSettings(config.enhancements),
     tagging: {
       ...DEFAULT_DRAFT.tagging,
       threshold:
@@ -1435,6 +1465,21 @@ export async function removeModelInstallation(id: string): Promise<void> {
     `/api/model-installations/${encodeURIComponent(id)}`,
     { method: "DELETE" },
   );
+}
+
+export async function getSnapRefAdapter(
+  signal?: AbortSignal,
+): Promise<SnapRefProviderResponse> {
+  return apiFetch<SnapRefProviderResponse>("/api/model-installations/snapref", {
+    signal,
+  });
+}
+
+export async function installSnapRefAdapter(): Promise<ModelInstallTask> {
+  return apiFetch<ModelInstallTask>("/api/model-installations/snapref", {
+    method: "POST",
+    body: JSON.stringify({ acceptedLicense: true }),
+  });
 }
 
 export function modelInstallationEventsUrl(id: string) {

@@ -2,6 +2,8 @@ import type { GlobalUpscaleSettings as SharedGlobalUpscaleSettings } from "@anim
 
 export type {
   ManagedModelInstallationDto as ManagedModelInstallation,
+  SnapRefAdapterDto as SnapRefAdapter,
+  SnapRefProviderResponseDto as SnapRefProviderResponse,
 } from "@anima/shared";
 
 export type JobStatus =
@@ -84,6 +86,30 @@ export interface GenerationDraft {
   loraOptimizer: {
     enabled: boolean;
   };
+  reference: {
+    method: "instant_lora" | "snapref";
+    snapref: {
+      adapter: string;
+      mode: "character_style" | "character";
+      strength: number;
+      fidelity: number;
+    };
+  };
+  enhancements: {
+    modGuidance: {
+      enabled: boolean;
+      qualityTags: string;
+      qualityNegative: string;
+      profile: "step_i8_skip27" | "step_i14";
+    };
+    safePag: {
+      enabled: boolean;
+      scale: number;
+    };
+    spectrum: {
+      enabled: boolean;
+    };
+  };
   tagging: {
     threshold: number;
     characterThreshold: number;
@@ -162,6 +188,31 @@ export const DEFAULT_DRAFT: GenerationDraft = {
   },
   loraOptimizer: {
     enabled: true,
+  },
+  reference: {
+    method: "instant_lora",
+    snapref: {
+      adapter: "",
+      mode: "character_style",
+      strength: 1,
+      fidelity: 1,
+    },
+  },
+  enhancements: {
+    modGuidance: {
+      enabled: false,
+      qualityTags: "highres, best quality, score_7",
+      qualityNegative:
+        "score_1, score_2, score_3, worst quality, lowres, old, bad hands, bad anatomy",
+      profile: "step_i8_skip27",
+    },
+    safePag: {
+      enabled: false,
+      scale: 2.5,
+    },
+    spectrum: {
+      enabled: false,
+    },
   },
   tagging: {
     threshold: 0.35,

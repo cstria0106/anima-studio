@@ -248,6 +248,18 @@ describe("history job restoration", () => {
                   batchSize: 3,
                 },
               },
+              reference: {
+                method: "snapref",
+                snapref: {
+                  adapter: "AnimaBase/snapref_v2a.safetensors",
+                  mode: "character",
+                  strength: 0.8,
+                  fidelity: 0.6,
+                },
+              },
+              enhancements: {
+                safePag: { enabled: true, scale: 3 },
+              },
               seed: {
                 mode: "random",
                 value: 123,
@@ -381,6 +393,19 @@ describe("history job restoration", () => {
       loraOptimizer: {
         enabled: true,
       },
+      reference: {
+        method: "snapref",
+        snapref: {
+          adapter: "AnimaBase/snapref_v2a.safetensors",
+          mode: "character",
+          strength: 0.8,
+          fidelity: 0.6,
+        },
+      },
+      enhancements: {
+        ...DEFAULT_DRAFT.enhancements,
+        safePag: { enabled: true, scale: 3 },
+      },
       tagging: {
         threshold: 0.41,
         characterThreshold: 0.77,
@@ -477,6 +502,8 @@ describe("generation job submission", () => {
 
     expect(submittedConfig?.referenceAssetIds).toEqual([]);
     expect(submittedConfig?.loraOptimizer).toEqual({ enabled: false });
+    expect(submittedConfig?.reference).toEqual(DEFAULT_DRAFT.reference);
+    expect(submittedConfig?.enhancements).toEqual(DEFAULT_DRAFT.enhancements);
     expect(submittedConfig?.prompts).toEqual(draft.prompts);
     expect(submittedConfig?.loras).toEqual([
       {
