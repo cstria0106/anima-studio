@@ -38,6 +38,7 @@ import {
   type TagSuggestion,
   type UiPreferences,
 } from "@/lib/types";
+import { activeReferenceAssets } from "@/lib/reference-assets";
 
 export async function getLibraryFolders(
   signal?: AbortSignal,
@@ -776,9 +777,7 @@ export async function cleanupStorage(
 
 function draftToConfig(draft: GenerationDraft): ApiGenerationConfig {
   return {
-    referenceAssetIds: draft.referenceAssets
-      .filter((asset) => asset.status === "ready")
-      .map((asset) => asset.id),
+    referenceAssetIds: activeReferenceAssets(draft).map((asset) => asset.id),
     prompts: draft.prompts,
     model: {
       diffusionModel: draft.models.diffusion,

@@ -54,6 +54,7 @@ import {
   CardHeader,
 } from "@/components/ui/card";
 import { SectionHeading } from "@/components/ui/field";
+import { Switch } from "@/components/ui/switch";
 import {
   cleanupStorage,
   createInpaintJob,
@@ -289,40 +290,61 @@ function CreateWorkspace({
             <div className="space-y-4">
               <Card id="create-section-reference">
                 <CardHeader className="pb-3">
-                  <SectionHeading title="참조 이미지" />
-                </CardHeader>
-                <CardContent className="space-y-5">
-                  <ReferenceUploader
-                    assets={draft.referenceAssets}
-                    onChange={(referenceAssets) =>
-                      onDraftChange({ ...draft, referenceAssets })
+                  <SectionHeading
+                    title="참조 이미지"
+                    action={
+                      <Switch
+                        checked={draft.referencesEnabled}
+                        onCheckedChange={(referencesEnabled) =>
+                          onDraftChange({ ...draft, referencesEnabled })
+                        }
+                        aria-label="참조 이미지 사용"
+                      />
                     }
                   />
-                  <ReferenceMethodControls
-                    value={draft}
-                    options={options}
-                    onChange={onDraftChange}
-                    onOptionsChanged={onOptionsChanged}
-                  />
-                  {draft.reference.method === "instant_lora" ? (
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className={cn(!draft.referencesEnabled && "opacity-50")}>
+                    <ReferenceUploader
+                      assets={draft.referenceAssets}
+                      onChange={(referenceAssets) =>
+                        onDraftChange({ ...draft, referenceAssets })
+                      }
+                    />
+                  </div>
+                  {draft.referencesEnabled ? (
                     <>
-                      <InstantReferenceStrengthControls
+                      <ReferenceMethodControls
                         value={draft}
+                        options={options}
                         onChange={onDraftChange}
+                        onOptionsChanged={onOptionsChanged}
                       />
-                      <InstantReferenceControls
-                        value={draft}
-                        onChange={onDraftChange}
-                      />
-                      <RecognizedTags
-                        tags={recognizedTags}
-                        prompts={draft.prompts}
-                        onChange={(prompts) =>
-                          onDraftChange({ ...draft, prompts })
-                        }
-                      />
+                      {draft.reference.method === "instant_lora" ? (
+                        <>
+                          <InstantReferenceStrengthControls
+                            value={draft}
+                            onChange={onDraftChange}
+                          />
+                          <InstantReferenceControls
+                            value={draft}
+                            onChange={onDraftChange}
+                          />
+                          <RecognizedTags
+                            tags={recognizedTags}
+                            prompts={draft.prompts}
+                            onChange={(prompts) =>
+                              onDraftChange({ ...draft, prompts })
+                            }
+                          />
+                        </>
+                      ) : null}
                     </>
-                  ) : null}
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">
+                      참조 이미지 없이 생성합니다.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
 

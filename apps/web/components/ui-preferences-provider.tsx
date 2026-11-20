@@ -120,6 +120,7 @@ export function normalizeGenerationDraft(
             !asset.url?.startsWith("blob:"),
         )
       : [],
+    referencesEnabled: saved.referencesEnabled !== false,
     prompts: { ...DEFAULT_DRAFT.prompts, ...record(saved.prompts) },
     models: { ...DEFAULT_DRAFT.models, ...record(saved.models) },
     sampling: { ...DEFAULT_DRAFT.sampling, ...record(saved.sampling) },

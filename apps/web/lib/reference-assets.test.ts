@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { ReferenceAsset } from "./types";
-import { normalizeReferenceAssets } from "./reference-assets";
+import {
+  activeReferenceAssets,
+  normalizeReferenceAssets,
+} from "./reference-assets";
 
 function asset(
   id: string,
@@ -41,5 +44,26 @@ describe("normalizeReferenceAssets", () => {
       low.id,
       high.id,
     ]);
+  });
+});
+
+describe("active reference assets", () => {
+  const referenceAssets = [
+    asset("ready-a"),
+    asset("uploading-b", undefined, "uploading"),
+  ];
+
+  test("uses only ready images while references are on", () => {
+    expect(
+      activeReferenceAssets({ referenceAssets, referencesEnabled: true }).map(
+        (item) => item.id,
+      ),
+    ).toEqual(["ready-a"]);
+  });
+
+  test("keeps images in the draft but uses none while references are off", () => {
+    expect(
+      activeReferenceAssets({ referenceAssets, referencesEnabled: false }),
+    ).toEqual([]);
   });
 });

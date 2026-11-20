@@ -342,6 +342,7 @@ describe("history job restoration", () => {
       GenerationDraft,
       "referenceAssets" | "sampling"
     > = {
+      referencesEnabled: true,
       prompts: {
         basePositive: "base positive",
         positive: "positive, detailed eyes",
@@ -514,6 +515,33 @@ describe("generation job submission", () => {
         triggerWords: ["style trigger"],
         useTriggerWords: false,
       },
+    ]);
+  });
+
+  test("submits no references while references are turned off", async () => {
+    const submitted: Array<Record<string, unknown>> = [];
+    globalThis.fetch = (async (_input, init) => {
+      submitted.push(
+        (JSON.parse(String(init?.body)) as { config: Record<string, unknown> })
+          .config,
+      );
+      return new Response(JSON.stringify({ error: "test stop" }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const draft = structuredClone(DEFAULT_DRAFT);
+    draft.referenceAssets = [
+      { id: "asset-a", name: "a.png", url: "/api/assets/asset-a", status: "ready" },
+    ];
+    await createJob(draft).catch(() => undefined);
+    draft.referencesEnabled = false;
+    await createJob(draft).catch(() => undefined);
+
+    expect(submitted.map((config) => config.referenceAssetIds)).toEqual([
+      ["asset-a"],
+      [],
     ]);
   });
 });

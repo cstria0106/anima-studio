@@ -1,4 +1,16 @@
-import type { ReferenceAsset } from "@/lib/types";
+import type { GenerationDraft, ReferenceAsset } from "@/lib/types";
+
+/**
+ * Ready reference images the next generation uses. Turning references off
+ * keeps the images in the draft but generates without them.
+ */
+export function activeReferenceAssets(
+  draft: Pick<GenerationDraft, "referenceAssets" | "referencesEnabled">,
+): ReferenceAsset[] {
+  return draft.referencesEnabled
+    ? draft.referenceAssets.filter((asset) => asset.status === "ready")
+    : [];
+}
 
 export function normalizeReferenceAssets(
   values: readonly ReferenceAsset[],

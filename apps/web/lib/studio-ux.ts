@@ -7,6 +7,7 @@ import type {
   StudioOptions,
 } from "@/lib/types";
 import type { InpaintWorkspaceDraft } from "@/lib/inpaint";
+import { activeReferenceAssets } from "@/lib/reference-assets";
 
 export type CreateStepId =
   | "reference"
@@ -187,7 +188,10 @@ export function buildPreflightIssues({
     });
   }
 
-  if (draft.referenceAssets.some((asset) => asset.status === "uploading")) {
+  if (
+    draft.referencesEnabled &&
+    draft.referenceAssets.some((asset) => asset.status === "uploading")
+  ) {
     issues.push({
       code: "reference_uploading",
       message: "참조 이미지 업로드가 끝날 때까지 기다려주세요.",
@@ -313,9 +317,7 @@ export function buildPreflightIssues({
       });
     }
 
-    const snapRefReferences = draft.referenceAssets.filter(
-      (asset) => asset.status === "ready",
-    ).length;
+    const snapRefReferences = activeReferenceAssets(draft).length;
     if (draft.reference.method === "snapref" && snapRefReferences > 0) {
       if (
         !draft.reference.snapref.adapter ||

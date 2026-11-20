@@ -42,6 +42,7 @@ export interface LoraSelection {
 
 export interface GenerationDraft {
   referenceAssets: ReferenceAsset[];
+  referencesEnabled: boolean;
   prompts: {
     basePositive: string;
     positive: string;
@@ -143,6 +144,7 @@ export type GlobalUpscaleSettings = SharedGlobalUpscaleSettings;
 
 export const DEFAULT_DRAFT: GenerationDraft = {
   referenceAssets: [],
+  referencesEnabled: true,
   prompts: {
     basePositive:
       "newest, masterpiece, very aesthetic, score_7, best quality",

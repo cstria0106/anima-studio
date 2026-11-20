@@ -281,3 +281,35 @@ describe("SnapRef weights in the LoRA folder", () => {
     ]);
   });
 });
+
+describe("turning references off", () => {
+  test("skips reference checks while the images stay in the draft", () => {
+    const draft = {
+      ...readyDraft,
+      referencesEnabled: false,
+      referenceAssets: [
+        ...readyDraft.referenceAssets,
+        {
+          id: "asset-2",
+          name: "uploading.png",
+          url: "blob:uploading",
+          status: "uploading" as const,
+        },
+      ],
+      reference: {
+        ...readyDraft.reference,
+        method: "snapref" as const,
+      },
+    };
+
+    expect(
+      buildPreflightIssues({
+        draft,
+        options,
+        optionsLoading: false,
+        health: { ok: true, comfyui: true },
+        capabilities: { ready: true, missingNodes: [] },
+      }),
+    ).toEqual([]);
+  });
+});
