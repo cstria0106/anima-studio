@@ -8,6 +8,7 @@ import type {
   ManagedModelInstallationDto,
   ModelDownloadDto,
   ModelInstallationStatus,
+  SnapRefAdapterDto,
 } from "@anima/shared";
 
 import type { CivitaiModelLibraryService } from "../civitai";
@@ -19,6 +20,12 @@ import {
 } from "../civitai";
 import type { StudioRepository } from "../db/repository";
 import type { HuggingFaceAnimaLibraryService } from "../huggingface";
+import {
+  SNAPREF_FILE,
+  SNAPREF_REPOSITORY,
+  SNAPREF_REVISION,
+  SNAPREF_SOURCE_URL,
+} from "../huggingface/snapref";
 
 type DownloadSettler = Pick<
   CivitaiModelLibraryService | HuggingFaceAnimaLibraryService,
@@ -345,6 +352,23 @@ export class ModelDownloadCoordinator {
             file.path,
           ),
         })),
+    };
+  }
+
+  snapRefAdapter(): SnapRefAdapterDto {
+    return {
+      repository: SNAPREF_REPOSITORY,
+      revision: SNAPREF_REVISION,
+      sourceUrl: SNAPREF_SOURCE_URL,
+      licenseUrl: `${SNAPREF_SOURCE_URL}/blob/${SNAPREF_REVISION}/LICENSE.md`,
+      filename: SNAPREF_FILE.filename,
+      sizeBytes: SNAPREF_FILE.sizeBytes,
+      ...this.stateFor(
+        "huggingface",
+        SNAPREF_REPOSITORY,
+        SNAPREF_REVISION,
+        SNAPREF_FILE.path,
+      ),
     };
   }
 

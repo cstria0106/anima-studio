@@ -849,6 +849,30 @@ export interface HuggingFaceAnimaInstallDto {
   error?: string;
 }
 
+export const snapRefInstallCreateSchema = z.object({
+  acceptedLicense: z.literal(true),
+});
+
+/** The pinned SnapRef reference adapter and its install state. */
+export interface SnapRefAdapterDto {
+  repository: string;
+  revision: string;
+  sourceUrl: string;
+  licenseUrl: string;
+  /** LoRA-folder name to select as the SnapRef adapter once installed. */
+  filename: string;
+  sizeBytes: number;
+  installationId: string | null;
+  installationStatus: ModelInstallationStatus;
+  installationProgress: number | null;
+}
+
+export interface SnapRefProviderResponseDto {
+  managedDownloads: boolean;
+  reason?: string;
+  adapter: SnapRefAdapterDto;
+}
+
 export interface ManagedModelInstallationDto {
   id: string;
   provider: ModelDownloadProvider;

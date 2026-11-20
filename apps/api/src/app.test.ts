@@ -43,6 +43,11 @@ import type {
   ComfySocketEvent,
 } from "./comfy/types";
 import { loadConfig } from "./config";
+import {
+  SNAPREF_FILE,
+  SNAPREF_REPOSITORY,
+  SNAPREF_REVISION,
+} from "./huggingface/snapref";
 import { createDatabase } from "./db/database";
 import { StudioRepository } from "./db/repository";
 import { RUNTIME_STATE_SETTING } from "./runtime/studio";
@@ -294,6 +299,7 @@ class FakeWorkflow implements WorkflowEngine {
 class FakeHuggingFaceLibrary implements HuggingFaceLibraryService {
   readonly revision = "f".repeat(40);
   installCalls = 0;
+  installSnapRefCalls = 0;
   resumeCalls = 0;
   retryCalls = 0;
 
@@ -365,6 +371,44 @@ class FakeHuggingFaceLibrary implements HuggingFaceLibraryService {
           actualSha256: null,
           bytesCompleted: 0,
           bytesTotal: 100,
+          bytesPerSecond: null,
+          triggerWords: [],
+          metadata: {},
+          error: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          completedAt: null,
+        },
+      ],
+      alreadyInstalled: [],
+    });
+  }
+
+  installSnapRef(_acceptedLicense: boolean) {
+    this.installSnapRefCalls += 1;
+    const id = crypto.randomUUID();
+    return Promise.resolve({
+      downloads: [
+        {
+          id,
+          operationId: crypto.randomUUID(),
+          state: "queued" as const,
+          provider: "huggingface" as const,
+          providerModelId: SNAPREF_REPOSITORY,
+          providerVersionId: SNAPREF_REVISION,
+          providerFileId: SNAPREF_FILE.path,
+          modelId: null,
+          modelVersionId: null,
+          fileId: null,
+          modelName: "SnapRef v2a",
+          versionName: SNAPREF_REVISION.slice(0, 12),
+          filename: SNAPREF_FILE.filename,
+          destinationRootId: "loras" as const,
+          relativeDir: "",
+          expectedSha256: SNAPREF_FILE.sha256,
+          actualSha256: null,
+          bytesCompleted: 0,
+          bytesTotal: SNAPREF_FILE.sizeBytes,
           bytesPerSecond: null,
           triggerWords: [],
           metadata: {},
@@ -1205,6 +1249,66 @@ describe("Anima Studio API", () => {
     );
     expect(installResponse.status).toBe(409);
     expect(huggingFace.installCalls).toBe(0);
+  });
+
+  test("reports the SnapRef adapter and blocks installing it in external mode", async () => {
+    const huggingFace = new FakeHuggingFaceLibrary();
+    const { runtime: api } = await runtime(huggingFace);
+
+    const statusResponse = await api.app.request(
+      "/api/model-installations/snapref",
+    );
+    expect(statusResponse.status).toBe(200);
+    expect(await statusResponse.json()).toMatchObject({
+      managedDownloads: false,
+      reason: expect.stringContaining("관리형 ComfyUI"),
+      adapter: {
+        repository: SNAPREF_REPOSITORY,
+        revision: SNAPREF_REVISION,
+        filename: "snapref_v2a.safetensors",
+        sizeBytes: SNAPREF_FILE.sizeBytes,
+        installationStatus: "not_installed",
+      },
+    });
+
+    const installResponse = await api.app.request(
+      "/api/model-installations/snapref",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ acceptedLicense: true }),
+      },
+    );
+    expect(installResponse.status).toBe(409);
+    expect(huggingFace.installSnapRefCalls).toBe(0);
+  });
+
+  test("installs the pinned SnapRef adapter only after the license is accepted", async () => {
+    const huggingFace = new FakeHuggingFaceLibrary();
+    const { runtime: api } = await freshManagedRuntime(huggingFace);
+    recordStoppedManagedRuntime(api);
+
+    const rejected = await api.app.request(
+      "/api/model-installations/snapref",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      },
+    );
+    expect(rejected.status).toBe(400);
+    expect(huggingFace.installSnapRefCalls).toBe(0);
+
+    const accepted = await api.app.request(
+      "/api/model-installations/snapref",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ acceptedLicense: true }),
+      },
+    );
+    expect(accepted.status).toBe(202);
+    expect(huggingFace.installSnapRefCalls).toBe(1);
   });
 
   test("does not expose resume or retry actions", async () => {

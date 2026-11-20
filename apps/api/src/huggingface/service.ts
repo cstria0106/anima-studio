@@ -6,6 +6,7 @@ import type {
   HuggingFaceAnimaDownloadCreate,
   HuggingFaceAnimaFileDto,
   HuggingFaceAnimaProviderStatusDto,
+  ModelDestinationKind,
   ModelDownloadDto,
   ModelDownloadState,
 } from "@anima/shared";
@@ -28,6 +29,13 @@ import {
   HuggingFaceError,
   assertHuggingFace,
 } from "./errors";
+import {
+  SNAPREF_FILE,
+  SNAPREF_LICENSE,
+  SNAPREF_REPOSITORY,
+  SNAPREF_REVISION,
+  SNAPREF_SOURCE_URL,
+} from "./snapref";
 
 const encoderPath =
   "split_files/text_encoders/qwen_3_06b_base.safetensors";
@@ -40,11 +48,27 @@ const terminalStates = new Set<ModelDownloadState>([
 const interruptedDownloadMessage =
   "API가 종료되어 Hugging Face 다운로드가 중단되었습니다. 다시 시도해 주세요.";
 
+/** One pinned Hugging Face file and the model root it installs into. */
+interface HuggingFaceFileSource {
+  repository: string;
+  revision: string;
+  sourceUrl: string;
+  license: string;
+  licenseUrl: string;
+  modelName: string;
+  modelKind: string;
+  path: string;
+  filename: string;
+  sizeBytes: number;
+  sha256: string;
+  destinationRootId: ModelDestinationKind;
+  downloadUrl: string;
+}
+
 interface DownloadTask {
   id: string;
   operationId: string;
-  catalog: HuggingFaceAnimaCatalogDto;
-  file: HuggingFaceAnimaFileDto;
+  source: HuggingFaceFileSource;
   destination: ReturnType<DestinationRegistry["resolveKind"]>;
   artifact: VerifiedFileDownload;
   metadata: Record<string, unknown>;
@@ -52,8 +76,7 @@ interface DownloadTask {
 }
 
 interface PreparedDownload {
-  catalog: HuggingFaceAnimaCatalogDto;
-  file: HuggingFaceAnimaFileDto;
+  source: HuggingFaceFileSource;
   destination: ReturnType<DestinationRegistry["resolveKind"]>;
   targetPath: string;
   reusable: ModelDownloadDto | null;
@@ -121,8 +144,23 @@ function comfyModelPath(absoluteRoot: string, finalPath: string): string {
   return pathFromRoot.split(sep).join("/");
 }
 
-function taskId(file: HuggingFaceAnimaFileDto): string {
-  return `hf-anima-${file.sha256.slice(0, 20)}`;
+function taskId(source: HuggingFaceFileSource): string {
+  return `hf-anima-${source.sha256.slice(0, 20)}`;
+}
+
+function snapRefSource(): HuggingFaceFileSource {
+  return {
+    repository: SNAPREF_REPOSITORY,
+    revision: SNAPREF_REVISION,
+    sourceUrl: SNAPREF_SOURCE_URL,
+    license: SNAPREF_LICENSE,
+    licenseUrl: `${SNAPREF_SOURCE_URL}/blob/${SNAPREF_REVISION}/LICENSE.md`,
+    modelName: "SnapRef v2a",
+    modelKind: "snapref_adapter",
+    ...SNAPREF_FILE,
+    destinationRootId: "loras",
+    downloadUrl: `${SNAPREF_SOURCE_URL}/resolve/${SNAPREF_REVISION}/${SNAPREF_FILE.path}?download=true`,
+  };
 }
 
 async function regularFileSize(path: string): Promise<number | null> {
@@ -257,7 +295,7 @@ export class HuggingFaceAnimaLibraryService {
     // selected diffusion model running as a partial install.
     const prepared: PreparedDownload[] = [];
     for (const file of files) {
-      prepared.push(await this.prepareDownload(catalog, file));
+      prepared.push(await this.prepareDownload(this.animaSource(catalog, file)));
     }
     const downloads: ModelDownloadDto[] = [];
     const alreadyInstalled: string[] = [];
@@ -267,11 +305,35 @@ export class HuggingFaceAnimaLibraryService {
       else {
         downloads.push(result.download);
         if (result.download.state === "completed") {
-          alreadyInstalled.push(item.file.filename);
+          alreadyInstalled.push(item.source.filename);
         }
       }
     }
     return { downloads, alreadyInstalled };
+  }
+
+  async installSnapRef(
+    acceptedLicense: boolean,
+  ): Promise<HuggingFaceAnimaDownloadBatch> {
+    assertHuggingFace(
+      acceptedLicense === true,
+      "LICENSE_REQUIRED",
+      "SnapRef 비상업 라이선스를 확인해야 다운로드할 수 있습니다.",
+      400,
+    );
+    assertHuggingFace(
+      !this.shuttingDown,
+      "DOWNLOAD_FAILED",
+      "모델 다운로드 서비스가 종료 중입니다.",
+      409,
+    );
+    const prepared = await this.prepareDownload(snapRefSource());
+    const { download } = this.ensureDownload(prepared);
+    return {
+      downloads: [download],
+      alreadyInstalled:
+        download.state === "completed" ? [prepared.source.filename] : [],
+    };
   }
 
   async pause(id: string): Promise<ModelDownloadDto> {
@@ -366,17 +428,23 @@ export class HuggingFaceAnimaLibraryService {
       "실패했거나 취소한 다운로드만 다시 시도할 수 있습니다.",
       409,
     );
-    const catalog = await this.client.catalog(previous.providerVersionId);
-    const file = catalog.files.find(
-      (candidate) => candidate.path === previous.providerFileId,
-    );
-    assertHuggingFace(
-      file,
-      "INVALID_FILE",
-      "이전 Anima 파일 선택을 현재 revision에서 찾지 못했습니다.",
-      409,
-    );
-    const prepared = await this.prepareDownload(catalog, file);
+    let source: HuggingFaceFileSource;
+    if (previous.providerModelId === SNAPREF_REPOSITORY) {
+      source = snapRefSource();
+    } else {
+      const catalog = await this.client.catalog(previous.providerVersionId);
+      const file = catalog.files.find(
+        (candidate) => candidate.path === previous.providerFileId,
+      );
+      assertHuggingFace(
+        file,
+        "INVALID_FILE",
+        "이전 Anima 파일 선택을 현재 revision에서 찾지 못했습니다.",
+        409,
+      );
+      source = this.animaSource(catalog, file);
+    }
+    const prepared = await this.prepareDownload(source);
     const result = await this.ensureDownload(
       prepared,
       previous.id,
@@ -427,31 +495,50 @@ export class HuggingFaceAnimaLibraryService {
     await this.active?.completion;
   }
 
-  private async prepareDownload(
+  private animaSource(
     catalog: HuggingFaceAnimaCatalogDto,
     file: HuggingFaceAnimaFileDto,
+  ): HuggingFaceFileSource {
+    return {
+      repository: catalog.repository,
+      revision: catalog.revision,
+      sourceUrl: catalog.sourceUrl,
+      license: catalog.license,
+      licenseUrl: catalog.licenseUrl,
+      modelName: "CircleStone Labs Anima",
+      modelKind: file.kind,
+      path: file.path,
+      filename: file.filename,
+      sizeBytes: file.sizeBytes,
+      sha256: file.sha256,
+      destinationRootId: file.destinationRootId,
+      downloadUrl: this.client.downloadUrl(catalog.revision, file.path),
+    };
+  }
+
+  private async prepareDownload(
+    source: HuggingFaceFileSource,
   ): Promise<PreparedDownload> {
     const destination = this.destinations.resolveKind(
-      file.destinationRootId,
-      file.destinationRootId,
+      source.destinationRootId,
+      source.destinationRootId,
     );
     const targetPath = this.destinations.assertFinalFile(
       destination,
-      join(destination.absoluteDirectory, file.filename),
+      join(destination.absoluteDirectory, source.filename),
     );
     const matches = this.persistence.listModelDownloadsByProviderFile(
       "huggingface",
-      HUGGING_FACE_ANIMA_REPOSITORY,
-      catalog.revision,
-      file.path,
+      source.repository,
+      source.revision,
+      source.path,
     );
     const active = matches.find(
       (download) => !terminalStates.has(download.state),
     );
     if (active) {
       return {
-        catalog,
-        file,
+        source,
         destination,
         targetPath,
         reusable: active,
@@ -462,8 +549,7 @@ export class HuggingFaceAnimaLibraryService {
     const existingSize = await regularFileSize(targetPath);
     if (existingSize === null) {
       return {
-        catalog,
-        file,
+        source,
         destination,
         targetPath,
         reusable: null,
@@ -471,18 +557,17 @@ export class HuggingFaceAnimaLibraryService {
       };
     }
     if (
-      existingSize !== file.sizeBytes ||
-      (await sha256File(targetPath)) !== file.sha256
+      existingSize !== source.sizeBytes ||
+      (await sha256File(targetPath)) !== source.sha256
     ) {
       throw new HuggingFaceError(
         "DOWNLOAD_CONFLICT",
-        `${file.filename}과 같은 이름의 다른 파일이 이미 있습니다.`,
+        `${source.filename}과 같은 이름의 다른 파일이 이미 있습니다.`,
         409,
       );
     }
     return {
-      catalog,
-      file,
+      source,
       destination,
       targetPath,
       reusable:
@@ -495,13 +580,13 @@ export class HuggingFaceAnimaLibraryService {
     prepared: PreparedDownload,
     retryOf?: string,
   ): { download: ModelDownloadDto; created: boolean } {
-    const { catalog, file, destination } = prepared;
+    const { source, destination } = prepared;
     const concurrent = this.persistence
       .listModelDownloadsByProviderFile(
         "huggingface",
-        HUGGING_FACE_ANIMA_REPOSITORY,
-        catalog.revision,
-        file.path,
+        source.repository,
+        source.revision,
+        source.path,
       )
       .find(
         (download) =>
@@ -520,30 +605,30 @@ export class HuggingFaceAnimaLibraryService {
       "Hugging Face Anima 모델을 확인하고 있습니다.",
       {
         provider: "huggingface",
-        repository: HUGGING_FACE_ANIMA_REPOSITORY,
-        revision: catalog.revision,
-        path: file.path,
-        destinationRootId: file.destinationRootId,
+        repository: source.repository,
+        revision: source.revision,
+        path: source.path,
+        destinationRootId: source.destinationRootId,
         ...(retryOf ? { retryOf } : {}),
       },
     );
     const id = crypto.randomUUID();
     const metadata: Record<string, unknown> = {
-      sourceUrl: catalog.sourceUrl,
-      repository: catalog.repository,
-      revision: catalog.revision,
-      remotePath: file.path,
-      license: catalog.license,
-      licenseUrl: catalog.licenseUrl,
-      modelKind: file.kind,
+      sourceUrl: source.sourceUrl,
+      repository: source.repository,
+      revision: source.revision,
+      remotePath: source.path,
+      license: source.license,
+      licenseUrl: source.licenseUrl,
+      modelKind: source.modelKind,
       ...(retryOf ? { retryOf } : {}),
     };
     const artifact: VerifiedFileDownload = {
-      id: taskId(file),
-      downloadUrl: this.client.downloadUrl(catalog.revision, file.path),
-      filename: `${taskId(file)}.blob`,
-      bytes: file.sizeBytes,
-      sha256: file.sha256,
+      id: taskId(source),
+      downloadUrl: source.downloadUrl,
+      filename: `${taskId(source)}.blob`,
+      bytes: source.sizeBytes,
+      sha256: source.sha256,
     };
     const stagingDirectory = join(
       destination.absoluteDirectory,
@@ -555,15 +640,15 @@ export class HuggingFaceAnimaLibraryService {
       state: prepared.locallyInstalled ? "completed" : "queued",
       provider: "huggingface",
       providerDownloadId: id,
-      providerModelId: HUGGING_FACE_ANIMA_REPOSITORY,
-      providerVersionId: catalog.revision,
-      providerFileId: file.path,
-      modelName: "CircleStone Labs Anima",
-      versionName: catalog.revision.slice(0, 12),
-      filename: file.filename,
-      destinationRootId: file.destinationRootId,
-      expectedSha256: file.sha256,
-      bytesTotal: file.sizeBytes,
+      providerModelId: source.repository,
+      providerVersionId: source.revision,
+      providerFileId: source.path,
+      modelName: source.modelName,
+      versionName: source.revision.slice(0, 12),
+      filename: source.filename,
+      destinationRootId: source.destinationRootId,
+      expectedSha256: source.sha256,
+      bytesTotal: source.sizeBytes,
       metadata,
       createdAt: this.clock.now(),
     });
@@ -580,9 +665,9 @@ export class HuggingFaceAnimaLibraryService {
       created =
         this.persistence.updateModelDownload(id, {
           state: "completed",
-          actualSha256: file.sha256,
-          bytesCompleted: file.sizeBytes,
-          bytesTotal: file.sizeBytes,
+          actualSha256: source.sha256,
+          bytesCompleted: source.sizeBytes,
+          bytesTotal: source.sizeBytes,
           bytesPerSecond: 0,
           storagePath: prepared.targetPath,
           metadata: completedMetadata,
@@ -600,8 +685,8 @@ export class HuggingFaceAnimaLibraryService {
         "이미 설치된 Anima 모델을 확인했습니다.",
         {
           ...completedMetadata,
-          filename: file.filename,
-          sha256: file.sha256,
+          filename: source.filename,
+          sha256: source.sha256,
         },
       );
       return { download: created, created: false };
@@ -614,8 +699,7 @@ export class HuggingFaceAnimaLibraryService {
     this.tasks.set(id, {
       id,
       operationId: operation.id,
-      catalog,
-      file,
+      source,
       destination,
       artifact,
       metadata,
@@ -663,9 +747,9 @@ export class HuggingFaceAnimaLibraryService {
         phase: "downloading",
         message: "Hugging Face에서 Anima 모델을 다운로드하고 있습니다.",
         status: "running",
-        progress: (lastBytes / task.file.sizeBytes) * 100,
+        progress: (lastBytes / task.source.sizeBytes) * 100,
         bytesCompleted: lastBytes,
-        bytesTotal: task.file.sizeBytes,
+        bytesTotal: task.source.sizeBytes,
       });
       const stagedPath = await this.downloader.download(
         task.artifact,
@@ -721,8 +805,8 @@ export class HuggingFaceAnimaLibraryService {
 
       this.persistence.updateModelDownload(task.id, {
         state: "verifying",
-        bytesCompleted: task.file.sizeBytes,
-        bytesTotal: task.file.sizeBytes,
+        bytesCompleted: task.source.sizeBytes,
+        bytesTotal: task.source.sizeBytes,
         bytesPerSecond: 0,
       });
       this.operations.report(task.operationId, {
@@ -730,8 +814,8 @@ export class HuggingFaceAnimaLibraryService {
         message: "고정된 Git LFS SHA-256을 확인했습니다.",
         status: "running",
         progress: 99,
-        bytesCompleted: task.file.sizeBytes,
-        bytesTotal: task.file.sizeBytes,
+        bytesCompleted: task.source.sizeBytes,
+        bytesTotal: task.source.sizeBytes,
         bytesPerSecond: 0,
       });
 
@@ -740,18 +824,18 @@ export class HuggingFaceAnimaLibraryService {
       });
       const targetPath = this.destinations.assertFinalFile(
         task.destination,
-        join(task.destination.absoluteDirectory, task.file.filename),
+        join(task.destination.absoluteDirectory, task.source.filename),
       );
       const existingSize = await regularFileSize(targetPath);
       if (existingSize !== null) {
         const existingHash =
-          existingSize === task.file.sizeBytes
+          existingSize === task.source.sizeBytes
             ? await sha256File(targetPath)
             : null;
-        if (existingHash !== task.file.sha256) {
+        if (existingHash !== task.source.sha256) {
           throw new HuggingFaceError(
             "DOWNLOAD_CONFLICT",
-            `${task.file.filename}과 같은 이름의 다른 파일이 이미 있습니다.`,
+            `${task.source.filename}과 같은 이름의 다른 파일이 이미 있습니다.`,
             409,
           );
         }
@@ -761,7 +845,7 @@ export class HuggingFaceAnimaLibraryService {
       }
       const finalSize = (await stat(targetPath)).size;
       assertHuggingFace(
-        finalSize === task.file.sizeBytes,
+        finalSize === task.source.sizeBytes,
         "DOWNLOAD_FAILED",
         "설치된 Anima 모델 크기가 예상과 다릅니다.",
         502,
@@ -777,9 +861,9 @@ export class HuggingFaceAnimaLibraryService {
       this.persistence.updateModelDownload(task.id, {
         state: "completed",
         filename: basename(targetPath),
-        actualSha256: task.file.sha256,
-        bytesCompleted: task.file.sizeBytes,
-        bytesTotal: task.file.sizeBytes,
+        actualSha256: task.source.sha256,
+        bytesCompleted: task.source.sizeBytes,
+        bytesTotal: task.source.sizeBytes,
         bytesPerSecond: 0,
         storagePath: targetPath,
         metadata: completedMetadata,
@@ -792,8 +876,8 @@ export class HuggingFaceAnimaLibraryService {
         "Hugging Face Anima 모델 설치를 완료했습니다.",
         {
           ...completedMetadata,
-          filename: task.file.filename,
-          sha256: task.file.sha256,
+          filename: task.source.filename,
+          sha256: task.source.sha256,
         },
       );
       this.finish(task.id);

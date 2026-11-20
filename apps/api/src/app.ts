@@ -13,6 +13,8 @@ import {
   globalUpscaleSettingsSchema,
   modelDownloadCreateSchema,
   runtimeConfigSchema,
+  snapRefInstallCreateSchema,
+  type SnapRefProviderResponseDto,
   taggingOptionsSchema,
   type JobStatus,
   type GlobalUpscaleSettings,
@@ -161,6 +163,7 @@ export type HuggingFaceLibraryService = Pick<
   | "providerStatus"
   | "catalog"
   | "install"
+  | "installSnapRef"
   | "settled"
   | "shutdown"
 >;
@@ -1742,6 +1745,52 @@ export function createApp(services: AppServices): Hono {
         await services.huggingFaceLibrary.catalog(),
       ),
     });
+  });
+
+  app.get("/api/model-installations/snapref", async (c) => {
+    const provider = await huggingFaceProvider();
+    return c.json({
+      managedDownloads: provider.managedDownloads,
+      ...(provider.reason ? { reason: provider.reason } : {}),
+      adapter: services.modelDownloads.snapRefAdapter(),
+    } satisfies SnapRefProviderResponseDto);
+  });
+
+  app.post("/api/model-installations/snapref", async (c) => {
+    await assertHuggingFaceDownloadsAvailable();
+    const parsed = snapRefInstallCreateSchema.safeParse(
+      await parseJson(c.req.raw),
+    );
+    if (!parsed.success) {
+      throw new HuggingFaceError(
+        "LICENSE_REQUIRED",
+        "SnapRef 비상업 라이선스를 확인해야 다운로드할 수 있습니다.",
+        400,
+      );
+    }
+    const adapter = services.modelDownloads.snapRefAdapter();
+    const current = services.modelDownloads.current(
+      "huggingface",
+      adapter.repository,
+      adapter.revision,
+      adapter.filename,
+    );
+    if (current) return c.json(current, 200);
+    const result = await services.huggingFaceLibrary.installSnapRef(
+      parsed.data.acceptedLicense,
+    );
+    const primary = result.downloads[0];
+    if (!primary) {
+      throw new HuggingFaceError(
+        "DOWNLOAD_FAILED",
+        "SnapRef 설치 작업을 만들지 못했습니다.",
+        500,
+      );
+    }
+    return c.json(
+      services.modelDownloads.track(result.downloads, primary.id),
+      202,
+    );
   });
 
   app.post("/api/model-installations/anima", async (c) => {

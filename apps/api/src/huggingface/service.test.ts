@@ -29,6 +29,11 @@ import {
   HuggingFaceAnimaClient,
 } from "./client";
 import { HuggingFaceAnimaLibraryService } from "./service";
+import {
+  SNAPREF_FILE,
+  SNAPREF_REPOSITORY,
+  SNAPREF_REVISION,
+} from "./snapref";
 
 const temporaryDirectories: string[] = [];
 const databases: ReturnType<typeof createDatabase>[] = [];
@@ -148,10 +153,10 @@ async function fixture() {
     ]),
   );
   const destinations = new DestinationRegistry(
-    ["diffusion_models", "text_encoders", "vae"].map((kind) => ({
+    ["diffusion_models", "text_encoders", "vae", "loras"].map((kind) => ({
       id: kind,
       label: kind,
-      kind: kind as "diffusion_models" | "text_encoders" | "vae",
+      kind: kind as "diffusion_models" | "text_encoders" | "vae" | "loras",
       absolutePath: join(root, kind),
     })),
   );
@@ -418,5 +423,56 @@ describe("Hugging Face Anima model library", () => {
       actualSha256: file.sha256,
       metadata: { retryOf: interrupted.id },
     });
+  });
+});
+
+describe("SnapRef adapter install", () => {
+  class RecordingDownloader implements VerifiedFileDownloader {
+    readonly requests: Array<{ file: VerifiedFileDownload; directory: string }> =
+      [];
+
+    download(file: VerifiedFileDownload, directory: string): Promise<string> {
+      this.requests.push({ file, directory });
+      return Promise.reject(new Error("offline"));
+    }
+  }
+
+  test("requires the license before queuing anything", async () => {
+    const context = await fixture();
+    await expect(context.service.installSnapRef(false)).rejects.toThrow(
+      "라이선스",
+    );
+    expect(context.repository.listModelDownloads(10)).toHaveLength(0);
+  });
+
+  test("downloads the pinned file into the LoRA root under its own identity", async () => {
+    const context = await fixture();
+    const downloader = new RecordingDownloader();
+    const service = context.createService(downloader);
+
+    const { downloads } = await service.installSnapRef(true);
+    await service.settled(downloads[0]!.id);
+
+    expect(downloader.requests).toHaveLength(1);
+    const [request] = downloader.requests;
+    expect(request!.file).toMatchObject({
+      downloadUrl: `https://huggingface.co/${SNAPREF_REPOSITORY}/resolve/${SNAPREF_REVISION}/snapref_v2a.safetensors?download=true`,
+      bytes: SNAPREF_FILE.sizeBytes,
+      sha256: SNAPREF_FILE.sha256,
+    });
+    expect(request!.directory).toBe(join(context.root, "loras", ".anima-downloads"));
+    expect(context.repository.listModelDownloads(10)).toMatchObject([
+      {
+        provider: "huggingface",
+        providerModelId: SNAPREF_REPOSITORY,
+        providerVersionId: SNAPREF_REVISION,
+        providerFileId: "snapref_v2a.safetensors",
+        modelName: "SnapRef v2a",
+        filename: "snapref_v2a.safetensors",
+        destinationRootId: "loras",
+        expectedSha256: SNAPREF_FILE.sha256,
+        state: "failed",
+      },
+    ]);
   });
 });
