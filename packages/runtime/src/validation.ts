@@ -16,6 +16,7 @@ const ARTIFACT_KINDS = new Set<EngineArtifactKind>([
   "training-runtime",
   "tool",
   "tagger-model",
+  "model",
 ]);
 const ARCHIVE_FORMATS = new Set<ArchiveFormat>([
   "7z",

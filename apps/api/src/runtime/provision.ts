@@ -41,6 +41,9 @@ const ALLOWED_CUSTOM_NODE_DIRECTORIES = new Set([
   "comfyui-instant-reference",
   "ComfyUI-KJNodes",
   "ComfyUI-LoRA-Optimizer",
+  "snapref",
+  "ComfyUI-Spectrum-KSampler",
+  "comfyui-anima-safe-pag",
 ]);
 
 export async function validateManagedCustomNodeAllowlist(

@@ -12,9 +12,9 @@ describe("managed engine manifest", () => {
     const manifest = validateEngineManifest(MANAGED_ENGINE_MANIFEST);
 
     expect(manifest.bundleId).toBe(
-      "anima-comfy-0.29.0-win-nvidia-r5",
+      "anima-comfy-0.29.0-win-nvidia-r6",
     );
-    expect(manifest.artifacts).toHaveLength(10);
+    expect(manifest.artifacts).toHaveLength(16);
     expect(
       manifest.artifacts.every(
         (artifact) =>
@@ -28,6 +28,13 @@ describe("managed engine manifest", () => {
     expect(manifest.launch.arguments).toContain("--disable-all-custom-nodes");
     expect(manifest.launch.arguments).toContain("--whitelist-custom-nodes");
     expect(manifest.launch.arguments).not.toContain("--fast");
+    for (const node of [
+      "snapref",
+      "ComfyUI-Spectrum-KSampler",
+      "comfyui-anima-safe-pag",
+    ]) {
+      expect(manifest.launch.arguments).toContain(node);
+    }
     expect(manifest.artifacts.find((item) => item.id === "python312"))
       .toMatchObject({ version: "3.12.13+20260728" });
     expect(manifest.artifacts.find((item) => item.id === "uv"))

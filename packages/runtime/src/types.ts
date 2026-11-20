@@ -26,7 +26,8 @@ export type EngineArtifactKind =
   | "custom-node"
   | "training-runtime"
   | "tool"
-  | "tagger-model";
+  | "tagger-model"
+  | "model";
 
 export interface EngineArtifact {
   id: string;

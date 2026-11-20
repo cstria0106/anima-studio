@@ -9,7 +9,7 @@ const GiB = 1024 ** 3;
  */
 export const MANAGED_ENGINE_MANIFEST = validateEngineManifest({
   schemaVersion: 1,
-  bundleId: "anima-comfy-0.29.0-win-nvidia-r5",
+  bundleId: "anima-comfy-0.29.0-win-nvidia-r6",
   displayName: "Anima ComfyUI 0.29.0 (Windows NVIDIA)",
   platform: {
     os: "win32",
@@ -48,6 +48,9 @@ export const MANAGED_ENGINE_MANIFEST = validateEngineManifest({
       "comfyui-instant-reference",
       "ComfyUI-KJNodes",
       "ComfyUI-LoRA-Optimizer",
+      "snapref",
+      "ComfyUI-Spectrum-KSampler",
+      "comfyui-anima-safe-pag",
     ],
     host: "127.0.0.1",
     portRange: { from: 8188, to: 8199 },
@@ -180,6 +183,111 @@ export const MANAGED_ENGINE_MANIFEST = validateEngineManifest({
       license: "MIT",
       archive: { format: "zip", stripComponents: 1 },
       destination: "ComfyUI/custom_nodes/ComfyUI-LoRA-Optimizer",
+    },
+    {
+      id: "snapref-node",
+      kind: "custom-node",
+      name: "SnapRef ComfyUI node",
+      version: "v2a",
+      revision: "87bdacd94cdb7a1ff8f8a0bbbddf6e517758bbd8",
+      downloadUrl:
+        "https://raw.githubusercontent.com/ArcAnima/SnapRef/87bdacd94cdb7a1ff8f8a0bbbddf6e517758bbd8/comfyui_nodes/snapref/__init__.py",
+      sourceUrl:
+        "https://github.com/ArcAnima/SnapRef/tree/87bdacd94cdb7a1ff8f8a0bbbddf6e517758bbd8/comfyui_nodes/snapref",
+      bytes: 36_964,
+      sha256:
+        "bb2d481434ad8caf3ce32ac0f047d0ff5c1618024b218f86d346d76c37bc4929",
+      license: "Apache-2.0",
+      archive: { format: "raw", stripComponents: 0 },
+      destination: "ComfyUI/custom_nodes/snapref/__init__.py",
+    },
+    {
+      id: "snapref-node-simple",
+      kind: "custom-node",
+      name: "SnapRef ComfyUI simple node",
+      version: "v2a",
+      revision: "87bdacd94cdb7a1ff8f8a0bbbddf6e517758bbd8",
+      downloadUrl:
+        "https://raw.githubusercontent.com/ArcAnima/SnapRef/87bdacd94cdb7a1ff8f8a0bbbddf6e517758bbd8/comfyui_nodes/snapref/simple.py",
+      sourceUrl:
+        "https://github.com/ArcAnima/SnapRef/tree/87bdacd94cdb7a1ff8f8a0bbbddf6e517758bbd8/comfyui_nodes/snapref",
+      bytes: 6_813,
+      sha256:
+        "18d0d7176a36592526d77ce7e08d694e2cbd87a334a897e722cd7c798de32b43",
+      license: "Apache-2.0",
+      archive: { format: "raw", stripComponents: 0 },
+      destination: "ComfyUI/custom_nodes/snapref/simple.py",
+    },
+    {
+      id: "snapref-node-web",
+      kind: "custom-node",
+      name: "SnapRef ComfyUI node web extension",
+      version: "v2a",
+      revision: "87bdacd94cdb7a1ff8f8a0bbbddf6e517758bbd8",
+      downloadUrl:
+        "https://raw.githubusercontent.com/ArcAnima/SnapRef/87bdacd94cdb7a1ff8f8a0bbbddf6e517758bbd8/comfyui_nodes/snapref/web/snapref.js",
+      sourceUrl:
+        "https://github.com/ArcAnima/SnapRef/tree/87bdacd94cdb7a1ff8f8a0bbbddf6e517758bbd8/comfyui_nodes/snapref",
+      bytes: 16_610,
+      sha256:
+        "6ee21f7583b630665389010fb68816a94ee8eb9cbc0faf2055c6a386daa41381",
+      license: "Apache-2.0",
+      archive: { format: "raw", stripComponents: 0 },
+      destination: "ComfyUI/custom_nodes/snapref/web/snapref.js",
+    },
+    {
+      id: "spectrum-ksampler",
+      kind: "custom-node",
+      name: "ComfyUI Spectrum KSampler",
+      version: "ee63b8d",
+      revision: "ee63b8dc92c00faa30a6c59f76b8dba756ce5ba0",
+      downloadUrl:
+        "https://codeload.github.com/sorryhyun/ComfyUI-Spectrum-KSampler/zip/ee63b8dc92c00faa30a6c59f76b8dba756ce5ba0",
+      sourceUrl:
+        "https://github.com/sorryhyun/ComfyUI-Spectrum-KSampler/tree/ee63b8dc92c00faa30a6c59f76b8dba756ce5ba0",
+      bytes: 582_960,
+      sha256:
+        "3db2db2fa3209f431e89be589880d54923e3d4c30b2205901850d82090c1c52c",
+      license: "MIT",
+      archive: { format: "zip", stripComponents: 1 },
+      destination: "ComfyUI/custom_nodes/ComfyUI-Spectrum-KSampler",
+    },
+    {
+      id: "mod-guidance-adapter",
+      kind: "model",
+      name: "Anima mod guidance pooled text projection",
+      version: "0611",
+      revision: "ee63b8dc92c00faa30a6c59f76b8dba756ce5ba0",
+      downloadUrl:
+        "https://github.com/sorryhyun/ComfyUI-Spectrum-KSampler/releases/download/0605/pooled_text_proj-0611.safetensors",
+      sourceUrl:
+        "https://github.com/sorryhyun/ComfyUI-Spectrum-KSampler/releases/tag/0605",
+      bytes: 12_591_416,
+      sha256:
+        "c8b33dd35f9df2aaa54224278417a4bbc0dde695f38a1db1581e2e9e7e87c040",
+      license: "MIT",
+      archive: { format: "raw", stripComponents: 0 },
+      // The node resolves its default adapter from the engine's own models
+      // directory, so shipping it here keeps generation from downloading it.
+      destination:
+        "ComfyUI/models/anima_mod_guidance/pooled_text_proj-0611.safetensors",
+    },
+    {
+      id: "anima-safe-pag",
+      kind: "custom-node",
+      name: "Anima Safe PAG",
+      version: "0.1.1",
+      revision: "45af52fb866155c81330ecd410703b00960340c6",
+      downloadUrl:
+        "https://codeload.github.com/iljung1106/comfyui-anima-safe-pag/zip/45af52fb866155c81330ecd410703b00960340c6",
+      sourceUrl:
+        "https://github.com/iljung1106/comfyui-anima-safe-pag/tree/45af52fb866155c81330ecd410703b00960340c6",
+      bytes: 1_465_660,
+      sha256:
+        "fb3dfab08b7bab298c450b1d36e83b735ac71c7dc4d0a5fce8d84c8c169b852a",
+      license: "MIT",
+      archive: { format: "zip", stripComponents: 1 },
+      destination: "ComfyUI/custom_nodes/comfyui-anima-safe-pag",
     },
     {
       id: "sd-scripts",
