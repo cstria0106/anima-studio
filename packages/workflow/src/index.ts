@@ -4,6 +4,7 @@ export {
   buildUpscaleWorkflow,
   createRandomSeed,
   resolveSeed,
+  workflowFeaturesFor,
 } from "./builder";
 export {
   inspectCapabilities,

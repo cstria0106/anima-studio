@@ -11,6 +11,7 @@ import {
   NODE_IDS,
   referenceBatchNodeId,
   referenceLoadNodeId,
+  workflowFeaturesFor,
 } from "../src";
 
 function makeConfig(
@@ -62,6 +63,25 @@ function makeConfig(
       },
     },
     loraOptimizer: { enabled: true },
+    reference: {
+      method: "instant_lora",
+      snapref: {
+        adapter: "snapref_v2a.safetensors",
+        mode: "character_style",
+        strength: 1,
+        fidelity: 1,
+      },
+    },
+    enhancements: {
+      modGuidance: {
+        enabled: false,
+        qualityTags: "highres, best quality, score_7",
+        qualityNegative: "score_1, worst quality",
+        profile: "step_i8_skip27",
+      },
+      safePag: { enabled: false, scale: 2.5 },
+      spectrum: { enabled: false },
+    },
     seed: { mode: "fixed", value: 123456 },
     sampling: {
       sampler: "er_sde",
@@ -760,5 +780,195 @@ describe("buildWorkflow", () => {
     expect(() =>
       buildWorkflow(invalidCfg, ["a.png", "b.png", "c.png"]),
     ).toThrow("cfgStart");
+  });
+});
+
+describe("SnapRef and model patches", () => {
+  const snapref = (
+    patch: Partial<GenerationConfig["reference"]["snapref"]> = {},
+  ): GenerationConfig["reference"] => ({
+    method: "snapref",
+    snapref: { ...makeConfig().reference.snapref, ...patch },
+  });
+  const enhancements = (
+    patch: Partial<GenerationConfig["enhancements"]>,
+  ): GenerationConfig["enhancements"] => ({
+    ...makeConfig().enhancements,
+    ...patch,
+  });
+
+  test("references images through SnapRef without training a LoRA", () => {
+    const config = makeConfig({
+      reference: snapref({ mode: "character", strength: 0.8, fidelity: 0.6 }),
+    });
+    const result = buildWorkflow(config, [
+      "anima-studio/a.png",
+      "anima-studio/b.png",
+      "anima-studio/c.png",
+    ]);
+
+    expect(result.prompt[NODE_IDS.instantReference]).toBeUndefined();
+    expect(result.prompt[referenceLoadNodeId(0)]).toBeUndefined();
+    expect(result.autoTagsNodeId).toBeNull();
+    expect(result.instantLoraPathNodeId).toBeNull();
+    expect(result.prompt[NODE_IDS.snapref]).toEqual({
+      class_type: "SnapRefSimple",
+      inputs: {
+        model: [NODE_IDS.modelLoader, 0],
+        clip: [NODE_IDS.clipLoader, 0],
+        vae: [NODE_IDS.vaeLoader, 0],
+        adapter: "snapref_v2a.safetensors",
+        mode: "Character",
+        fidelity: 0.6,
+        reference: "anima-studio/a.png",
+        strength: 0.8,
+        reference_2: "anima-studio/b.png",
+        strength_2: 0.8,
+        reference_3: "anima-studio/c.png",
+        strength_3: 0.8,
+      },
+    });
+    expect(result.prompt[NODE_IDS.cfgGuidance]?.inputs.model).toEqual([
+      NODE_IDS.snapref,
+      0,
+    ]);
+    expect(result.prompt[NODE_IDS.baseScheduler]?.inputs.model).toEqual([
+      NODE_IDS.snapref,
+      0,
+    ]);
+  });
+
+  test("applies SnapRef after regular LoRAs", () => {
+    const config = makeConfig({
+      reference: snapref(),
+      loraOptimizer: { enabled: false },
+      loras: [
+        {
+          name: "style.safetensors",
+          modelStrength: 0.6,
+          clipStrength: 0.6,
+          enabled: true,
+          triggerWords: [],
+          useTriggerWords: true,
+        },
+      ],
+    });
+    const result = buildWorkflow(config, ["a.png", "b.png", "c.png"]);
+
+    expect(result.prompt[loraLoaderNodeId(0)]?.inputs.model).toEqual([
+      NODE_IDS.modelLoader,
+      0,
+    ]);
+    expect(result.prompt[NODE_IDS.snapref]?.inputs.model).toEqual([
+      loraLoaderNodeId(0),
+      0,
+    ]);
+    expect(result.prompt[NODE_IDS.snapref]?.inputs.clip).toEqual([
+      loraLoaderNodeId(0),
+      1,
+    ]);
+  });
+
+  test("ignores the SnapRef method when there are no references", () => {
+    const config = makeConfig({ referenceAssetIds: [], reference: snapref() });
+    const result = buildWorkflow(config, []);
+
+    expect(result.prompt[NODE_IDS.snapref]).toBeUndefined();
+    expect(result.prompt[NODE_IDS.cfgGuidance]?.inputs.model).toEqual([
+      NODE_IDS.modelLoader,
+      0,
+    ]);
+  });
+
+  test("rejects a missing adapter and more than eight SnapRef references", () => {
+    expect(() =>
+      buildWorkflow(makeConfig({ reference: snapref({ adapter: "" }) }), [
+        "a.png",
+        "b.png",
+        "c.png",
+      ]),
+    ).toThrow("SnapRef adapter is required");
+
+    const names = Array.from({ length: 9 }, (_, index) => `${index}.png`);
+    expect(() =>
+      buildWorkflow(
+        makeConfig({ referenceAssetIds: names, reference: snapref() }),
+        names,
+      ),
+    ).toThrow("at most 8");
+  });
+
+  test("chains Mod Guidance, Safe PAG, and Spectrum before the guider", () => {
+    const config = makeConfig({
+      reference: snapref(),
+      enhancements: enhancements({
+        modGuidance: { ...makeConfig().enhancements.modGuidance, enabled: true },
+        safePag: { enabled: true, scale: 3 },
+        spectrum: { enabled: true },
+      }),
+    });
+    const result = buildWorkflow(config, ["a.png", "b.png", "c.png"]);
+
+    expect(result.prompt[NODE_IDS.modGuidance]?.inputs).toMatchObject({
+      model: [NODE_IDS.snapref, 0],
+      clip: [NODE_IDS.clipLoader, 0],
+      quality_tags: "highres, best quality, score_7",
+      quality_neg: "score_1, worst quality",
+      mod_w_profile: "step_i8_skip27",
+      positive: [NODE_IDS.positiveEncode, 0],
+      negative: [NODE_IDS.negativeEncode, 0],
+    });
+    expect(result.prompt[NODE_IDS.safePag]?.inputs).toMatchObject({
+      model: [NODE_IDS.modGuidance, 0],
+      scale: 3,
+    });
+    expect(result.prompt[NODE_IDS.spectrum]?.inputs).toMatchObject({
+      model: [NODE_IDS.safePag, 0],
+      steps: 30,
+      one_sampler_only: true,
+    });
+    expect(result.prompt[NODE_IDS.cfgGuidance]?.inputs.model).toEqual([
+      NODE_IDS.spectrum,
+      0,
+    ]);
+    expect(workflowFeaturesFor(config)).toEqual([
+      "snapref",
+      "mod-guidance",
+      "safe-pag",
+      "spectrum",
+    ]);
+  });
+
+  test("leaves the model unpatched and needs no optional nodes by default", () => {
+    const config = makeConfig();
+    const result = buildWorkflow(config, ["a.png", "b.png", "c.png"]);
+
+    expect(result.prompt[NODE_IDS.modGuidance]).toBeUndefined();
+    expect(result.prompt[NODE_IDS.safePag]).toBeUndefined();
+    expect(result.prompt[NODE_IDS.spectrum]).toBeUndefined();
+    expect(workflowFeaturesFor(config)).toEqual([]);
+  });
+
+  test("forecasts the upscale pass when it is the only sampler", () => {
+    const config = makeConfig({
+      enhancements: enhancements({ spectrum: { enabled: true } }),
+      upscale: {
+        enabled: true,
+        method: "bicubic",
+        scale: 1.5,
+        steps: 20,
+        denoise: 0.5,
+      },
+    });
+    const result = buildUpscaleWorkflow(
+      config,
+      ["a.png", "b.png", "c.png"],
+      "anima-studio/upscale-sources/base.png",
+    );
+
+    expect(result.prompt[NODE_IDS.spectrum]?.inputs.steps).toBe(20);
+    expect(
+      result.prompt[NODE_IDS.upscaleScheduler]?.inputs.model,
+    ).toEqual([NODE_IDS.spectrum, 0]);
   });
 });

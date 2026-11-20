@@ -10,7 +10,12 @@ export interface ComfyPromptNode {
 export type ComfyPrompt = Record<string, ComfyPromptNode>;
 
 export type OutputKind = "base" | "upscale" | "inpaint";
-export type WorkflowFeature = "inpaint";
+export type WorkflowFeature =
+  | "inpaint"
+  | "snapref"
+  | "mod-guidance"
+  | "safe-pag"
+  | "spectrum";
 
 export type WorkflowNodePhase = Extract<
   JobPhase,

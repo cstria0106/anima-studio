@@ -14,12 +14,18 @@ import type {
   ComfyPrompt,
   ComfyPromptNode,
   WorkflowBuildOptions,
+  WorkflowFeature,
   WorkflowNodePhase,
 } from "./types";
 
 const classes = SANITIZED_ANIMA_TEMPLATE.classTypes;
 const MAX_SEED = Number.MAX_SAFE_INTEGER;
 const LORAS_PER_STACK_NODE = 10;
+const MAX_SNAPREF_REFERENCES = 8;
+const SNAPREF_MODES = {
+  character_style: "Character & Style",
+  character: "Character",
+} as const;
 const RELATIVE_OUTPUT_PREFIX = /^[^<>:"|?*\u0000-\u001f]+$/;
 
 interface NodeAccumulator {
@@ -110,6 +116,35 @@ function validateBuildInput(
 
   if (!["anima", "sdxl"].includes(config.instantLora.profile)) {
     throw new Error("instantLora.profile must be anima or sdxl");
+  }
+
+  if (config.reference.method === "snapref" && uploadedInputNames.length > 0) {
+    assertPortableSelection(config.reference.snapref.adapter, "SnapRef adapter");
+    if (uploadedInputNames.length > MAX_SNAPREF_REFERENCES) {
+      throw new Error(
+        `SnapRef accepts at most ${MAX_SNAPREF_REFERENCES} reference images`,
+      );
+    }
+    assertFiniteRange(
+      config.reference.snapref.strength,
+      "reference.snapref.strength",
+      0,
+      2,
+    );
+    assertFiniteRange(
+      config.reference.snapref.fidelity,
+      "reference.snapref.fidelity",
+      0,
+      1,
+    );
+  }
+  if (config.enhancements.safePag.enabled) {
+    assertFiniteRange(
+      config.enhancements.safePag.scale,
+      "enhancements.safePag.scale",
+      0,
+      100,
+    );
   }
 
   assertIntegerRange(config.image.width, "image.width", 64, 8192);
@@ -275,6 +310,49 @@ function buildLoraStackInputs(
   return inputs;
 }
 
+function buildSnapRefInputs(
+  config: GenerationConfig,
+  uploadedInputNames: string[],
+  model: ComfyLink,
+  clip: ComfyLink,
+): Record<string, unknown> {
+  const { snapref } = config.reference;
+  const inputs: Record<string, unknown> = {
+    model,
+    clip,
+    vae: link(NODE_IDS.vaeLoader, 0),
+    adapter: snapref.adapter,
+    mode: SNAPREF_MODES[snapref.mode],
+    fidelity: snapref.fidelity,
+  };
+  uploadedInputNames.forEach((image, index) => {
+    const suffix = index === 0 ? "" : `_${index + 1}`;
+    inputs[`reference${suffix}`] = image;
+    inputs[`strength${suffix}`] = snapref.strength;
+  });
+  return inputs;
+}
+
+/**
+ * Lists the optional node packages a generation config needs, so callers can
+ * check them against the connected ComfyUI before queueing.
+ */
+export function workflowFeaturesFor(
+  config: GenerationConfig,
+): WorkflowFeature[] {
+  const features: WorkflowFeature[] = [];
+  if (
+    config.reference.method === "snapref" &&
+    config.referenceAssetIds.length > 0
+  ) {
+    features.push("snapref");
+  }
+  if (config.enhancements.modGuidance.enabled) features.push("mod-guidance");
+  if (config.enhancements.safePag.enabled) features.push("safe-pag");
+  if (config.enhancements.spectrum.enabled) features.push("spectrum");
+  return features;
+}
+
 export function createRandomSeed(): number {
   const values = new Uint32Array(2);
   globalThis.crypto.getRandomValues(values);
@@ -406,8 +484,12 @@ export function buildWorkflow(
   let autoTagsNodeId: string | null = null;
   let autoTagsSource: ComfyLink | null = null;
   let instantLoraPathNodeId: string | null = null;
+  const hasReferences = uploadedInputNames.length > 0;
+  const useInstantLora =
+    hasReferences && config.reference.method === "instant_lora";
+  const useSnapRef = hasReferences && config.reference.method === "snapref";
 
-  if (uploadedInputNames.length > 0) {
+  if (useInstantLora) {
     const referenceImages = buildReferenceNodes(
       accumulator,
       uploadedInputNames,
@@ -546,7 +628,7 @@ export function buildWorkflow(
       generatedClip = link(NODE_IDS.loraOptimizer, 1);
     }
   } else {
-    if (uploadedInputNames.length > 0) {
+    if (useInstantLora) {
       generatedModel = link(NODE_IDS.instantReference, 0);
       generatedClip = link(NODE_IDS.instantReference, 1);
     }
@@ -571,6 +653,23 @@ export function buildWorkflow(
     });
   }
 
+  if (useSnapRef) {
+    addNode(
+      accumulator,
+      NODE_IDS.snapref,
+      classes.snapref,
+      buildSnapRefInputs(
+        config,
+        uploadedInputNames,
+        generatedModel,
+        generatedClip,
+      ),
+      "encoding",
+      "SnapRef 참조 적용",
+    );
+    generatedModel = link(NODE_IDS.snapref, 0);
+  }
+
   addNode(
     accumulator,
     NODE_IDS.positiveEncode,
@@ -593,6 +692,76 @@ export function buildWorkflow(
     "encoding",
     "부정 프롬프트 인코딩",
   );
+
+  const { modGuidance, safePag, spectrum } = config.enhancements;
+  if (modGuidance.enabled) {
+    addNode(
+      accumulator,
+      NODE_IDS.modGuidance,
+      classes.modGuidance,
+      {
+        model: generatedModel,
+        clip: generatedClip,
+        quality_tags: modGuidance.qualityTags,
+        quality_neg: modGuidance.qualityNegative,
+        mod_w_profile: modGuidance.profile,
+        positive: link(NODE_IDS.positiveEncode, 0),
+        negative: link(NODE_IDS.negativeEncode, 0),
+      },
+      "encoding",
+      "Mod Guidance 적용",
+    );
+    generatedModel = link(NODE_IDS.modGuidance, 0);
+  }
+  if (safePag.enabled) {
+    addNode(
+      accumulator,
+      NODE_IDS.safePag,
+      classes.safePag,
+      {
+        model: generatedModel,
+        scale: safePag.scale,
+        block_indices: "18",
+        perturbation_strength: 0.75,
+        head_indices: "",
+        start_percent: 0,
+        end_percent: 0.7,
+        rescale: 0.2,
+        rescale_mode: "full",
+      },
+      "encoding",
+      "Safe PAG 적용",
+    );
+    generatedModel = link(NODE_IDS.safePag, 0);
+  }
+  if (spectrum.enabled) {
+    addNode(
+      accumulator,
+      NODE_IDS.spectrum,
+      classes.spectrum,
+      {
+        model: generatedModel,
+        steps: config.sampling.steps,
+        window_size: 2,
+        flex_window: 0.25,
+        warmup_steps: 6,
+        tail_actual_steps: 3,
+        blend_w: 0.3,
+        cheby_degree: 3,
+        ridge_lambda: 0.1,
+        history_size: 100,
+        enabled: true,
+        // Only the base pass is forecast; the latent upscale pass runs with
+        // its own step count and must sample every step.
+        one_sampler_only: true,
+        verbose: false,
+      },
+      "encoding",
+      "Spectrum 가속 적용",
+    );
+    generatedModel = link(NODE_IDS.spectrum, 0);
+  }
+
   addNode(
     accumulator,
     NODE_IDS.cfgGuidance,
@@ -833,6 +1002,9 @@ export function buildUpscaleWorkflow(
     throw new Error("upscale workflow branch was not constructed");
   }
   upscaleLatent.inputs.samples = link(NODE_IDS.upscaleSourceEncode, 0);
+  // Without the base pass, the upscale sampler is the one Spectrum forecasts.
+  const spectrum = built.prompt[NODE_IDS.spectrum];
+  if (spectrum) spectrum.inputs.steps = config.upscale.steps;
 
   for (const nodeId of [
     NODE_IDS.baseNoise,

@@ -10,7 +10,7 @@ import {
   upscaleJobRequestSchema,
   upscaleSettingsSchema,
 } from "@anima/shared";
-import { resolveSeed } from "@anima/workflow";
+import { resolveSeed, workflowFeaturesFor } from "@anima/workflow";
 import type { ComfyClientLike } from "../comfy/client";
 import { ComfyHttpError } from "../comfy/client";
 import type { JobListQuery } from "../db/repository";
@@ -103,7 +103,25 @@ function validateInstalledSelections(
   assertInstalled(config.sampling.sampler, options.samplers, "Sampler");
   assertInstalled(config.sampling.scheduler, options.schedulers, "Scheduler");
   for (const lora of config.loras) {
-    if (lora.enabled) assertInstalled(lora.name, options.loras, "LoRA");
+    if (!lora.enabled) continue;
+    if (/snapref/i.test(lora.name)) {
+      throw new JobSubmissionError(
+        `SnapRef weights cannot be applied as a LoRA: ${lora.name}`,
+        422,
+        { kind: "model", selected: lora.name },
+      );
+    }
+    assertInstalled(lora.name, options.loras, "LoRA");
+  }
+  if (
+    config.reference.method === "snapref" &&
+    config.referenceAssetIds.length > 0
+  ) {
+    assertInstalled(
+      config.reference.snapref.adapter,
+      options.loras,
+      "SnapRef adapter",
+    );
   }
 }
 
@@ -157,6 +175,19 @@ export class JobService {
     private readonly events: JobEventService,
     private readonly clientId: string,
   ) {}
+
+  private async assertFeatureNodes(config: GenerationConfig): Promise<void> {
+    for (const feature of workflowFeaturesFor(config)) {
+      const report = await this.capabilities.report(feature);
+      if (!report.compatible) {
+        throw new JobSubmissionError(
+          `The connected ComfyUI is missing the nodes required for ${feature}.`,
+          409,
+          report,
+        );
+      }
+    }
+  }
 
   setSubmissionListener(
     listener: (jobId: string) => void | Promise<void>,
@@ -344,6 +375,7 @@ export class JobService {
     for (let index = 0; index < validated.length; index += 1) {
       const item = validated[index]!;
       validateInstalledSelections(item.config, options);
+      await this.assertFeatureNodes(item.config);
       try {
         const preflightInputs = item.assetRows.map(
           (_asset, assetIndex) =>
@@ -489,6 +521,7 @@ export class JobService {
       );
     }
     validateInstalledSelections(config, await this.capabilities.options());
+    await this.assertFeatureNodes(config);
 
     let assetRows = this.repository.getJobAssets(sourceJobId);
     if (assetRows.length !== config.referenceAssetIds.length) {
@@ -680,6 +713,7 @@ export class JobService {
       );
     }
     validateInstalledSelections(config, await this.capabilities.options());
+    await this.assertFeatureNodes(config);
     const preflightSeed =
       config.seed.mode === "fixed" ? config.seed.value : 0;
     try {

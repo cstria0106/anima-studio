@@ -587,3 +587,55 @@ describe("inpaint jobs", () => {
     ).rejects.toThrow("same dimensions");
   });
 });
+
+describe("SnapRef selections", () => {
+  function jobService(loras: string[]): JobService {
+    const repository = {
+      findAssets() {
+        return [];
+      },
+    } as unknown as StudioRepository;
+    const capabilities = {
+      async report() {
+        return { compatible: true };
+      },
+      async options() {
+        return {
+          diffusionModels: ["diffusion.safetensors"],
+          clips: ["clip.safetensors"],
+          vaes: ["vae.safetensors"],
+          loras,
+          samplers: ["er_sde"],
+          schedulers: ["sgm_uniform"],
+          imagePresets: [],
+        };
+      },
+    } as unknown as CapabilityService;
+    return new JobService(
+      repository,
+      {} as FileStorage,
+      {} as ComfyClientLike,
+      {} as WorkflowEngine,
+      capabilities,
+      {} as JobEventService,
+      "test-client",
+    );
+  }
+
+  test("rejects SnapRef weights selected as a regular LoRA", async () => {
+    const adapter = "AnimaBase/snapref_v2a.safetensors";
+    const config = generationConfigSchema.parse({
+      referenceAssetIds: [],
+      model: {
+        diffusionModel: "diffusion.safetensors",
+        clip: "clip.safetensors",
+        vae: "vae.safetensors",
+      },
+      loras: [{ name: adapter }],
+    });
+
+    await expect(
+      jobService([adapter]).validateBatch([config]),
+    ).rejects.toThrow("SnapRef weights cannot be applied as a LoRA");
+  });
+});

@@ -64,6 +64,10 @@ export const SANITIZED_ANIMA_TEMPLATE = Object.freeze({
     decode: "VAEDecode",
     saveImage: "SaveImage",
     saveText: "SaveText",
+    snapref: "SnapRefSimple",
+    modGuidance: "AnimaModGuidance",
+    safePag: "AnimaSafePAG",
+    spectrum: "DiTSpectrumPatch",
   }),
 });
 
@@ -101,6 +105,10 @@ export const NODE_IDS = Object.freeze({
   inpaintRepeatImage: "32",
   inpaintComposite: "33",
   instantLoraPathSave: "34",
+  snapref: "35",
+  modGuidance: "36",
+  safePag: "37",
+  spectrum: "38",
 });
 
 const REFERENCE_LOAD_NODE_START = 1000;

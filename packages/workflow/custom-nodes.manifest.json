@@ -296,6 +296,111 @@
           "outputs": ["GUIDER"]
         }
       ]
+    },
+    {
+      "id": "snapref",
+      "name": "SnapRef",
+      "builtIn": false,
+      "installUrl": "https://github.com/ArcAnima/SnapRef",
+      "nodes": [
+        {
+          "classType": "SnapRefSimple",
+          "requiredInputs": [
+            "model",
+            "clip",
+            "vae",
+            "adapter",
+            "reference",
+            "mode",
+            "strength",
+            "fidelity"
+          ],
+          "optionalInputs": [
+            "reference_2",
+            "strength_2",
+            "reference_3",
+            "strength_3",
+            "reference_4",
+            "strength_4",
+            "reference_5",
+            "strength_5",
+            "reference_6",
+            "strength_6",
+            "reference_7",
+            "strength_7",
+            "reference_8",
+            "strength_8"
+          ],
+          "outputs": ["MODEL"],
+          "feature": "snapref"
+        }
+      ]
+    },
+    {
+      "id": "spectrum-ksampler",
+      "name": "ComfyUI Spectrum KSampler",
+      "builtIn": false,
+      "installUrl": "https://github.com/sorryhyun/ComfyUI-Spectrum-KSampler",
+      "nodes": [
+        {
+          "classType": "AnimaModGuidance",
+          "requiredInputs": [
+            "model",
+            "clip",
+            "quality_tags",
+            "quality_neg",
+            "mod_w_profile",
+            "positive",
+            "negative"
+          ],
+          "outputs": ["MODEL"],
+          "feature": "mod-guidance"
+        },
+        {
+          "classType": "DiTSpectrumPatch",
+          "requiredInputs": [
+            "model",
+            "steps",
+            "window_size",
+            "flex_window",
+            "warmup_steps",
+            "tail_actual_steps",
+            "blend_w",
+            "cheby_degree",
+            "ridge_lambda",
+            "history_size",
+            "enabled",
+            "one_sampler_only",
+            "verbose"
+          ],
+          "outputs": ["MODEL"],
+          "feature": "spectrum"
+        }
+      ]
+    },
+    {
+      "id": "anima-safe-pag",
+      "name": "Anima Safe PAG",
+      "builtIn": false,
+      "installUrl": "https://github.com/iljung1106/comfyui-anima-safe-pag",
+      "nodes": [
+        {
+          "classType": "AnimaSafePAG",
+          "requiredInputs": [
+            "model",
+            "scale",
+            "block_indices",
+            "perturbation_strength",
+            "head_indices",
+            "start_percent",
+            "end_percent",
+            "rescale",
+            "rescale_mode"
+          ],
+          "outputs": ["MODEL"],
+          "feature": "safe-pag"
+        }
+      ]
     }
   ]
 }

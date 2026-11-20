@@ -209,6 +209,50 @@ export const generationConfigSchema = z.object({
       enabled: z.boolean().default(true),
     })
     .default({}),
+  reference: z
+    .object({
+      method: z.enum(["instant_lora", "snapref"]).default("instant_lora"),
+      snapref: z
+        .object({
+          adapter: z.string().default(""),
+          mode: z
+            .enum(["character_style", "character"])
+            .default("character_style"),
+          strength: z.number().min(0).max(2).default(1),
+          fidelity: z.number().min(0).max(1).default(1),
+        })
+        .default({}),
+    })
+    .default({}),
+  enhancements: z
+    .object({
+      modGuidance: z
+        .object({
+          enabled: z.boolean().default(false),
+          qualityTags: z.string().default("highres, best quality, score_7"),
+          qualityNegative: z
+            .string()
+            .default(
+              "score_1, score_2, score_3, worst quality, lowres, old, bad hands, bad anatomy",
+            ),
+          profile: z
+            .enum(["step_i8_skip27", "step_i14"])
+            .default("step_i8_skip27"),
+        })
+        .default({}),
+      safePag: z
+        .object({
+          enabled: z.boolean().default(false),
+          scale: z.number().min(0).max(100).default(2.5),
+        })
+        .default({}),
+      spectrum: z
+        .object({
+          enabled: z.boolean().default(false),
+        })
+        .default({}),
+    })
+    .default({}),
   seed: z
     .object({
       mode: z.enum(["random", "fixed"]).default("random"),
