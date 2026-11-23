@@ -2,7 +2,7 @@
 
 ## Toolchain
 
-- Use Bun 1.3.14 for this monorepo.
+- Use Bun 1.4.5 for this monorepo.
 
 ## Portable Release Invariants
 
