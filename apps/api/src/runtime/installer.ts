@@ -386,6 +386,10 @@ export class ManagedRuntimeInstaller {
         (sum, artifact) => sum + artifact.bytes,
         0,
       );
+      // Downloading and installing each count once per archive byte, so the
+      // bar keeps moving while a large archive unpacks instead of pausing at
+      // its downloaded total.
+      const totalWork = totalBytes * 2;
       let completedBytes = 0;
       for (const artifact of this.manifest.artifacts) {
         options.signal?.throwIfAborted();
@@ -399,7 +403,7 @@ export class ManagedRuntimeInstaller {
             {
               currentBytes: completedBytes,
               totalBytes,
-              progress: completedBytes / totalBytes,
+              progress: (completedBytes * 2) / totalWork,
               details: { artifactId: artifact.id },
             },
           ),
@@ -410,7 +414,6 @@ export class ManagedRuntimeInstaller {
           {
             ...(options.signal ? { signal: options.signal } : {}),
             onProgress: (progress) => {
-              const currentBytes = completedBytes + progress.currentBytes;
               void this.emit(
                 event(
                   operationId,
@@ -419,9 +422,10 @@ export class ManagedRuntimeInstaller {
                   `Downloading ${artifact.name}.`,
                   now,
                   {
-                    currentBytes,
+                    currentBytes: completedBytes + progress.currentBytes,
                     totalBytes,
-                    progress: currentBytes / totalBytes,
+                    progress:
+                      (completedBytes * 2 + progress.currentBytes) / totalWork,
                     details: { artifactId: artifact.id },
                   },
                 ),
@@ -429,23 +433,32 @@ export class ManagedRuntimeInstaller {
             },
           },
         );
-        completedBytes += artifact.bytes;
-        await this.emit(
+        const installEvent = (fraction: number | null) =>
           event(
             operationId,
             operation,
             "extract",
-            `Installing ${artifact.name}.`,
+            fraction === null
+              ? `Installing ${artifact.name}.`
+              : `Installing ${artifact.name} (${Math.round(fraction * 100)}%).`,
             now,
             {
-              currentBytes: completedBytes,
+              currentBytes: completedBytes + artifact.bytes,
               totalBytes,
-              progress: completedBytes / totalBytes,
+              progress:
+                (completedBytes * 2 +
+                  artifact.bytes * (1 + (fraction ?? 0))) /
+                totalWork,
               details: { artifactId: artifact.id },
             },
-          ),
-        );
-        await this.extractor.extract(artifact, archivePath, stagingRoot);
+          );
+        await this.emit(installEvent(null));
+        await this.extractor.extract(artifact, archivePath, stagingRoot, {
+          onProgress: (fraction) => {
+            void this.emit(installEvent(fraction));
+          },
+        });
+        completedBytes += artifact.bytes;
       }
       await this.emit(
         event(

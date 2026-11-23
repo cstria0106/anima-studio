@@ -19,9 +19,12 @@ export {
 } from "./download";
 export {
   BunCommandRunner,
+  SevenZipProgressParser,
   TarArchiveExtractor,
+  type ArchiveExtractOptions,
   type ArchiveExtractor,
   type CommandResult,
+  type CommandRunOptions,
   type CommandRunner,
 } from "./extract";
 export {

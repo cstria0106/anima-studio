@@ -262,6 +262,43 @@ describe("managed runtime installer", () => {
     });
   });
 
+  test("keeps the progress bar moving while an archive is extracted", async () => {
+    const root = await temporaryDirectory();
+    const archive = join(root, "archive.zip");
+    await writeFile(archive, Uint8Array.of(1, 2, 3));
+    const repository = new MemoryRuntimeStateRepository();
+    const extractor: ArchiveExtractor = {
+      async extract(artifact, _archivePath, releaseRoot, options) {
+        options?.onProgress?.(0.5);
+        options?.onProgress?.(1);
+        await mkdir(join(releaseRoot, "payload"), { recursive: true });
+        await writeFile(join(releaseRoot, "payload", artifact.id), "installed");
+      },
+    };
+    const installer = new ManagedRuntimeInstaller({
+      paths: resolveRuntimePaths(root),
+      repository,
+      manifest: tinyManifest(),
+      platformProbe: compatiblePlatform(),
+      downloader: new FakeDownloader(archive),
+      extractor,
+      provisioner: new NoopRuntimeProvisioner(),
+    });
+
+    await installer.install();
+    const progress = repository.events
+      .filter((event) => event.phase === "download" || event.phase === "extract")
+      .map((event) => [event.phase, event.progress, event.message]);
+
+    expect(progress).toEqual([
+      ["download", 0, "Downloading Tiny engine."],
+      ["download", 0.5, "Downloading Tiny engine."],
+      ["extract", 0.5, "Installing Tiny engine."],
+      ["extract", 0.75, "Installing Tiny engine (50%)."],
+      ["extract", 1, "Installing Tiny engine (100%)."],
+    ]);
+  });
+
   test("removes failed staging data and never exposes a partial release", async () => {
     const root = await temporaryDirectory();
     const archive = join(root, "archive.zip");
