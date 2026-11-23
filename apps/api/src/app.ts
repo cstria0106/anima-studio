@@ -466,11 +466,17 @@ function isLocalOrigin(origin: string): boolean {
   }
 }
 
-function isAllowedApiOrigin(origin: string, host: string): boolean {
-  if (host === "0.0.0.0") return true;
+function isAllowedApiOrigin(
+  origin: string,
+  config: Pick<AppConfig, "host" | "allowedOrigins">,
+): boolean {
+  if (config.host === "0.0.0.0") return true;
   if (isLocalOrigin(origin)) return true;
   try {
-    return new URL(origin).hostname === host;
+    const url = new URL(origin);
+    return (
+      url.hostname === config.host || config.allowedOrigins.includes(url.origin)
+    );
   } catch {
     return false;
   }
@@ -968,7 +974,7 @@ export function createApp(services: AppServices): Hono {
   app.use("*", secureHeaders());
   app.use("/api/*", async (c, next) => {
     const origin = c.req.header("Origin");
-    if (origin && !isAllowedApiOrigin(origin, services.config.host)) {
+    if (origin && !isAllowedApiOrigin(origin, services.config)) {
       return c.json(
         {
           message: "Cross-origin API requests are not allowed.",
@@ -986,7 +992,7 @@ export function createApp(services: AppServices): Hono {
     "*",
     cors({
       origin: (origin) =>
-        !origin || isAllowedApiOrigin(origin, services.config.host)
+        !origin || isAllowedApiOrigin(origin, services.config)
           ? origin
           : "",
       allowHeaders: ["Content-Type", "Last-Event-ID"],

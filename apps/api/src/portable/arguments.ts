@@ -4,14 +4,39 @@ import { PORTABLE_APP_HOST } from "./network";
 export interface PortableArguments {
   host: string;
   port: number | undefined;
+  allowedOrigins: string[];
   noBrowser: boolean;
   version: boolean;
+}
+
+function parseAllowedOrigin(value: string): string {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`Invalid origin for --allow-origin: ${value}`);
+  }
+  if (
+    (url.protocol !== "http:" && url.protocol !== "https:") ||
+    url.username ||
+    url.password ||
+    url.pathname !== "/" ||
+    url.search ||
+    url.hash ||
+    value.includes("?") ||
+    value.includes("#")
+  ) {
+    throw new Error(
+      `Invalid origin for --allow-origin: ${value} (expected http(s)://host[:port])`,
+    );
+  }
+  return url.origin;
 }
 
 function optionValue(
   args: string[],
   index: number,
-  option: "--host" | "--port",
+  option: "--host" | "--port" | "--allow-origin",
 ): { value: string; nextIndex: number } | null {
   const argument = args[index]!;
   if (argument === option) {
@@ -31,6 +56,7 @@ function optionValue(
 export function parsePortableArguments(args: string[]): PortableArguments {
   let host = PORTABLE_APP_HOST;
   let port: number | undefined;
+  const allowedOrigins: string[] = [];
   let noBrowser = false;
   let version = false;
   const seen = new Set<string>();
@@ -79,8 +105,16 @@ export function parsePortableArguments(args: string[]): PortableArguments {
       continue;
     }
 
+    const originOption = optionValue(args, index, "--allow-origin");
+    if (originOption) {
+      const origin = parseAllowedOrigin(originOption.value);
+      if (!allowedOrigins.includes(origin)) allowedOrigins.push(origin);
+      index = originOption.nextIndex;
+      continue;
+    }
+
     throw new Error(`Unknown option: ${argument}`);
   }
 
-  return { host, port, noBrowser, version };
+  return { host, port, allowedOrigins, noBrowser, version };
 }

@@ -6,6 +6,7 @@ describe("portable arguments", () => {
     expect(parsePortableArguments([])).toEqual({
       host: "127.0.0.1",
       port: undefined,
+      allowedOrigins: [],
       noBrowser: false,
       version: false,
     });
@@ -23,11 +24,24 @@ describe("portable arguments", () => {
     ).toEqual({
       host: "192.168.0.20",
       port: 9000,
+      allowedOrigins: [],
       noBrowser: true,
       version: true,
     });
     expect(parsePortableArguments(["--port=65535", "--host", "0.0.0.0"]))
       .toMatchObject({ host: "0.0.0.0", port: 65_535 });
+  });
+
+  test("collects repeated allowed origins in normalized form", () => {
+    expect(
+      parsePortableArguments([
+        "--allow-origin",
+        "https://MyPC.Tailnet.ts.net/",
+        "--allow-origin=http://mypc:8787",
+        "--allow-origin",
+        "https://mypc.tailnet.ts.net:443",
+      ]).allowedOrigins,
+    ).toEqual(["https://mypc.tailnet.ts.net", "http://mypc:8787"]);
   });
 
   for (const [args, message] of [
@@ -40,6 +54,14 @@ describe("portable arguments", () => {
     [["--port"], /--port requires a value/],
     [["--host=127.0.0.1", "--host", "127.0.0.2"], /Duplicate option: --host/],
     [["--port=8787", "--port", "9000"], /Duplicate option: --port/],
+    [["--allow-origin"], /--allow-origin requires a value/],
+    [["--allow-origin", "mypc.tailnet.ts.net"], /Invalid origin/],
+    [["--allow-origin", "*"], /Invalid origin/],
+    [["--allow-origin", "null"], /Invalid origin/],
+    [["--allow-origin", "ftp://mypc"], /Invalid origin/],
+    [["--allow-origin", "https://mypc.tailnet.ts.net/app"], /Invalid origin/],
+    [["--allow-origin", "https://mypc.tailnet.ts.net/?x=1"], /Invalid origin/],
+    [["--allow-origin", "https://user@mypc.tailnet.ts.net"], /Invalid origin/],
     [["--unknown"], /Unknown option/],
   ] as const) {
     test(`rejects invalid arguments: ${args.join(" ")}`, () => {

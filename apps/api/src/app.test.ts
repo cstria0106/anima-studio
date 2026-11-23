@@ -1400,6 +1400,29 @@ describe("Anima Studio API", () => {
       .toBe("http://192.168.10.20:8787");
   });
 
+  test("allows explicitly configured browser origins on the loopback host", async () => {
+    const { runtime: api } = await runtime();
+    api.config.allowedOrigins = ["https://mypc.tailnet.ts.net"];
+    const allowed = await api.app.request("/api/health", {
+      headers: { origin: "https://mypc.tailnet.ts.net" },
+    });
+    expect(allowed.status).toBe(200);
+    expect(allowed.headers.get("access-control-allow-origin"))
+      .toBe("https://mypc.tailnet.ts.net");
+
+    for (const origin of [
+      "http://mypc.tailnet.ts.net",
+      "https://mypc.tailnet.ts.net:8443",
+      "https://other.tailnet.ts.net",
+    ]) {
+      const rejected = await api.app.request("/api/comfy/runtime/stop", {
+        method: "POST",
+        headers: { origin },
+      });
+      expect(rejected.status).toBe(403);
+    }
+  });
+
   test("allows every browser origin when bound to the wildcard host", async () => {
     const { runtime: api } = await runtime();
     api.config.host = "0.0.0.0";

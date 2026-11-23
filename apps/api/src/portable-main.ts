@@ -91,6 +91,7 @@ async function main(): Promise<void> {
     const config = loadConfig({
       host: arguments_.host,
       port: actualPort,
+      allowedOrigins: arguments_.allowedOrigins,
       dataDir,
       runtimeDir: join(dataDir, "runtime"),
       databasePath: join(dataDir, "anima-studio.sqlite"),

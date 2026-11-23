@@ -11,6 +11,8 @@ function resolveFromRepository(value: string): string {
 export interface AppConfig {
   host: string;
   port: number;
+  /** Extra browser origins (scheme://host[:port]) allowed to call the API. */
+  allowedOrigins: string[];
   dataDir: string;
   runtimeDir: string;
   databasePath: string;
@@ -47,6 +49,7 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
     host: overrides.host ?? "127.0.0.1",
     port: overrides.port ?? 8787,
+    allowedOrigins: overrides.allowedOrigins ?? [],
     dataDir,
     runtimeDir: overrides.runtimeDir
       ? resolveFromRepository(overrides.runtimeDir)
